@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["crates/thrustr"]
+default-members = ["crates/thrustr"]
+
+[workspace.dependencies]
+gpui = "0.2.2"
