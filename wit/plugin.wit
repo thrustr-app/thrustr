@@ -1,0 +1,23 @@
+package thrustr:plugin;
+
+interface plugin-manifest {
+    record manifest {
+        id: string,
+        name: string,
+        author: list<string>,
+        version: tuple<u32, u32, u32>,
+        description: string,
+    }
+
+    get: func() -> manifest;
+}
+
+interface storefront {
+    init: func() -> result<_, string>;
+    get-games: func() -> result<u8, string>;
+}
+
+world plugin {
+    export plugin-manifest;
+    export storefront;
+}

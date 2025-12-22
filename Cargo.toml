@@ -1,7 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["crates/thrustr"]
+members = ["crates/*", "plugins/*", "xtask"]
 default-members = ["crates/thrustr"]
 
 [workspace.dependencies]
+# Local
+plugin_manager = { path = "crates/plugin_manager" }
+
+# External
+anyhow = "1"
 gpui = "0.2.2"
+wit-bindgen = "0.49"

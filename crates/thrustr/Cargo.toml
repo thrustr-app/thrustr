@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-futures-lite = "2.6"
+# Local
+plugin_manager.workspace = true
+
+# External
+anyhow.workspace = true
 gpui.workspace = true
-libc = "0.2"
-libloading = "0.9"
-libretro-sys = "0.1"
