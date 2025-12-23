@@ -6,8 +6,9 @@ default-members = ["crates/thrustr"]
 
 [workspace.dependencies]
 # Local
-models = { path = "crates/models" }
+domain = { path = "crates/domain" }
 plugin-manager = { path = "crates/plugin-manager" }
+sqlite-storage = { path = "crates/sqlite-storage" }
 
 # External
 anyhow = "1"

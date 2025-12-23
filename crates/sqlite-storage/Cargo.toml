@@ -1,15 +1,15 @@
 [package]
-name = "plugin-manager"
+name = "sqlite-storage"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Local
+# External
 domain.workspace = true
 
-# External
+# Local
 anyhow.workspace = true
-extism = "1.13.0"
-semver.workspace = true
+diesel = { version = "2.3.0", features = ["sqlite", "serde_json", "r2d2"] }
+diesel_migrations = "2.3"
 serde.workspace = true
 serde_json.workspace = true

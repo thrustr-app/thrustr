@@ -5,7 +5,10 @@ edition = "2024"
 
 [dependencies]
 # Local
+domain.workspace = true
 plugin-manager.workspace = true
+sqlite-storage.workspace = true
+
 
 # External
 anyhow.workspace = true

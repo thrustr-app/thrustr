@@ -1,12 +1,14 @@
 use anyhow::Result;
+use domain::{PluginManifest, SetPluginDataInput, Storage};
 use extism::{
     Manifest, PTR, Plugin as ExtismPlugin, PluginBuilder, UserData, Wasm, convert::Json, host_fn,
 };
-use models::{PluginManifest, SetPluginDataInput};
 use semver::Version;
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 mod adapters;
+
+pub type SharedStorage = Arc<dyn Storage + Send + Sync>;
 
 #[derive(Debug)]
 pub struct Plugin {
@@ -43,12 +45,14 @@ impl Plugin {
 
 pub struct PluginManager {
     plugins: HashMap<String, Plugin>,
+    storage: SharedStorage,
 }
 
 impl PluginManager {
-    pub fn new() -> Self {
+    pub fn new(storage: SharedStorage) -> Self {
         Self {
             plugins: HashMap::new(),
+            storage,
         }
     }
 
@@ -89,14 +93,14 @@ impl PluginManager {
                 "get_plugin_data",
                 [PTR],
                 [PTR],
-                UserData::new(()),
+                UserData::new(Arc::clone(&self.storage)),
                 get_plugin_data,
             )
             .with_function(
                 "set_plugin_data",
                 [PTR],
                 [PTR],
-                UserData::new(()),
+                UserData::new(Arc::clone(&self.storage)),
                 set_plugin_data,
             )
             .build()?;
@@ -108,10 +112,13 @@ impl PluginManager {
     }
 }
 
-host_fn!(get_plugin_data(key: String) -> Json<Map<String, Value>> {
-    Ok(adapters::get_plugin_data(key))
+host_fn!(get_plugin_data(user_data: SharedStorage; key: String) -> Json<serde_json::Map<String, serde_json::Value>> {
+    let storage = Arc::clone(&*user_data.get()?.lock().unwrap());
+    Ok(Json(adapters::get_plugin_data(&storage, key)))
 });
 
-host_fn!(set_plugin_data(input: Json<SetPluginDataInput>) -> bool {
-    Ok(adapters::set_plugin_data(input))
+host_fn!(set_plugin_data(user_data: SharedStorage; input: Json<SetPluginDataInput>) -> bool {
+    let storage = Arc::clone(&*user_data.get()?.lock().unwrap());
+    let Json(input) = input;
+    Ok(adapters::set_plugin_data(&storage, input))
 });
