@@ -11,3 +11,5 @@ models.workspace = true
 anyhow.workspace = true
 extism = "1.13.0"
 semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true

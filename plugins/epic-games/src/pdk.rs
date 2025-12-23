@@ -78,6 +78,10 @@ pub mod types {
         #[serde(rename = "authors")]
         pub authors: Vec<String>,
 
+        /// Brief description of the plugin
+        #[serde(rename = "description")]
+        pub description: String,
+
         /// Unique plugin identifier
         #[serde(rename = "id")]
         pub id: String,
@@ -89,15 +93,65 @@ pub mod types {
         /// Semantic version string (semver)
         #[serde(rename = "version")]
         pub version: String,
+    }
 
-        /// Brief description of the plugin
-        #[serde(rename = "description")]
-        pub description: String,
+    #[derive(
+        Default,
+        Debug,
+        Clone,
+        serde::Serialize,
+        serde::Deserialize,
+        extism_pdk::FromBytes,
+        extism_pdk::ToBytes,
+    )]
+    #[encoding(Json)]
+    pub struct SetPluginDataInput {
+        /// The plugin data to set
+        #[serde(rename = "data")]
+        pub data: serde_json::Map<String, serde_json::Value>,
+
+        /// Unique plugin identifier
+        #[serde(rename = "id")]
+        pub id: String,
     }
 }
 
 mod raw_imports {
     use super::*;
     #[host_fn]
-    extern "ExtismHost" {}
+    extern "ExtismHost" {
+
+        pub(crate) fn get_plugin_data(
+            input: String,
+        ) -> Json<serde_json::Map<String, serde_json::Value>>;
+
+        pub(crate) fn set_plugin_data(input: Json<types::SetPluginDataInput>) -> bool;
+
+    }
+}
+
+/// get_plugin_data Retrieves plugin data from the host database.
+/// It takes input of String (The plugin identifier.)
+/// And it returns an output serde_json::Map<String, serde_json::Value> (The plugin data object.)
+#[allow(unused)]
+pub(crate) fn get_plugin_data(
+    input: String,
+) -> std::result::Result<serde_json::Map<String, serde_json::Value>, extism_pdk::Error> {
+    let res = unsafe { raw_imports::get_plugin_data(input)? };
+
+    let extism_pdk::Json(res) = res;
+
+    Ok(res)
+}
+
+/// set_plugin_data Sets plugin data in the host database.
+/// It takes input of types::SetPluginDataInput ()
+/// And it returns an output bool (True if the operation was successful.)
+#[allow(unused)]
+pub(crate) fn set_plugin_data(
+    input: types::SetPluginDataInput,
+) -> std::result::Result<bool, extism_pdk::Error> {
+    let res = unsafe { raw_imports::set_plugin_data(extism_pdk::Json(input))? };
+
+    Ok(res)
 }

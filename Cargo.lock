@@ -3754,6 +3754,7 @@ version = "0.1.0"
 dependencies = [
  "semver",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4353,6 +4354,8 @@ dependencies = [
  "extism",
  "models",
  "semver",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

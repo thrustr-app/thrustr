@@ -1,8 +1,12 @@
 use anyhow::Result;
-use extism::{Manifest, Plugin as ExtismPlugin, Wasm, convert::Json};
-use models::PluginManifest;
+use extism::{
+    Manifest, PTR, Plugin as ExtismPlugin, PluginBuilder, UserData, Wasm, convert::Json, host_fn,
+};
+use models::{PluginManifest, SetPluginDataInput};
 use semver::Version;
 use std::{collections::HashMap, path::Path};
+
+mod adapters;
 
 #[derive(Debug)]
 pub struct Plugin {
@@ -79,7 +83,23 @@ impl PluginManager {
 
     fn load_plugin(&mut self, wasm: Wasm) -> Result<()> {
         let manifest = Manifest::new([wasm]);
-        let extism_plugin = ExtismPlugin::new(&manifest, [], true)?;
+        let extism_plugin = PluginBuilder::new(&manifest)
+            .with_wasi(true)
+            .with_function(
+                "get_plugin_data",
+                [PTR],
+                [PTR],
+                UserData::new(()),
+                get_plugin_data,
+            )
+            .with_function(
+                "set_plugin_data",
+                [PTR],
+                [PTR],
+                UserData::new(()),
+                set_plugin_data,
+            )
+            .build()?;
 
         let plugin = Plugin::new(extism_plugin)?;
         self.plugins.insert(plugin.id().to_string(), plugin);
@@ -87,3 +107,11 @@ impl PluginManager {
         Ok(())
     }
 }
+
+host_fn!(get_plugin_data(key: String) -> Json<Map<String, Value>> {
+    Ok(adapters::get_plugin_data(key))
+});
+
+host_fn!(set_plugin_data(input: Json<SetPluginDataInput>) -> bool {
+    Ok(adapters::set_plugin_data(input))
+});

@@ -9,8 +9,43 @@ exports:
       contentType: application/json
       $ref: "#/components/schemas/Manifest"
 
+imports:
+  get_plugin_data:
+    description: |
+      Retrieves plugin data from the host database.
+    input:
+      type: string
+      description: The plugin identifier.
+      contentType: text/plain; charset=utf-8
+    output:
+      type: object
+      description: The plugin data object.
+      contentType: application/json
+  set_plugin_data:
+    description: |
+      Sets plugin data in the host database.
+    input:
+      contentType: application/json
+      $ref: "#/components/schemas/SetPluginDataInput"
+    output:
+      type: boolean
+      description: True if the operation was successful.
+      contentType: application/x-binary
+
 components:
   schemas:
+    SetPluginDataInput:
+      description: Input schema for setting plugin data.
+      required:
+        - id
+        - data
+      properties:
+        id:
+          type: string
+          description: Unique plugin identifier
+        data:
+          type: object
+          description: The plugin data to set
     Manifest:
       description: Plugin manifest metadata
       required:
@@ -18,6 +53,7 @@ components:
         - name
         - authors
         - version
+        - description
       properties:
         id:
           type: string
