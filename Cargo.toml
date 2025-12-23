@@ -1,13 +1,16 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "plugins/*", "xtask"]
+exclude = ["plugins/schemas"]
 default-members = ["crates/thrustr"]
 
 [workspace.dependencies]
 # Local
-plugin_manager = { path = "crates/plugin_manager" }
+plugin-manager = { path = "crates/plugin-manager" }
 
 # External
 anyhow = "1"
+extism-pdk = "1.4.0"
 gpui = "0.2.2"
-wit-bindgen = "0.49"
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }

@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Local
-plugin_manager.workspace = true
+plugin-manager.workspace = true
 
 # External
 anyhow.workspace = true

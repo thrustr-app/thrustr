@@ -1,0 +1,38 @@
+version: v1-draft
+
+exports:
+  manifest:
+    description: |
+      Returns the plugin manifest metadata.
+      This includes the plugin id, name, authors, and semantic version.
+    output:
+      contentType: application/json
+      $ref: "#/components/schemas/Manifest"
+
+components:
+  schemas:
+    Manifest:
+      description: Plugin manifest metadata
+      required:
+        - id
+        - name
+        - authors
+        - version
+      properties:
+        id:
+          type: string
+          description: Unique plugin identifier
+        name:
+          type: string
+          description: Human-readable plugin name
+        authors:
+          type: array
+          description: List of plugin authors
+          items:
+            type: string
+        version:
+          type: string
+          description: Semantic version string (semver)
+        description:
+          type: string
+          description: Brief description of the plugin

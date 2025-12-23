@@ -13,16 +13,13 @@ fn main() {
 
         let plugin_name = path.file_name().unwrap().to_str().unwrap();
         println!("Building plugin: {}", plugin_name);
-
         // Build plugin for wasm32 target
-        let status = Command::new("cargo")
+        let status = Command::new("xtp")
             .args([
+                "plugin",
                 "build",
-                "-p",
-                plugin_name,
-                "--release",
-                "--target",
-                "wasm32-wasip2",
+                "--path",
+                &format!("plugins/{plugin_name}"),
             ])
             .status()
             .unwrap();
@@ -30,8 +27,8 @@ fn main() {
         assert!(status.success(), "Plugin build failed");
 
         // Copy the generated wasm into a central folder
-        let wasm_file = Path::new("target/wasm32-wasip2/release")
-            .join(format!("{}.wasm", plugin_name.replace("-", "_")));
+        let wasm_file = Path::new("target/wasm32-wasip1/release")
+            .join(format!("{}.wasm", plugin_name.replace("-", "")));
         if !wasm_file.exists() {
             panic!("Compiled wasm file not found: {:?}", wasm_file);
         }

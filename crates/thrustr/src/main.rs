@@ -6,12 +6,12 @@ use plugin_manager::PluginManager;
 mod routes;
 
 fn main() {
-    let mut plugin_manager = PluginManager::new().unwrap();
+    let mut plugin_manager = PluginManager::new();
     plugin_manager
         .load_plugins_from_dir("target/wasm-plugins")
         .unwrap();
 
-    let plugins = plugin_manager.list_plugins();
+    /*let plugins = plugin_manager.list_plugins();
     println!("Plugins: {:?}", plugins);
 
     let plugin = plugin_manager.get_plugin_mut("epic-games").unwrap();
@@ -19,7 +19,7 @@ fn main() {
     let manifest = plugin.get_manifest().unwrap();
     println!("Epic Games Manifest: {:?}", manifest);
 
-    plugin.init().unwrap();
+    plugin.init().unwrap();*/
 
     Application::new().run(|app| {
         app.open_window(
