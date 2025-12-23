@@ -1,6 +1,41 @@
 use anyhow::Result;
-use extism::{Manifest, Plugin, Wasm};
+use extism::{Manifest, Plugin as ExtismPlugin, Wasm, convert::Json};
+use models::PluginManifest;
+use semver::Version;
 use std::{collections::HashMap, path::Path};
+
+#[derive(Debug)]
+pub struct Plugin {
+    manifest: PluginManifest,
+    inner: ExtismPlugin,
+}
+
+impl Plugin {
+    pub fn new(mut inner: ExtismPlugin) -> Result<Self> {
+        let Json(manifest) = inner.call::<(), Json<PluginManifest>>("manifest", ())?;
+        Ok(Self { manifest, inner })
+    }
+
+    pub fn id(&self) -> &str {
+        &self.manifest.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.manifest.name
+    }
+
+    pub fn version(&self) -> &Version {
+        &self.manifest.version
+    }
+
+    pub fn description(&self) -> &str {
+        &self.manifest.description
+    }
+
+    pub fn authors(&self) -> &[String] {
+        &self.manifest.authors
+    }
+}
 
 pub struct PluginManager {
     plugins: HashMap<String, Plugin>,
@@ -28,22 +63,26 @@ impl PluginManager {
         Ok(())
     }
 
-    pub fn load_plugin_from_file(&self, path: impl AsRef<Path>) -> Result<()> {
+    pub fn load_plugin_from_file(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let file = Wasm::file(path);
         self.load_plugin(file)
     }
 
-    pub fn load_plugin_from_url(&self, url: &str) -> Result<()> {
+    pub fn load_plugin_from_url(&mut self, url: &str) -> Result<()> {
         let file = Wasm::url(url);
         self.load_plugin(file)
     }
 
-    fn load_plugin(&self, wasm: Wasm) -> Result<()> {
-        let manifest = Manifest::new([wasm]);
-        let mut plugin = Plugin::new(&manifest, [], true)?;
+    pub fn list_plugins(&self) -> Vec<&str> {
+        self.plugins.keys().map(String::as_str).collect()
+    }
 
-        let res = plugin.call::<(), &str>("manifest", ())?;
-        println!("Loaded plugin manifest: {:?}", res);
+    fn load_plugin(&mut self, wasm: Wasm) -> Result<()> {
+        let manifest = Manifest::new([wasm]);
+        let extism_plugin = ExtismPlugin::new(&manifest, [], true)?;
+
+        let plugin = Plugin::new(extism_plugin)?;
+        self.plugins.insert(plugin.id().to_string(), plugin);
 
         Ok(())
     }

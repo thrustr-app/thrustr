@@ -6,6 +6,7 @@ default-members = ["crates/thrustr"]
 
 [workspace.dependencies]
 # Local
+models = { path = "crates/models" }
 plugin-manager = { path = "crates/plugin-manager" }
 
 # External

@@ -11,6 +11,9 @@ fn main() {
         .load_plugins_from_dir("target/wasm-plugins")
         .unwrap();
 
+    let plugins = plugin_manager.list_plugins();
+    println!("Loaded Plugins: {:?}", plugins);
+
     /*let plugins = plugin_manager.list_plugins();
     println!("Plugins: {:?}", plugins);
 

@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# Local
+models.workspace = true
+
+# External
 anyhow.workspace = true
 extism = "1.13.0"
+semver.workspace = true

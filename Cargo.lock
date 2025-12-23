@@ -3749,6 +3749,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "models"
+version = "0.1.0"
+dependencies = [
+ "semver",
+ "serde",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4343,6 +4351,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "extism",
+ "models",
+ "semver",
 ]
 
 [[package]]
