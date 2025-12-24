@@ -1,74 +1,27 @@
 version: v1-draft
 
 exports:
-  manifest:
+  initialize:
     description: |
-      Returns the plugin manifest metadata.
-      This includes the plugin id, name, authors, and semantic version.
-    output:
-      contentType: application/json
-      $ref: "#/components/schemas/Manifest"
+      Used to initialize the plugin with necessary setup. Called when the app loads the plugin.
 
 imports:
   get_plugin_data:
     description: |
       Retrieves plugin data from the host database.
-    input:
-      type: string
-      description: The plugin identifier.
-      contentType: text/plain; charset=utf-8
     output:
       type: object
+      nullable: true
       description: The plugin data object.
       contentType: application/json
   set_plugin_data:
     description: |
       Sets plugin data in the host database.
     input:
+      type: object
+      description: The plugin data object to set.
       contentType: application/json
-      $ref: "#/components/schemas/SetPluginDataInput"
     output:
       type: boolean
       description: True if the operation was successful.
       contentType: application/x-binary
-
-components:
-  schemas:
-    SetPluginDataInput:
-      description: Input schema for setting plugin data.
-      required:
-        - id
-        - data
-      properties:
-        id:
-          type: string
-          description: Unique plugin identifier
-        data:
-          type: object
-          description: The plugin data to set
-    Manifest:
-      description: Plugin manifest metadata
-      required:
-        - id
-        - name
-        - authors
-        - version
-        - description
-      properties:
-        id:
-          type: string
-          description: Unique plugin identifier
-        name:
-          type: string
-          description: Human-readable plugin name
-        authors:
-          type: array
-          description: List of plugin authors
-          items:
-            type: string
-        version:
-          type: string
-          description: Semantic version string (semver)
-        description:
-          type: string
-          description: Brief description of the plugin

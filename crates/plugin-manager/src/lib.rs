@@ -1,10 +1,11 @@
 use anyhow::Result;
-use domain::{PluginManifest, SetPluginDataInput, Storage};
+use domain::{PluginManifest, Storage};
 use extism::{
     Manifest, PTR, Plugin as ExtismPlugin, PluginBuilder, UserData, Wasm, convert::Json, host_fn,
 };
 use semver::Version;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use serde_json::{Map, Value};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 mod adapters;
 
@@ -17,9 +18,13 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    pub fn new(mut inner: ExtismPlugin) -> Result<Self> {
-        let Json(manifest) = inner.call::<(), Json<PluginManifest>>("manifest", ())?;
+    pub fn new(inner: ExtismPlugin, manifest: PluginManifest) -> Result<Self> {
         Ok(Self { manifest, inner })
+    }
+
+    fn initialize(&mut self) -> Result<()> {
+        self.inner.call::<(), ()>("initialize", ())?;
+        Ok(())
     }
 
     pub fn id(&self) -> &str {
@@ -43,6 +48,11 @@ impl Plugin {
     }
 }
 
+struct PluginContext {
+    storage: SharedStorage,
+    plugin_id: String,
+}
+
 pub struct PluginManager {
     plugins: HashMap<String, Plugin>,
     storage: SharedStorage,
@@ -63,62 +73,87 @@ impl PluginManager {
             let entry = entry?;
             let path = entry.path();
 
-            if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
-                self.load_plugin_from_file(&path)?;
+            if path.is_dir() {
+                let wasm_path = path.join("plugin.wasm");
+                let manifest_path = path.join("manifest.json");
+
+                if wasm_path.exists() && manifest_path.exists() {
+                    self.load_plugin_from_dir(&path)?;
+                }
             }
         }
 
         Ok(())
     }
 
-    pub fn load_plugin_from_file(&mut self, path: impl AsRef<Path>) -> Result<()> {
-        let file = Wasm::file(path);
-        self.load_plugin(file)
-    }
+    pub fn load_plugin_from_dir(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        let wasm_path = path.join("plugin.wasm");
+        let manifest_path = path.join("manifest.json");
 
-    pub fn load_plugin_from_url(&mut self, url: &str) -> Result<()> {
-        let file = Wasm::url(url);
-        self.load_plugin(file)
+        let manifest_content = fs::read_to_string(&manifest_path)?;
+        let manifest: PluginManifest = serde_json::from_str(&manifest_content)?;
+
+        let wasm = Wasm::file(&wasm_path);
+        self.load_plugin(wasm, manifest)
     }
 
     pub fn list_plugins(&self) -> Vec<&str> {
         self.plugins.keys().map(String::as_str).collect()
     }
 
-    fn load_plugin(&mut self, wasm: Wasm) -> Result<()> {
-        let manifest = Manifest::new([wasm]);
-        let extism_plugin = PluginBuilder::new(&manifest)
+    fn load_plugin(&mut self, wasm: Wasm, manifest: PluginManifest) -> Result<()> {
+        let plugin_id = manifest.id.clone();
+
+        let extism_manifest = Manifest::new([wasm]);
+        let extism_plugin = PluginBuilder::new(&extism_manifest)
             .with_wasi(true)
             .with_function(
                 "get_plugin_data",
+                [],
                 [PTR],
-                [PTR],
-                UserData::new(Arc::clone(&self.storage)),
+                UserData::new(PluginContext {
+                    storage: Arc::clone(&self.storage),
+                    plugin_id: plugin_id.clone(),
+                }),
                 get_plugin_data,
             )
             .with_function(
                 "set_plugin_data",
                 [PTR],
                 [PTR],
-                UserData::new(Arc::clone(&self.storage)),
+                UserData::new(PluginContext {
+                    storage: Arc::clone(&self.storage),
+                    plugin_id: plugin_id.clone(),
+                }),
                 set_plugin_data,
             )
             .build()?;
 
-        let plugin = Plugin::new(extism_plugin)?;
-        self.plugins.insert(plugin.id().to_string(), plugin);
+        let mut plugin = Plugin::new(extism_plugin, manifest)?;
 
+        plugin.initialize()?;
+
+        self.plugins.insert(plugin.id().to_string(), plugin);
         Ok(())
     }
 }
 
-host_fn!(get_plugin_data(user_data: SharedStorage; key: String) -> Json<serde_json::Map<String, serde_json::Value>> {
-    let storage = Arc::clone(&*user_data.get()?.lock().unwrap());
-    Ok(Json(adapters::get_plugin_data(&storage, key)))
+host_fn!(get_plugin_data(user_data: PluginContext;) -> Json<Option<Map<String, Value>>> {
+    let context = user_data.get()?;
+    let lock = context.lock().unwrap();
+    let storage = Arc::clone(&lock.storage);
+    let plugin_id = lock.plugin_id.clone();
+
+    Ok(Json(adapters::get_plugin_data(&storage, plugin_id)))
 });
 
-host_fn!(set_plugin_data(user_data: SharedStorage; input: Json<SetPluginDataInput>) -> bool {
-    let storage = Arc::clone(&*user_data.get()?.lock().unwrap());
-    let Json(input) = input;
-    Ok(adapters::set_plugin_data(&storage, input))
+host_fn!(set_plugin_data(user_data: PluginContext; data: Json<Map<String, Value>>) -> bool {
+    let context = user_data.get()?;
+    let lock = context.lock().unwrap();
+    let storage = Arc::clone(&lock.storage);
+    let plugin_id = lock.plugin_id.clone();
+    let Json(data) = data;
+
+    Ok(adapters::set_plugin_data(&storage, plugin_id, data))
 });

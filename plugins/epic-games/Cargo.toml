@@ -1,7 +1,12 @@
 [package]
 name = "epic-games"
 version = "0.1.0"
+authors = ["Jorge Pardo"]
+description = "A plugin to interact with the Epic Games Store."
 edition = "2021"
+
+[package.metadata.plugin]
+display_name = "Epic Games"
 
 [lib]
 name = "epicgames"

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use diesel::{
-    ExpressionMethods, RunQueryDsl, SqliteConnection,
+    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection,
     r2d2::{ConnectionManager, Pool},
     upsert::excluded,
 };
@@ -41,7 +41,15 @@ impl SqliteStorage {
 
 impl Storage for SqliteStorage {
     fn get_plugin_data(&self, plugin_id: String) -> Result<Option<Value>> {
-        Ok(None)
+        use crate::plugin_data::dsl;
+
+        let mut conn = self.pool.get()?;
+        let result: Option<PluginData> = dsl::plugin_data
+            .filter(dsl::plugin_id.eq(plugin_id))
+            .first::<PluginData>(&mut conn)
+            .optional()?;
+
+        Ok(result.map(|pd| pd.data))
     }
 
     fn set_plugin_data(&self, plugin_id: String, data: Value) -> Result<()> {
