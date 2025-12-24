@@ -69,35 +69,35 @@ mod raw_imports {
     #[host_fn]
     extern "ExtismHost" {
 
-        pub(crate) fn get_plugin_data() -> Json<Option<serde_json::Map<String, serde_json::Value>>>;
+        pub(crate) fn getPluginData() -> Json<Option<serde_json::Map<String, serde_json::Value>>>;
 
-        pub(crate) fn set_plugin_data(
+        pub(crate) fn setPluginData(
             input: Json<serde_json::Map<String, serde_json::Value>>,
         ) -> bool;
 
     }
 }
 
-/// get_plugin_data Retrieves plugin data from the host database.
+/// getPluginData Retrieves plugin data from the host database.
 /// And it returns an output Option<serde_json::Map<String, serde_json::Value>> (The plugin data object.)
 #[allow(unused)]
 pub(crate) fn get_plugin_data(
 ) -> std::result::Result<Option<serde_json::Map<String, serde_json::Value>>, extism_pdk::Error> {
-    let res = unsafe { raw_imports::get_plugin_data()? };
+    let res = unsafe { raw_imports::getPluginData()? };
 
     let extism_pdk::Json(res) = res;
 
     Ok(res)
 }
 
-/// set_plugin_data Sets plugin data in the host database.
+/// setPluginData Sets plugin data in the host database.
 /// It takes input of serde_json::Map<String, serde_json::Value> (The plugin data object to set.)
 /// And it returns an output bool (True if the operation was successful.)
 #[allow(unused)]
 pub(crate) fn set_plugin_data(
     input: serde_json::Map<String, serde_json::Value>,
 ) -> std::result::Result<bool, extism_pdk::Error> {
-    let res = unsafe { raw_imports::set_plugin_data(extism_pdk::Json(input))? };
+    let res = unsafe { raw_imports::setPluginData(extism_pdk::Json(input))? };
 
     Ok(res)
 }

@@ -6,7 +6,7 @@ exports:
       Used to initialize the plugin with necessary setup. Called when the app loads the plugin.
 
 imports:
-  get_plugin_data:
+  getPluginData:
     description: |
       Retrieves plugin data from the host database.
     output:
@@ -14,7 +14,7 @@ imports:
       nullable: true
       description: The plugin data object.
       contentType: application/json
-  set_plugin_data:
+  setPluginData:
     description: |
       Sets plugin data in the host database.
     input:

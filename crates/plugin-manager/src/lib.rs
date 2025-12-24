@@ -109,7 +109,7 @@ impl PluginManager {
         let extism_plugin = PluginBuilder::new(&extism_manifest)
             .with_wasi(true)
             .with_function(
-                "get_plugin_data",
+                "getPluginData",
                 [],
                 [PTR],
                 UserData::new(PluginContext {
@@ -119,7 +119,7 @@ impl PluginManager {
                 get_plugin_data,
             )
             .with_function(
-                "set_plugin_data",
+                "setPluginData",
                 [PTR],
                 [PTR],
                 UserData::new(PluginContext {
