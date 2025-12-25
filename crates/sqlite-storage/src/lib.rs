@@ -39,7 +39,7 @@ impl SqliteStorage {
 }
 
 impl Storage for SqliteStorage {
-    fn get_plugin_data(&self, plugin_id: String) -> Result<Option<Value>> {
+    fn get_plugin_data(&self, plugin_id: &str) -> Result<Option<Value>> {
         use crate::plugin_data::dsl;
 
         let mut conn = self.pool.get()?;
@@ -51,12 +51,15 @@ impl Storage for SqliteStorage {
         Ok(result.map(|pd| pd.data))
     }
 
-    fn set_plugin_data(&self, plugin_id: String, data: Value) -> Result<()> {
+    fn set_plugin_data(&self, plugin_id: &str, data: Value) -> Result<()> {
         use crate::plugin_data::dsl;
 
-        let value = PluginData { plugin_id, data };
-        let mut conn = self.pool.get()?;
+        let value = PluginData {
+            plugin_id: plugin_id.to_owned(),
+            data,
+        };
 
+        let mut conn = self.pool.get()?;
         diesel::insert_into(dsl::plugin_data)
             .values(&value)
             .on_conflict(dsl::plugin_id)
@@ -65,5 +68,15 @@ impl Storage for SqliteStorage {
             .execute(&mut conn)?;
 
         Ok(())
+    }
+
+    fn delete_plugin_data(&self, plugin_id: &str) -> Result<bool> {
+        use crate::plugin_data::dsl;
+
+        let mut conn = self.pool.get()?;
+        let affected_rows = diesel::delete(dsl::plugin_data.filter(dsl::plugin_id.eq(plugin_id)))
+            .execute(&mut conn)?;
+
+        Ok(affected_rows > 0)
     }
 }

@@ -9,7 +9,7 @@ domain.workspace = true
 
 # Local
 anyhow.workspace = true
-diesel = { version = "2.3.0", features = ["sqlite", "serde_json", "r2d2"] }
+diesel = { version = "2.3.0", features = ["sqlite", "serde_json", "r2d2", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = "2.3"
 serde.workspace = true
 serde_json.workspace = true
