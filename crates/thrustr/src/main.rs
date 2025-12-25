@@ -17,7 +17,8 @@ fn main() {
     let db_path = exe_dir.join("thrustr.db");
     let database_manager = SqliteStorage::new(db_path).unwrap();
 
-    let mut plugin_manager = PluginManager::new(Arc::new(database_manager));
+    let mut plugin_manager =
+        PluginManager::new(tokio_runtime.handle().clone(), Arc::new(database_manager));
     plugin_manager
         .load_plugins_from_dir("target/wasm-plugins")
         .unwrap();

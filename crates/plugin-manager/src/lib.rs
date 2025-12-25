@@ -6,8 +6,12 @@ use extism::{
 use semver::Version;
 use serde_json::{Map, Value};
 use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use tokio::runtime::Handle;
+
+use crate::http::WorkerPool;
 
 mod adapters;
+mod http;
 
 pub type SharedStorage = Arc<dyn Storage + Send + Sync>;
 
@@ -51,18 +55,21 @@ impl Plugin {
 struct PluginContext {
     storage: SharedStorage,
     plugin_id: String,
+    pool: Arc<WorkerPool>,
 }
 
 pub struct PluginManager {
     plugins: HashMap<String, Plugin>,
     storage: SharedStorage,
+    pool: Arc<WorkerPool>,
 }
 
 impl PluginManager {
-    pub fn new(storage: SharedStorage) -> Self {
+    pub fn new(tokio_handle: Handle, storage: SharedStorage) -> Self {
         Self {
             plugins: HashMap::new(),
             storage,
+            pool: Arc::new(WorkerPool::new(tokio_handle, 4, 100)),
         }
     }
 
@@ -105,7 +112,7 @@ impl PluginManager {
     fn load_plugin(&mut self, wasm: Wasm, manifest: PluginManifest) -> Result<()> {
         let plugin_id = manifest.id.clone();
 
-        let extism_manifest = Manifest::new([wasm]);
+        let extism_manifest = Manifest::new([wasm]).with_allowed_host("*");
         let extism_plugin = PluginBuilder::new(&extism_manifest)
             .with_wasi(true)
             .with_function(
@@ -115,6 +122,7 @@ impl PluginManager {
                 UserData::new(PluginContext {
                     storage: Arc::clone(&self.storage),
                     plugin_id: plugin_id.clone(),
+                    pool: Arc::clone(&self.pool),
                 }),
                 get_plugin_data,
             )
@@ -125,6 +133,7 @@ impl PluginManager {
                 UserData::new(PluginContext {
                     storage: Arc::clone(&self.storage),
                     plugin_id: plugin_id.clone(),
+                    pool: Arc::clone(&self.pool),
                 }),
                 set_plugin_data,
             )
@@ -156,4 +165,25 @@ host_fn!(set_plugin_data(user_data: PluginContext; data: Json<Map<String, Value>
     let Json(data) = data;
 
     Ok(adapters::set_plugin_data(&storage, plugin_id, data))
+});
+
+host_fn!(make_request(user_data: PluginContext; url: String) -> String {
+    let context = user_data.get()?;
+    let lock = context.lock().unwrap();
+    let pool = Arc::clone(&lock.pool);
+
+    let request_id = pool.make_request(url).unwrap();
+
+    Ok(request_id.to_string())
+});
+
+host_fn!(poll(user_data: PluginContext; id: String) -> Json<Status> {
+    let context = user_data.get()?;
+    let lock = context.lock().unwrap();
+    let pool = Arc::clone(&lock.pool);
+
+    let request_id = uuid::Uuid::parse_str(&id).unwrap();
+    let status = pool.poll(request_id);
+
+    Ok(Json(status))
 });

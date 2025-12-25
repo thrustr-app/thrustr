@@ -1,3 +1,4 @@
+use crate::{models::PluginData, schema::plugin_data};
 use anyhow::Result;
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection,
@@ -8,8 +9,6 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use domain::Storage;
 use serde_json::Value;
 use std::path::Path;
-
-use crate::{models::PluginData, schema::plugin_data};
 
 mod models;
 mod schema;
