@@ -8,6 +8,7 @@ default-members = ["crates/thrustr"]
 # Local
 domain = { path = "crates/domain" }
 gpui-tokio = { path = "crates/gpui-tokio" }
+paths = { path = "crates/paths" }
 plugin-manager = { path = "crates/plugin-manager" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 

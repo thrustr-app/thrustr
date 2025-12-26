@@ -7,6 +7,7 @@ edition = "2024"
 # Local
 domain.workspace = true
 gpui-tokio.workspace = true
+paths.workspace = true
 plugin-manager.workspace = true
 sqlite-storage.workspace = true
 

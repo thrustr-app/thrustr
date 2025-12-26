@@ -9,14 +9,17 @@ use tokio::runtime;
 mod routes;
 
 fn main() {
-    let tokio_runtime = runtime::Builder::new_multi_thread().build().unwrap();
+    let tokio_runtime = runtime::Builder::new_multi_thread()
+        .build()
+        .expect("Failed to create async runtime");
+
+    let db_path = paths::db_path();
+    let database_manager = SqliteStorage::new(&db_path).expect(&format!(
+        "Failed to initialize database at {}",
+        db_path.display()
+    ));
 
     // TODO
-    let exe_path = std::env::current_exe().unwrap();
-    let exe_dir = exe_path.parent().unwrap();
-    let db_path = exe_dir.join("thrustr.db");
-    let database_manager = SqliteStorage::new(db_path).unwrap();
-
     let mut plugin_manager =
         PluginManager::new(tokio_runtime.handle().clone(), Arc::new(database_manager));
     plugin_manager
