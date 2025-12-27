@@ -1,0 +1,11 @@
+[package]
+name = "theme-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+assets.workspace = true
+gpui.workspace = true
+paste = "1"
+serde.workspace = true
+toml.workspace = true

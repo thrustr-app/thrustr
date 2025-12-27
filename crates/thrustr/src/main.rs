@@ -1,4 +1,5 @@
 use crate::routes::Root;
+use assets::Assets;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
 use plugin_manager::PluginManager;
 use sqlite_storage::SqliteStorage;
@@ -30,8 +31,9 @@ fn main() {
     println!("Loaded Plugins: {:?}", plugins);
     // TODO
 
-    Application::new().run(move |app| {
+    Application::new().with_assets(Assets).run(move |app| {
         gpui_tokio::init_from_handle(app, tokio_runtime.handle().clone());
+        theme_manager::init(app);
 
         app.open_window(
             WindowOptions {

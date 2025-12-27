@@ -5,11 +5,13 @@ edition = "2024"
 
 [dependencies]
 # Local
+assets.workspace = true
 domain.workspace = true
 gpui-tokio.workspace = true
 paths.workspace = true
 plugin-manager.workspace = true
 sqlite-storage.workspace = true
+theme-manager.workspace = true
 
 
 # External

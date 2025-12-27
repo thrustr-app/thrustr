@@ -1,0 +1,11 @@
+[manifest]
+id = "thrustr.dark"
+name = "Dark"
+authors = ["Jorge Pardo"]
+version = "1.0.0"
+description = "The default dark theme for Thrustr."
+
+[colors]
+background = "#1F1F1F"
+
+sidebar_background = "#000000"

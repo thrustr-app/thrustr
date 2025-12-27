@@ -209,6 +209,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "assets"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gpui",
+ "rust-embed",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6288,6 +6297,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "theme-manager"
+version = "0.1.0"
+dependencies = [
+ "assets",
+ "gpui",
+ "paste",
+ "serde",
+ "toml 0.9.8",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6341,12 +6361,14 @@ name = "thrustr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "assets",
  "domain",
  "gpui",
  "gpui-tokio",
  "paths",
  "plugin-manager",
  "sqlite-storage",
+ "theme-manager",
  "tokio",
 ]
 
