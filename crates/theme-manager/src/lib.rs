@@ -6,6 +6,11 @@ mod theme;
 
 pub use theme::*;
 
+type Result<T> = std::result::Result<T, ThemeError>;
+pub enum ThemeError {
+    ThemeNotFound(String),
+}
+
 pub fn init(cx: &mut App) {
     let default_theme = load_default_theme();
     let default_id = default_theme.id().to_owned();
@@ -28,6 +33,21 @@ pub struct ThemeManager {
 }
 
 impl ThemeManager {
+    /// List the manifests of all available themes.
+    pub fn list_themes(&self) -> Vec<&ThemeManifest> {
+        self.themes.values().map(|t| &t.manifest).collect()
+    }
+
+    /// Set the active theme by its ID.
+    pub fn set_active_theme(&mut self, id: String) -> Result<()> {
+        if self.themes.contains_key(&id) {
+            self.active_theme = id;
+            Ok(())
+        } else {
+            Err(ThemeError::ThemeNotFound(id))
+        }
+    }
+
     /// Get the currently active theme or the default theme as a fallback.
     fn active_theme(&self) -> &Theme {
         self.themes
@@ -40,13 +60,15 @@ impl ThemeManager {
 impl Global for ThemeManager {}
 
 pub trait ThemeExt {
-    fn theme(&self) -> &Theme;
+    fn theme_manager(&self) -> &ThemeManager;
+    fn theme(&self) -> &Theme {
+        self.theme_manager().active_theme()
+    }
 }
 
 impl ThemeExt for App {
-    fn theme(&self) -> &Theme {
-        let manager = self.global::<ThemeManager>();
-        manager.active_theme()
+    fn theme_manager(&self) -> &ThemeManager {
+        self.global::<ThemeManager>()
     }
 }
 
