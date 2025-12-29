@@ -6,6 +6,8 @@ version = "1.0.0"
 description = "The default dark theme for Thrustr."
 
 [colors]
-background = "#1F1F1F"
+background = "#000000"
 
 sidebar_background = "#000000"
+
+border = "#373737"

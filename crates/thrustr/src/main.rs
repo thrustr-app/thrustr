@@ -21,15 +21,14 @@ fn main() {
     ));
 
     // TODO
-    let mut plugin_manager =
+    /*let mut plugin_manager =
         PluginManager::new(tokio_runtime.handle().clone(), Arc::new(database_manager));
     plugin_manager
         .load_plugins_from_dir("target/wasm-plugins")
         .unwrap();
 
     let plugins = plugin_manager.list_plugins();
-    println!("Loaded Plugins: {:?}", plugins);
-    // TODO
+    println!("Loaded Plugins: {:?}", plugins);*/
 
     Application::new().with_assets(Assets).run(move |app| {
         gpui_tokio::init_from_handle(app, tokio_runtime.handle().clone());
@@ -37,8 +36,10 @@ fn main() {
 
         app.open_window(
             WindowOptions {
+                focus: true,
                 titlebar: Some(TitlebarOptions {
                     title: Some("Thrustr".into()),
+                    appears_transparent: true,
                     ..Default::default()
                 }),
                 ..Default::default()

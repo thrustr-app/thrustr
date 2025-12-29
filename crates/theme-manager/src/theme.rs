@@ -1,4 +1,4 @@
-use gpui::Rgba;
+use gpui::Hsla;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -25,14 +25,16 @@ pub struct ThemeManifest {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ThemeColors {
-    pub background: Rgba,
-    pub sidebar_background: Rgba,
+    pub background: Hsla,
+    pub sidebar_background: Hsla,
+    pub border: Hsla,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct PartialThemeColors {
-    pub background: Option<Rgba>,
-    pub sidebar_background: Option<Rgba>,
+    pub background: Option<Hsla>,
+    pub sidebar_background: Option<Hsla>,
+    pub border: Option<Hsla>,
 }
 
 impl PartialThemeColors {
@@ -40,6 +42,7 @@ impl PartialThemeColors {
         ThemeColors {
             background: self.background.unwrap_or(other.background),
             sidebar_background: self.sidebar_background.unwrap_or(other.sidebar_background),
+            border: self.border.unwrap_or(other.border),
         }
     }
 }
