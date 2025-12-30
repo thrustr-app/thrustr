@@ -9,11 +9,8 @@ domain.workspace = true
 
 # External
 anyhow.workspace = true
-dashmap.workspace = true
-extism.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tokio-mpmc.workspace = true
 uuid.workspace = true

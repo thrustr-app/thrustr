@@ -1,16 +1,14 @@
-mod pdk;
+pub fn add(left: u64, right: u64) -> u64 {
+    left + right
+}
 
-use extism_pdk::*;
-use pdk::*;
-use serde_json::{Map, Value};
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub(crate) fn initialize() -> Result<(), Error> {
-    get_plugin_data()?;
-
-    let dummy_auth_call_response =
-        http::request::<()>(&HttpRequest::new("https://httpbin.org/get"), None)?;
-    let json: Map<String, Value> = serde_json::from_slice(&dummy_auth_call_response.body())?;
-
-    set_plugin_data(json)?;
-    Ok(())
+    #[test]
+    fn it_works() {
+        let result = add(2, 2);
+        assert_eq!(result, 4);
+    }
 }

@@ -1,21 +1,6 @@
 [package]
 name = "epic-games"
 version = "0.1.0"
-authors = ["Jorge Pardo"]
-description = "A plugin to interact with the Epic Games Store."
-edition = "2021"
-
-[package.metadata.plugin]
-display_name = "Epic Games"
-
-[lib]
-name = "epicgames"
-crate-type = ["cdylib"]
+edition = "2024"
 
 [dependencies]
-extism-pdk.workspace = true
-chrono = { version = "0.4", features = ["serde"] }
-serde.workspace = true
-serde_json.workspace = true
-base64-serde = "0.7"
-base64 = "0.21"

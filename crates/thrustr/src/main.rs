@@ -3,7 +3,6 @@ use assets::Assets;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
 use plugin_manager::PluginManager;
 use sqlite_storage::SqliteStorage;
-use std::sync::Arc;
 use tokio::runtime;
 
 #[path = "routes/root.rs"]
