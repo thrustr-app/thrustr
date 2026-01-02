@@ -1,14 +1,12 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use anyhow::Result;
+use async_trait::async_trait;
+use domain::Storefront;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub struct EpicGames;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+#[async_trait]
+impl Storefront for EpicGames {
+    async fn init(&self) -> Result<()> {
+        Ok(())
     }
 }

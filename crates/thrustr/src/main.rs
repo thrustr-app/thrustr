@@ -1,7 +1,6 @@
 use crate::routes::Root;
 use assets::Assets;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
-use plugin_manager::PluginManager;
 use sqlite_storage::SqliteStorage;
 use tokio::runtime;
 
@@ -14,7 +13,7 @@ fn main() {
         .expect("Failed to create async runtime");
 
     let db_path = paths::db_path();
-    let database_manager = SqliteStorage::new(&db_path).expect(&format!(
+    let _database_manager = SqliteStorage::new(&db_path).expect(&format!(
         "Failed to initialize database at {}",
         db_path.display()
     ));
@@ -29,11 +28,12 @@ fn main() {
     let plugins = plugin_manager.list_plugins();
     println!("Loaded Plugins: {:?}", plugins);*/
 
-    Application::new().with_assets(Assets).run(move |app| {
-        gpui_tokio::init_from_handle(app, tokio_runtime.handle().clone());
-        theme_manager::init(app);
+    Application::new().with_assets(Assets).run(move |cx| {
+        gpui_tokio::init_from_handle(cx, tokio_runtime.handle().clone());
+        theme_manager::init(cx);
+        plugin_manager::init(cx);
 
-        app.open_window(
+        cx.open_window(
             WindowOptions {
                 focus: true,
                 titlebar: Some(TitlebarOptions {
@@ -43,7 +43,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |window, app| app.new(|cx| Root::new(window, cx)),
+            |window, cx| cx.new(|cx| Root::new(window, cx)),
         )
         .unwrap();
     });

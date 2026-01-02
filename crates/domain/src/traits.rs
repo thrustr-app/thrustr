@@ -1,4 +1,5 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use serde_json::Value;
 
 /// Abstraction over persistent storage.
@@ -25,4 +26,9 @@ pub trait Storage {
     /// - `Ok(false)` if no data existed for `plugin_id`
     /// - `Err(_)` if the storage operation fails
     fn delete_plugin_data(&self, plugin_id: &str) -> Result<bool>;
+}
+
+#[async_trait]
+pub trait Storefront {
+    async fn init(&self) -> Result<()>;
 }

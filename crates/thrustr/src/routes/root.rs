@@ -1,4 +1,4 @@
-use gpui::{BoxShadow, Context, IntoElement, ParentElement, Render, Styled, Window, div, rems};
+use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div, rems};
 use theme_manager::ThemeExt;
 
 pub struct Root {}
