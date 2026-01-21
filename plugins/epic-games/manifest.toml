@@ -1,0 +1,4 @@
+[plugin]
+id = "epic-games"
+name = "Epic Games Plugin"
+version = "0.0.1"
