@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# External
+# Local
 domain.workspace = true
 
-# Local
+# External
 anyhow.workspace = true
 diesel = { version = "2.3.0", features = ["sqlite", "serde_json", "r2d2", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = "2.3"

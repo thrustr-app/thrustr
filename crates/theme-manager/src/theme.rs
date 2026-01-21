@@ -31,23 +31,6 @@ pub struct ThemeColors {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PartialThemeColors {
-    pub background: Option<Hsla>,
-    pub sidebar_background: Option<Hsla>,
-    pub border: Option<Hsla>,
-}
-
-impl PartialThemeColors {
-    pub fn merge(self, other: &ThemeColors) -> ThemeColors {
-        ThemeColors {
-            background: self.background.unwrap_or(other.background),
-            sidebar_background: self.sidebar_background.unwrap_or(other.sidebar_background),
-            border: self.border.unwrap_or(other.border),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub struct PartialTheme {
     pub manifest: ThemeManifest,
     pub colors: Option<PartialThemeColors>,
@@ -62,6 +45,23 @@ impl PartialTheme {
                 .take()
                 .map(|c| c.merge(&other.colors))
                 .unwrap_or_else(|| other.colors.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PartialThemeColors {
+    pub background: Option<Hsla>,
+    pub sidebar_background: Option<Hsla>,
+    pub border: Option<Hsla>,
+}
+
+impl PartialThemeColors {
+    pub fn merge(self, other: &ThemeColors) -> ThemeColors {
+        ThemeColors {
+            background: self.background.unwrap_or(other.background),
+            sidebar_background: self.sidebar_background.unwrap_or(other.sidebar_background),
+            border: self.border.unwrap_or(other.border),
         }
     }
 }
