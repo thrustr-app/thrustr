@@ -1,12 +1,11 @@
-use anyhow::Result;
-use async_trait::async_trait;
-use domain::Storefront;
+use thrustr_plugin::{Storefront, register_storefront};
 
 pub struct EpicGames;
 
-#[async_trait]
 impl Storefront for EpicGames {
-    async fn init(&self) -> Result<()> {
+    fn init() -> Result<(), String> {
         Ok(())
     }
 }
+
+register_storefront!(EpicGames);

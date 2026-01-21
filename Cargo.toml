@@ -13,10 +13,10 @@ paths = { path = "crates/paths" }
 plugin-manager = { path = "crates/plugin-manager" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
+thrustr-plugin = { path = "crates/thrustr-plugin" }
 
 # External
 anyhow = "1"
-async-trait = "0.1.89"
 gpui = "0.2.2"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }

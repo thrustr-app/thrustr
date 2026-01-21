@@ -1,0 +1,9 @@
+package thrustr:storefront;
+
+interface storefront {
+    init: func() -> result<_, string>;
+}
+
+world storefront-plugin {
+    export storefront;
+}
