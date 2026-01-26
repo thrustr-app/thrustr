@@ -1,20 +1,14 @@
-use std::sync::Arc;
-
 use crate::routes::Root;
 use assets::Assets;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
 use plugin_manager::PluginManagerExt;
 use sqlite_storage::SqliteStorage;
-use tokio::runtime;
+use std::sync::Arc;
 
 #[path = "routes/root.rs"]
 mod routes;
 
 fn main() {
-    let tokio_runtime = runtime::Builder::new_multi_thread()
-        .build()
-        .expect("Failed to create async runtime");
-
     let db_path = paths::db_path();
     let sqlite_storage = SqliteStorage::new(&db_path).expect(&format!(
         "Failed to initialize database at {}",
@@ -23,12 +17,13 @@ fn main() {
     let storage = Arc::new(sqlite_storage);
 
     Application::new().with_assets(Assets).run(move |cx| {
-        gpui_tokio::init_from_handle(cx, tokio_runtime.handle().clone());
+        gpui_tokio::init(cx);
         theme_manager::init(cx);
         plugin_manager::init(cx, storage);
 
         let plugin_manager = cx.plugin_manager();
 
+        // TODO: For testing purposes for now.
         cx.background_executor()
             .block(plugin_manager.load_plugins_from_dir("target/plugins"))
             .unwrap();
@@ -39,6 +34,7 @@ fn main() {
             plugin.init().await.unwrap();
         })
         .detach();
+        // TODO-END.
 
         cx.open_window(
             WindowOptions {

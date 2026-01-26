@@ -65,23 +65,16 @@ impl PluginState {
 }
 
 impl kv_store::Host for PluginState {
-    async fn get(&mut self, key: String) -> Result<Vec<u8>, kv_store::Error> {
-        let data = self.storage.get_plugin_data(&self.id, &key);
-
-        match data {
-            Err(err) => Err(kv_store::Error::Internal(err.to_string())),
-            Ok(None) => Err(kv_store::Error::NotFound),
-            Ok(Some(bytes)) => Ok(bytes),
-        }
+    async fn get(&mut self, key: String) -> Result<Option<Vec<u8>>, kv_store::Error> {
+        self.storage
+            .get_plugin_data(&self.id, &key)
+            .map_err(|e| kv_store::Error::Internal(e.to_string()))
     }
 
     async fn set(&mut self, key: String, value: Vec<u8>) -> Result<(), kv_store::Error> {
-        let result = self.storage.set_plugin_data(&self.id, &key, value);
-
-        match result {
-            Err(err) => Err(kv_store::Error::Internal(err.to_string())),
-            Ok(()) => Ok(()),
-        }
+        self.storage
+            .set_plugin_data(&self.id, &key, value)
+            .map_err(|e| kv_store::Error::Internal(e.to_string()))
     }
 }
 
