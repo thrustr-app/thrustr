@@ -1797,7 +1797,6 @@ dependencies = [
  "anyhow",
  "semver",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1937,6 +1936,8 @@ dependencies = [
 name = "epic-games"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "thrustr-plugin",
 ]
 

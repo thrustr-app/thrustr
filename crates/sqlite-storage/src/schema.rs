@@ -1,6 +1,7 @@
 diesel::table! {
     plugin_data (plugin_id) {
         plugin_id -> Text,
-        data -> Jsonb,
+        key -> Text,
+        value -> Binary,
     }
 }

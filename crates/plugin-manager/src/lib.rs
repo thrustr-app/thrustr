@@ -1,7 +1,7 @@
 use crate::plugin::{Plugin, PluginState};
 use anyhow::Result;
 use dashmap::DashMap;
-use domain::PluginManifest;
+use domain::{PluginManifest, Storage};
 use gpui::{App, Global};
 use std::{
     fs::{self, File},
@@ -15,6 +15,8 @@ use wasmtime::{
 };
 use zip::ZipArchive;
 
+mod plugin;
+
 bindgen!({
     path: "../thrustr-plugin/wit",
     world: "storefront",
@@ -22,20 +24,21 @@ bindgen!({
     exports: { default: async | store }
 });
 
-mod plugin;
-
-pub fn init(cx: &mut App) {
+pub fn init(cx: &mut App, storage: Arc<dyn Storage>) {
     let mut config = Config::new();
     config.async_support(true).wasm_component_model(true);
 
     let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
     let mut linker = Linker::new(&engine);
     wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
+    Storefront::add_to_linker::<_, PluginState>(&mut linker, |state| state)
+        .expect("Failed to add Storefront imports to linker");
 
     cx.set_global(PluginManager {
         engine,
         linker: Arc::new(linker),
         plugins: Arc::new(DashMap::new()),
+        storage,
     });
 }
 
@@ -44,6 +47,7 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     plugins: Arc<DashMap<String, Arc<Plugin>>>,
+    storage: Arc<dyn Storage>,
 }
 
 impl PluginManager {
@@ -77,7 +81,7 @@ impl PluginManager {
         };
 
         let component = Component::from_binary(&self.engine, &wasm_bytes)?;
-        let state = PluginState::new();
+        let state = PluginState::new(&manifest.plugin.id, self.storage.clone());
         let mut store = Store::new(&self.engine, state);
 
         let storefront =

@@ -1,7 +1,8 @@
-use crate::Storefront;
+use crate::{Storefront, thrustr::storefront::kv_store};
 use anyhow::Result;
-use domain::PluginManifest;
-use wasmtime::Store;
+use domain::{PluginManifest, Storage};
+use std::sync::Arc;
+use wasmtime::{Store, component::HasData};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use xutex::AsyncMutex;
 
@@ -47,16 +48,45 @@ impl Plugin {
 pub struct PluginState {
     ctx: WasiCtx,
     table: ResourceTable,
+    id: String,
+    storage: Arc<dyn Storage>,
 }
 
 impl PluginState {
-    pub fn new() -> Self {
-        let ctx = WasiCtx::builder().build();
+    pub fn new(id: &str, storage: Arc<dyn Storage>) -> Self {
+        let ctx = WasiCtx::builder().inherit_stdout().build();
         Self {
             ctx,
             table: ResourceTable::new(),
+            id: id.to_owned(),
+            storage,
         }
     }
+}
+
+impl kv_store::Host for PluginState {
+    async fn get(&mut self, key: String) -> Result<Vec<u8>, kv_store::Error> {
+        let data = self.storage.get_plugin_data(&self.id, &key);
+
+        match data {
+            Err(err) => Err(kv_store::Error::Internal(err.to_string())),
+            Ok(None) => Err(kv_store::Error::NotFound),
+            Ok(Some(bytes)) => Ok(bytes),
+        }
+    }
+
+    async fn set(&mut self, key: String, value: Vec<u8>) -> Result<(), kv_store::Error> {
+        let result = self.storage.set_plugin_data(&self.id, &key, value);
+
+        match result {
+            Err(err) => Err(kv_store::Error::Internal(err.to_string())),
+            Ok(()) => Ok(()),
+        }
+    }
+}
+
+impl HasData for PluginState {
+    type Data<'a> = &'a mut PluginState;
 }
 
 impl WasiView for PluginState {

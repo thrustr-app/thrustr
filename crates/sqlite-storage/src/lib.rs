@@ -7,7 +7,6 @@ use diesel::{
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use domain::Storage;
-use serde_json::Value;
 use std::path::Path;
 
 mod models;
@@ -39,24 +38,26 @@ impl SqliteStorage {
 }
 
 impl Storage for SqliteStorage {
-    fn get_plugin_data(&self, plugin_id: &str) -> Result<Option<Value>> {
+    fn get_plugin_data(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>> {
         use crate::plugin_data::dsl;
 
         let mut conn = self.pool.get()?;
         let result: Option<PluginData> = dsl::plugin_data
             .filter(dsl::plugin_id.eq(plugin_id))
+            .filter(dsl::key.eq(key))
             .first::<PluginData>(&mut conn)
             .optional()?;
 
-        Ok(result.map(|pd| pd.data))
+        Ok(result.map(|pd| pd.value))
     }
 
-    fn set_plugin_data(&self, plugin_id: &str, data: Value) -> Result<()> {
+    fn set_plugin_data(&self, plugin_id: &str, key: &str, data: Vec<u8>) -> Result<()> {
         use crate::plugin_data::dsl;
 
         let value = PluginData {
             plugin_id: plugin_id.to_owned(),
-            data,
+            key: key.to_owned(),
+            value: data,
         };
 
         let mut conn = self.pool.get()?;
@@ -64,19 +65,9 @@ impl Storage for SqliteStorage {
             .values(&value)
             .on_conflict(dsl::plugin_id)
             .do_update()
-            .set(dsl::data.eq(excluded(dsl::data)))
+            .set(dsl::value.eq(excluded(dsl::value)))
             .execute(&mut conn)?;
 
         Ok(())
-    }
-
-    fn delete_plugin_data(&self, plugin_id: &str) -> Result<bool> {
-        use crate::plugin_data::dsl;
-
-        let mut conn = self.pool.get()?;
-        let affected_rows = diesel::delete(dsl::plugin_data.filter(dsl::plugin_id.eq(plugin_id)))
-            .execute(&mut conn)?;
-
-        Ok(affected_rows > 0)
     }
 }

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::routes::Root;
 use assets::Assets;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
@@ -14,15 +16,16 @@ fn main() {
         .expect("Failed to create async runtime");
 
     let db_path = paths::db_path();
-    let _database_manager = SqliteStorage::new(&db_path).expect(&format!(
+    let sqlite_storage = SqliteStorage::new(&db_path).expect(&format!(
         "Failed to initialize database at {}",
         db_path.display()
     ));
+    let storage = Arc::new(sqlite_storage);
 
     Application::new().with_assets(Assets).run(move |cx| {
         gpui_tokio::init_from_handle(cx, tokio_runtime.handle().clone());
         theme_manager::init(cx);
-        plugin_manager::init(cx);
+        plugin_manager::init(cx, storage);
 
         let plugin_manager = cx.plugin_manager();
 
