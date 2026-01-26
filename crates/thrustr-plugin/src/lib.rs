@@ -1,7 +1,7 @@
 use wit_bindgen::generate;
 
 generate!({
-    world: "storefront-plugin",
+    world: "storefront",
     pub_export_macro: true,
 });
 
@@ -10,7 +10,7 @@ macro_rules! register_storefront {
     ($plugin_type:ty) => {
         struct Guest;
 
-        impl $crate::exports::thrustr::storefront::storefront::Guest for Guest {
+        impl $crate::exports::thrustr::storefront::storefront_provider::Guest for Guest {
             fn init() -> Result<(), String> {
                 <$plugin_type as $crate::Storefront>::init()
             }
@@ -20,4 +20,4 @@ macro_rules! register_storefront {
     };
 }
 
-pub use exports::thrustr::storefront::storefront::Guest as Storefront;
+pub use exports::thrustr::storefront::storefront_provider::Guest as Storefront;

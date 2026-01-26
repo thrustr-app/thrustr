@@ -1,6 +1,7 @@
 use crate::routes::Root;
 use assets::Assets;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
+use plugin_manager::PluginManagerExt;
 use sqlite_storage::SqliteStorage;
 use tokio::runtime;
 
@@ -18,20 +19,23 @@ fn main() {
         db_path.display()
     ));
 
-    // TODO
-    /*let mut plugin_manager =
-        PluginManager::new(tokio_runtime.handle().clone(), Arc::new(database_manager));
-    plugin_manager
-        .load_plugins_from_dir("target/wasm-plugins")
-        .unwrap();
-
-    let plugins = plugin_manager.list_plugins();
-    println!("Loaded Plugins: {:?}", plugins);*/
-
     Application::new().with_assets(Assets).run(move |cx| {
         gpui_tokio::init_from_handle(cx, tokio_runtime.handle().clone());
         theme_manager::init(cx);
         plugin_manager::init(cx);
+
+        let plugin_manager = cx.plugin_manager();
+
+        cx.background_executor()
+            .block(plugin_manager.load_plugins_from_dir("target/plugins"))
+            .unwrap();
+
+        let plugin = plugin_manager.get_plugin("epic-games").unwrap();
+
+        cx.background_spawn(async move {
+            plugin.init().await.unwrap();
+        })
+        .detach();
 
         cx.open_window(
             WindowOptions {

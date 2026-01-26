@@ -17,16 +17,15 @@ thrustr-plugin = { path = "crates/thrustr-plugin" }
 
 # External
 anyhow = "1"
+futures = "0.3"
 gpui = "0.2.2"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+smol = "2"
 tokio = { version = "1.48", features = ["full"] }
 toml = "0.9"
-uuid = { version = "1.19", features = ["v4", "serde"] }
-
-# Plugins
-epic-games = { path = "plugins/epic-games" }
+xutex = "0.2"
 
 [profile.release]
 panic = "abort"
