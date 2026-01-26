@@ -63,7 +63,7 @@ impl Storage for SqliteStorage {
         let mut conn = self.pool.get()?;
         diesel::insert_into(dsl::plugin_data)
             .values(&value)
-            .on_conflict(dsl::plugin_id)
+            .on_conflict((dsl::plugin_id, dsl::key))
             .do_update()
             .set(dsl::value.eq(excluded(dsl::value)))
             .execute(&mut conn)?;
