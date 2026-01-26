@@ -32,15 +32,10 @@ impl Plugin {
     pub async fn init(&self) -> Result<(), String> {
         let mut store = self.store.lock().await;
 
-        store
-            .run_concurrent(async |accessor| {
-                self.storefront
-                    .thrustr_storefront_storefront_provider()
-                    .call_init(accessor)
-                    .await
-            })
+        self.storefront
+            .thrustr_storefront_storefront_provider()
+            .call_init(&mut *store)
             .await
-            .unwrap()
             .unwrap()
     }
 }

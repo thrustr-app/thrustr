@@ -21,7 +21,7 @@ bindgen!({
     path: "../thrustr-plugin/wit",
     world: "storefront",
     imports: { default: async },
-    exports: { default: async | store }
+    exports: { default: async }
 });
 
 pub fn init(cx: &mut App, storage: Arc<dyn Storage>) {
