@@ -14,7 +14,6 @@ interface kv-store {
 interface storefront-provider {
     variant error {
         not-autorized(string),
-        network-error(string),
         other(string),
     }
 
