@@ -2,6 +2,7 @@ use crate::{models::PluginData, schema::plugin_data};
 use anyhow::Result;
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection,
+    TextExpressionMethods,
     r2d2::{ConnectionManager, Pool},
     upsert::excluded,
 };
@@ -69,5 +70,35 @@ impl Storage for SqliteStorage {
             .execute(&mut conn)?;
 
         Ok(())
+    }
+
+    fn delete_plugin_data(&self, plugin_id: &str, key: &str) -> Result<()> {
+        use crate::plugin_data::dsl;
+
+        let mut conn = self.pool.get()?;
+        diesel::delete(
+            dsl::plugin_data
+                .filter(dsl::plugin_id.eq(plugin_id))
+                .filter(dsl::key.eq(key)),
+        )
+        .execute(&mut conn)?;
+
+        Ok(())
+    }
+
+    fn list_plugin_data(&self, plugin_id: &str, prefix: Option<&str>) -> Result<Vec<String>> {
+        use crate::plugin_data::dsl;
+
+        let mut conn = self.pool.get()?;
+        let mut query = dsl::plugin_data
+            .filter(dsl::plugin_id.eq(plugin_id))
+            .select(dsl::key)
+            .into_boxed();
+
+        if let Some(p) = prefix {
+            query = query.filter(dsl::key.like(format!("{p}%")));
+        }
+
+        Ok(query.load::<String>(&mut conn)?)
     }
 }

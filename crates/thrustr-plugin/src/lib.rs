@@ -1,4 +1,4 @@
-mod kv_store;
+pub mod kv_store;
 
 #[doc(hidden)]
 pub mod wit {
@@ -10,7 +10,7 @@ pub mod wit {
     });
 }
 
-pub use kv_store::KvStore;
+pub use wit::exports::thrustr::storefront::storefront_provider::Error as StorefrontProviderError;
 pub use wit::exports::thrustr::storefront::storefront_provider::Guest as Storefront;
 
 #[macro_export]
@@ -19,7 +19,7 @@ macro_rules! register_storefront {
         struct Guest;
 
         impl $crate::wit::exports::thrustr::storefront::storefront_provider::Guest for Guest {
-            fn init() -> Result<(), String> {
+            fn init() -> Result<(), $crate::StorefrontProviderError> {
                 <$plugin_type as $crate::Storefront>::init()
             }
         }

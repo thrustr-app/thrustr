@@ -1,5 +1,5 @@
 mod plugin;
-mod traits;
+mod storage;
 
 pub use plugin::*;
-pub use traits::*;
+pub use storage::*;
