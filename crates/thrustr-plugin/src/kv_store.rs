@@ -8,7 +8,7 @@ pub use crate::wit::thrustr::storefront::kv_store::Error as KvStoreError;
 pub struct KvStore;
 
 impl KvStore {
-    pub fn get(key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
+    pub fn get_bytes(key: &str) -> Result<Option<Vec<u8>>, KvStoreError> {
         Ok(get(key)?)
     }
 
@@ -29,7 +29,7 @@ impl KvStore {
         }))
     }
 
-    pub fn set(key: &str, value: &[u8]) -> Result<(), KvStoreError> {
+    pub fn set_bytes(key: &str, value: &[u8]) -> Result<(), KvStoreError> {
         Ok(set(key, value)?)
     }
 
