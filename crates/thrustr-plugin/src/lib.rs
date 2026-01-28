@@ -1,3 +1,4 @@
+pub mod config;
 pub mod kv_store;
 
 #[doc(hidden)]

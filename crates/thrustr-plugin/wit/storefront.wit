@@ -11,6 +11,14 @@ interface kv-store {
     %list: func(prefix: option<string>) -> result<list<string>, error>;
 }
 
+interface config {
+    variant error {
+        internal(string),
+    }
+
+    get: func(field-id: string) -> result<string, error>;
+}
+
 interface storefront-provider {
     variant error {
         not-autorized(string),
@@ -21,6 +29,7 @@ interface storefront-provider {
 }
 
 world storefront {
+    import config;
     import kv-store;
     export storefront-provider;
 }

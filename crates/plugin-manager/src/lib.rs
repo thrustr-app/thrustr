@@ -1,7 +1,7 @@
 use crate::plugin::{Plugin, PluginState};
 use anyhow::Result;
 use dashmap::DashMap;
-use domain::{PluginManifest, Storage};
+use domain::{PluginManifest, PluginStorage};
 use gpui::{App, Global};
 use std::{
     fs::{self, File},
@@ -24,7 +24,7 @@ bindgen!({
     exports: { default: async }
 });
 
-pub fn init(cx: &mut App, storage: Arc<dyn Storage>) {
+pub fn init(cx: &mut App, storage: Arc<dyn PluginStorage>) {
     let mut config = Config::new();
     config.async_support(true).wasm_component_model(true);
 
@@ -47,7 +47,7 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     plugins: Arc<DashMap<String, Arc<Plugin>>>,
-    storage: Arc<dyn Storage>,
+    storage: Arc<dyn PluginStorage>,
 }
 
 impl PluginManager {

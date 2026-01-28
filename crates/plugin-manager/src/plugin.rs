@@ -1,10 +1,13 @@
 use crate::{
     Storefront,
     exports::thrustr::storefront::storefront_provider::Error as StorefrontProviderError,
-    thrustr::storefront::kv_store::{Error as KvStoreError, Host as KvStoreHost},
+    thrustr::storefront::{
+        config::{Error as ConfigError, Host as ConfigHost},
+        kv_store::{Error as KvStoreError, Host as KvStoreHost},
+    },
 };
 use anyhow::Result;
-use domain::{PluginManifest, Storage};
+use domain::{PluginManifest, PluginStorage};
 use std::sync::Arc;
 use wasmtime::{Store, component::HasData};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
@@ -14,11 +17,11 @@ pub struct PluginState {
     ctx: WasiCtx,
     table: ResourceTable,
     id: String,
-    storage: Arc<dyn Storage>,
+    storage: Arc<dyn PluginStorage>,
 }
 
 impl PluginState {
-    pub fn new(id: &str, storage: Arc<dyn Storage>) -> Self {
+    pub fn new(id: &str, storage: Arc<dyn PluginStorage>) -> Self {
         let ctx = WasiCtx::builder().inherit_stdout().build();
         Self {
             ctx,
@@ -32,26 +35,35 @@ impl PluginState {
 impl KvStoreHost for PluginState {
     async fn get(&mut self, key: String) -> Result<Option<Vec<u8>>, KvStoreError> {
         self.storage
-            .get_plugin_data(&self.id, &key)
+            .get_data(&self.id, &key)
             .map_err(|e| KvStoreError::Internal(e.to_string()))
     }
 
     async fn set(&mut self, key: String, value: Vec<u8>) -> Result<(), KvStoreError> {
         self.storage
-            .set_plugin_data(&self.id, &key, value)
+            .set_data(&self.id, &key, value)
             .map_err(|e| KvStoreError::Internal(e.to_string()))
     }
 
     async fn delete(&mut self, key: String) -> Result<(), KvStoreError> {
         self.storage
-            .delete_plugin_data(&self.id, &key)
+            .delete_data(&self.id, &key)
             .map_err(|e| KvStoreError::Internal(e.to_string()))
     }
 
     async fn list(&mut self, prefix: Option<String>) -> Result<Vec<String>, KvStoreError> {
         self.storage
-            .list_plugin_data(&self.id, prefix.as_deref())
+            .list_data(&self.id, prefix.as_deref())
             .map_err(|e| KvStoreError::Internal(e.to_string()))
+    }
+}
+
+impl ConfigHost for PluginState {
+    async fn get(&mut self, field_id: String) -> Result<String, ConfigError> {
+        self.storage
+            .get_config(&self.id, &field_id)
+            .map(|v| v.unwrap_or_default())
+            .map_err(|e| ConfigError::Internal(e.to_string()))
     }
 }
 

@@ -1,4 +1,7 @@
-use crate::{models::PluginData, schema::plugin_data};
+use crate::{
+    models::{PluginConfig, PluginData},
+    schema::{plugin_config, plugin_data},
+};
 use anyhow::Result;
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection,
@@ -7,7 +10,7 @@ use diesel::{
     upsert::excluded,
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use domain::Storage;
+use domain::{PluginStorage, Storage};
 use std::path::Path;
 
 mod models;
@@ -38,8 +41,10 @@ impl SqliteStorage {
     }
 }
 
-impl Storage for SqliteStorage {
-    fn get_plugin_data(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>> {
+impl Storage for SqliteStorage {}
+
+impl PluginStorage for SqliteStorage {
+    fn get_data(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>> {
         use crate::plugin_data::dsl;
 
         let mut conn = self.pool.get()?;
@@ -52,7 +57,7 @@ impl Storage for SqliteStorage {
         Ok(result.map(|pd| pd.value))
     }
 
-    fn set_plugin_data(&self, plugin_id: &str, key: &str, data: Vec<u8>) -> Result<()> {
+    fn set_data(&self, plugin_id: &str, key: &str, data: Vec<u8>) -> Result<()> {
         use crate::plugin_data::dsl;
 
         let value = PluginData {
@@ -72,7 +77,7 @@ impl Storage for SqliteStorage {
         Ok(())
     }
 
-    fn delete_plugin_data(&self, plugin_id: &str, key: &str) -> Result<()> {
+    fn delete_data(&self, plugin_id: &str, key: &str) -> Result<()> {
         use crate::plugin_data::dsl;
 
         let mut conn = self.pool.get()?;
@@ -86,7 +91,7 @@ impl Storage for SqliteStorage {
         Ok(())
     }
 
-    fn list_plugin_data(&self, plugin_id: &str, prefix: Option<&str>) -> Result<Vec<String>> {
+    fn list_data(&self, plugin_id: &str, prefix: Option<&str>) -> Result<Vec<String>> {
         use crate::plugin_data::dsl;
 
         let mut conn = self.pool.get()?;
@@ -100,5 +105,18 @@ impl Storage for SqliteStorage {
         }
 
         Ok(query.load::<String>(&mut conn)?)
+    }
+
+    fn get_config(&self, plugin_id: &str, field_id: &str) -> Result<Option<String>> {
+        use crate::plugin_config::dsl;
+
+        let mut conn = self.pool.get()?;
+        let result = dsl::plugin_config
+            .filter(dsl::plugin_id.eq(plugin_id))
+            .filter(dsl::field_id.eq(field_id))
+            .first::<PluginConfig>(&mut conn)
+            .optional()?;
+
+        Ok(result.map(|pd| pd.value))
     }
 }

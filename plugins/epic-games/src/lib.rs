@@ -1,9 +1,14 @@
-use thrustr_plugin::{Storefront, StorefrontProviderError, kv_store::KvStore, register_storefront};
+use thrustr_plugin::{
+    Storefront, StorefrontProviderError, config::Config, kv_store::KvStore, register_storefront,
+};
 
 pub struct EpicGames;
 
 impl Storefront for EpicGames {
     fn init() -> Result<(), StorefrontProviderError> {
+        let some_config = Config::get("username")?;
+        println!("Username: {some_config}");
+
         let list = KvStore::list(None)?;
         println!("{:?}", list);
 
