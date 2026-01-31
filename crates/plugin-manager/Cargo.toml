@@ -16,5 +16,6 @@ serde_json.workspace = true
 toml.workspace = true
 wasmtime = "41"
 wasmtime-wasi = "41"
+wasmtime-wasi-http = "41"
 xutex.workspace = true
 zip = { version = "2", default-features = false, features = ["deflate"] }

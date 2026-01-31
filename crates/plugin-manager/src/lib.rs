@@ -33,6 +33,8 @@ pub fn init(cx: &mut App, storage: Arc<dyn PluginStorage>) {
     wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
     Storefront::add_to_linker::<_, PluginState>(&mut linker, |state| state)
         .expect("Failed to add Storefront imports to linker");
+    wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)
+        .expect("Failed to add WASI HTTP to linker");
 
     cx.set_global(PluginManager {
         engine,

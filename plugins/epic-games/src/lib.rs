@@ -1,6 +1,11 @@
+use serde_json::Value;
 use thrustr_plugin::{
     Storefront, StorefrontProviderError, config::Config, kv_store::KvStore, register_storefront,
 };
+
+use crate::api::models::AuthResponse;
+
+mod api;
 
 pub struct EpicGames;
 
@@ -23,6 +28,13 @@ impl Storefront for EpicGames {
             println!("Exists: {}", exists);
         }
 
+        Ok(())
+    }
+
+    fn auth(_url: String, body: Vec<u8>) -> Result<(), StorefrontProviderError> {
+        let response: AuthResponse = serde_json::from_slice(&body).unwrap();
+        let code = response.authorization_code;
+        println!("Authorization code: {}", code);
         Ok(())
     }
 }

@@ -23,6 +23,10 @@ macro_rules! register_storefront {
             fn init() -> Result<(), $crate::StorefrontProviderError> {
                 <$plugin_type as $crate::Storefront>::init()
             }
+
+            fn auth(url: String, body: Vec<u8>) -> Result<(), $crate::StorefrontProviderError> {
+                <$plugin_type as $crate::Storefront>::auth(url, body)
+            }
         }
 
         $crate::wit::export!(Guest with_types_in $crate::wit);

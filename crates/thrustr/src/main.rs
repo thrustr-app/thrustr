@@ -5,6 +5,7 @@ use plugin_manager::PluginManagerExt;
 use sqlite_storage::SqliteStorage;
 use std::sync::Arc;
 
+mod components;
 #[path = "routes/root.rs"]
 mod routes;
 
@@ -21,7 +22,7 @@ fn main() {
         theme_manager::init(cx);
         plugin_manager::init(cx, storage);
 
-        let plugin_manager = cx.plugin_manager();
+        /*let plugin_manager = cx.plugin_manager();
 
         // TODO: For testing purposes for now.
         cx.background_executor()
@@ -32,16 +33,16 @@ fn main() {
 
         cx.background_spawn(async move {
             plugin.init().await.unwrap();
+            plugin.auth("https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code", b"{\"warning\":\"Do not share this code with any 3rd party service. It allows full access to your Epic account.\",\"redirectUrl\":\"https://localhost/launcher/authorized?code=blahblahsomecode\",\"authorizationCode\":\"blahblahsomecode\",\"exchangeCode\":null,\"sid\":null}").await.unwrap();
         })
         .detach();
-        // TODO-END.
+        // TODO-END.*/
 
         cx.open_window(
             WindowOptions {
                 focus: true,
                 titlebar: Some(TitlebarOptions {
                     title: Some("Thrustr".into()),
-                    appears_transparent: true,
                     ..Default::default()
                 }),
                 ..Default::default()

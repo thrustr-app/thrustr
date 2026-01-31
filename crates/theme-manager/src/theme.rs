@@ -27,7 +27,11 @@ pub struct ThemeManifest {
 pub struct ThemeColors {
     pub background: Hsla,
     pub sidebar_background: Hsla,
+    pub sidebar_foreground_primary: Hsla,
+    pub sidebar_foreground_secondary: Hsla,
+    pub sidebar_highlight: Hsla,
     pub border: Hsla,
+    pub logo: Hsla,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,7 +57,11 @@ impl PartialTheme {
 pub struct PartialThemeColors {
     pub background: Option<Hsla>,
     pub sidebar_background: Option<Hsla>,
+    pub sidebar_foreground_primary: Option<Hsla>,
+    pub sidebar_foreground_secondary: Option<Hsla>,
+    pub sidebar_highlight: Option<Hsla>,
     pub border: Option<Hsla>,
+    pub logo: Option<Hsla>,
 }
 
 impl PartialThemeColors {
@@ -61,7 +69,15 @@ impl PartialThemeColors {
         ThemeColors {
             background: self.background.unwrap_or(other.background),
             sidebar_background: self.sidebar_background.unwrap_or(other.sidebar_background),
+            sidebar_foreground_primary: self
+                .sidebar_foreground_primary
+                .unwrap_or(other.sidebar_foreground_primary),
+            sidebar_foreground_secondary: self
+                .sidebar_foreground_secondary
+                .unwrap_or(other.sidebar_foreground_secondary),
+            sidebar_highlight: self.sidebar_highlight.unwrap_or(other.sidebar_highlight),
             border: self.border.unwrap_or(other.border),
+            logo: self.logo.unwrap_or(other.logo),
         }
     }
 }

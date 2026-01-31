@@ -26,6 +26,7 @@ interface storefront-provider {
     }
 
     init: func() -> result<_, error>;
+    auth: func(url: string, body: list<u8>) -> result<_, error>;
 }
 
 world storefront {

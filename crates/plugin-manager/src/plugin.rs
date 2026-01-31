@@ -11,10 +11,12 @@ use domain::{PluginManifest, PluginStorage};
 use std::sync::Arc;
 use wasmtime::{Store, component::HasData};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
+use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 use xutex::AsyncMutex;
 
 pub struct PluginState {
     ctx: WasiCtx,
+    http_ctx: WasiHttpCtx,
     table: ResourceTable,
     id: String,
     storage: Arc<dyn PluginStorage>,
@@ -22,9 +24,14 @@ pub struct PluginState {
 
 impl PluginState {
     pub fn new(id: &str, storage: Arc<dyn PluginStorage>) -> Self {
-        let ctx = WasiCtx::builder().inherit_stdout().build();
+        let ctx = WasiCtx::builder()
+            .inherit_network()
+            .inherit_stdout()
+            .build();
+
         Self {
             ctx,
+            http_ctx: WasiHttpCtx::new(),
             table: ResourceTable::new(),
             id: id.to_owned(),
             storage,
@@ -80,6 +87,16 @@ impl WasiView for PluginState {
     }
 }
 
+impl WasiHttpView for PluginState {
+    fn ctx(&mut self) -> &mut WasiHttpCtx {
+        &mut self.http_ctx
+    }
+
+    fn table(&mut self) -> &mut ResourceTable {
+        &mut self.table
+    }
+}
+
 pub struct Plugin {
     manifest: PluginManifest,
     storefront: Storefront,
@@ -109,6 +126,16 @@ impl Plugin {
         self.storefront
             .thrustr_storefront_storefront_provider()
             .call_init(&mut *store)
+            .await
+            .unwrap()
+    }
+
+    pub async fn auth(&self, url: &str, body: &[u8]) -> Result<(), StorefrontProviderError> {
+        let mut store = self.store.lock().await;
+
+        self.storefront
+            .thrustr_storefront_storefront_provider()
+            .call_auth(&mut *store, url, body)
             .await
             .unwrap()
     }
