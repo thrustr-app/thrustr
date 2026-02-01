@@ -18,6 +18,10 @@ fn main() {
     let storage = Arc::new(sqlite_storage);
 
     Application::new().with_assets(Assets).run(move |cx| {
+        Assets
+            .load_fonts(cx)
+            .expect("Failed to load embedded fonts");
+
         gpui_tokio::init(cx);
         theme_manager::init(cx);
         plugin_manager::init(cx, storage);

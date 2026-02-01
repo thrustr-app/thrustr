@@ -1,7 +1,6 @@
+use crate::components::Sidebar;
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div};
 use theme_manager::ThemeExt;
-
-use crate::components::Sidebar;
 
 pub struct Root {}
 

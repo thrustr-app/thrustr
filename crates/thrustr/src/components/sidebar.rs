@@ -1,6 +1,6 @@
 use gpui::{
-    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window,
-    div, rems, svg, transparent_black,
+    App, FontWeight, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString,
+    Styled, Window, div, red, rems, svg, transparent_black,
 };
 use theme_manager::ThemeExt;
 
