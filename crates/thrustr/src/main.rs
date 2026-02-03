@@ -22,6 +22,7 @@ fn main() {
             .load_fonts(cx)
             .expect("Failed to load embedded fonts");
 
+        gpui_router::init(cx);
         gpui_tokio::init(cx);
         theme_manager::init(cx);
         plugin_manager::init(cx, storage);
@@ -42,9 +43,11 @@ fn main() {
         .detach();
         // TODO-END.*/
 
+        cx.activate(true);
         cx.open_window(
             WindowOptions {
                 focus: true,
+                app_id: Some("com.thrustr.thrustr".into()),
                 titlebar: Some(TitlebarOptions {
                     title: Some("Thrustr".into()),
                     ..Default::default()

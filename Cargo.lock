@@ -2699,6 +2699,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-router"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80bf5c725e7648d9d4082e39a58a5a41562fecb26d210710498171af8f1e54bc"
+dependencies = [
+ "gpui",
+ "gpui-router-macros",
+ "hashbrown 0.16.1",
+ "matchit",
+ "smallvec",
+]
+
+[[package]]
+name = "gpui-router-macros"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d59a4854468fd9d5e977b0a2c56666cb0fccd0d65b696c19ba740a0237eb6401"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "gpui-tokio"
 version = "0.1.0"
 dependencies = [
@@ -2917,6 +2941,8 @@ version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
+ "allocator-api2",
+ "equivalent",
  "foldhash 0.2.0",
 ]
 
@@ -3712,6 +3738,12 @@ checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "matchit"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f926ade0c4e170215ae43342bf13b9310a437609c81f29f86c5df6657582ef9"
 
 [[package]]
 name = "maybe-owned"
@@ -6237,6 +6269,7 @@ dependencies = [
  "assets",
  "domain",
  "gpui",
+ "gpui-router",
  "gpui-tokio",
  "paths",
  "plugin-manager",

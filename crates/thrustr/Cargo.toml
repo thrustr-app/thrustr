@@ -7,6 +7,7 @@ edition = "2024"
 # Local
 assets.workspace = true
 domain.workspace = true
+gpui-router = "0.3.0"
 gpui-tokio.workspace = true
 paths.workspace = true
 plugin-manager.workspace = true
