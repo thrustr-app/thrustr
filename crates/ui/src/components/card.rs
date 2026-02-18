@@ -1,5 +1,5 @@
 use gpui::{
-    App, Div, FontWeight, IntoElement, ParentElement, Refineable, RenderOnce, SharedString,
+    AnyElement, App, FontWeight, IntoElement, ParentElement, Refineable, RenderOnce, SharedString,
     StyleRefinement, Styled, Window, div, prelude::FluentBuilder, rems,
 };
 use smallvec::SmallVec;
@@ -9,6 +9,7 @@ use theme_manager::ThemeExt;
 pub struct Card {
     style: StyleRefinement,
     title: Option<SharedString>,
+    children: SmallVec<[AnyElement; 1]>,
 }
 
 impl Card {
@@ -16,6 +17,7 @@ impl Card {
         Self {
             style: StyleRefinement::default(),
             title: None,
+            children: SmallVec::new(),
         }
     }
 
@@ -28,6 +30,12 @@ impl Card {
 impl Styled for Card {
     fn style(&mut self) -> &mut StyleRefinement {
         &mut self.style
+    }
+}
+
+impl ParentElement for Card {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
     }
 }
 
@@ -45,8 +53,10 @@ impl RenderOnce for Card {
             .text_color(theme.colors.card_foreground_primary)
             .text_size(rems(1.5))
             .line_height(rems(1.5))
+            .gap(rems(1.5))
             .font_weight(FontWeight::SEMIBOLD)
-            .when_some(self.title, |card, title| card.child(title));
+            .when_some(self.title, |card, title| card.child(title))
+            .children(self.children);
 
         card.style().refine(&self.style);
         card
