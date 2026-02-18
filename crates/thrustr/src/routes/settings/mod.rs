@@ -1,16 +1,18 @@
 use crate::navigation::{LocationExt, Route, SettingsPage};
 use gpui::{
     App, InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled, Window, div,
-    prelude::FluentBuilder, red, rems, svg, transparent_black,
+    prelude::FluentBuilder, rems, svg, transparent_black,
 };
 use gpui_router::{IntoLayout, Outlet, use_location};
 use theme_manager::ThemeExt;
 
 mod appearance;
 mod plugins;
+mod storefronts;
 
 pub use appearance::Appearance;
 pub use plugins::Plugins;
+pub use storefronts::Storefronts;
 
 #[derive(IntoElement)]
 struct SettingsPageButton {
@@ -30,7 +32,6 @@ impl RenderOnce for SettingsPageButton {
 
         self.page
             .nav_link()
-            .group(self.page.as_str())
             .py(rems(0.625))
             .px(rems(1.25))
             .w_full()
@@ -39,12 +40,11 @@ impl RenderOnce for SettingsPageButton {
             .rounded_full()
             .gap(rems(0.75))
             .bg(transparent_black())
-            .hover(|div| {
-                div.bg(theme.colors.sidebar_highlight)
+            .hover(|style| style.bg(theme.colors.sidebar_highlight))
+            .when(Some(self.page) == location.settings_page(), |style| {
+                style
+                    .bg(theme.colors.sidebar_highlight)
                     .text_color(theme.colors.sidebar_foreground_primary)
-            })
-            .when(Some(self.page) == location.settings_page(), |div| {
-                div.text_color(theme.colors.sidebar_foreground_primary)
             })
             .child(
                 svg()
@@ -52,20 +52,11 @@ impl RenderOnce for SettingsPageButton {
                     .path(self.page.icon_path())
                     .text_color(theme.colors.sidebar_foreground_secondary)
                     .size(rems(1.5))
-                    .group_hover(self.page.as_str(), |div| {
-                        div.text_color(theme.colors.sidebar_foreground_primary)
-                    })
                     .when(Some(self.page) == location.settings_page(), |svg| {
                         svg.text_color(theme.colors.sidebar_foreground_primary)
                     }),
             )
-            .child(
-                div()
-                    .child(self.page.as_str_pretty())
-                    .group_hover(self.page.as_str(), |div| {
-                        div.text_color(theme.colors.sidebar_foreground_primary)
-                    }),
-            )
+            .child(div().child(self.page.as_str_pretty()))
     }
 }
 
@@ -102,6 +93,7 @@ impl RenderOnce for SettingsLayout {
                     .border_r_1()
                     .border_color(theme.colors.border)
                     .text_color(theme.colors.sidebar_foreground_secondary)
+                    .child(SettingsPageButton::new(SettingsPage::Storefronts))
                     .child(SettingsPageButton::new(SettingsPage::Plugins))
                     .child(SettingsPageButton::new(SettingsPage::Appearance)),
             )

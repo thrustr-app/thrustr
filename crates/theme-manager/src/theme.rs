@@ -30,6 +30,8 @@ pub struct ThemeColors {
     pub sidebar_foreground_primary: Hsla,
     pub sidebar_foreground_secondary: Hsla,
     pub sidebar_highlight: Hsla,
+    pub card_background: Hsla,
+    pub card_foreground_primary: Hsla,
     pub border: Hsla,
     pub logo: Hsla,
 }
@@ -60,6 +62,8 @@ pub struct PartialThemeColors {
     pub sidebar_foreground_primary: Option<Hsla>,
     pub sidebar_foreground_secondary: Option<Hsla>,
     pub sidebar_highlight: Option<Hsla>,
+    pub card_background: Option<Hsla>,
+    pub card_foreground_primary: Option<Hsla>,
     pub border: Option<Hsla>,
     pub logo: Option<Hsla>,
 }
@@ -76,6 +80,10 @@ impl PartialThemeColors {
                 .sidebar_foreground_secondary
                 .unwrap_or(other.sidebar_foreground_secondary),
             sidebar_highlight: self.sidebar_highlight.unwrap_or(other.sidebar_highlight),
+            card_background: self.card_background.unwrap_or(other.card_background),
+            card_foreground_primary: self
+                .card_foreground_primary
+                .unwrap_or(other.card_foreground_primary),
             border: self.border.unwrap_or(other.border),
             logo: self.logo.unwrap_or(other.logo),
         }

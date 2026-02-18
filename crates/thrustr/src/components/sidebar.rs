@@ -32,6 +32,9 @@ impl RenderOnce for SidebarIconButton {
             .rounded_full()
             .bg(transparent_black())
             .hover(|div| div.bg(theme.colors.sidebar_highlight))
+            .when(self.page == location.page(), |div| {
+                div.bg(theme.colors.sidebar_highlight)
+            })
             .child(
                 svg()
                     .group(self.page.as_str())

@@ -14,6 +14,7 @@ plugin-manager = { path = "crates/plugin-manager" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
 thrustr-plugin = { path = "crates/thrustr-plugin" }
+ui = { path = "crates/ui" }
 
 # External
 anyhow = "1"

@@ -64,6 +64,7 @@ impl Page {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsPage {
     #[default]
+    Storefronts,
     Plugins,
     Appearance,
 }
@@ -71,6 +72,7 @@ pub enum SettingsPage {
 impl Route for SettingsPage {
     fn route(&self) -> (&'static str, &'static str) {
         match self {
+            SettingsPage::Storefronts => ("storefronts", "/settings/storefronts"),
             SettingsPage::Plugins => ("plugins", "/settings/plugins"),
             SettingsPage::Appearance => ("appearance", "/settings/appearance"),
         }
@@ -80,6 +82,7 @@ impl Route for SettingsPage {
 impl SettingsPage {
     fn from_path(path: &str) -> Self {
         match path {
+            "/settings/storefronts" => Self::Storefronts,
             "/settings/appearance" => Self::Appearance,
             "/settings/plugins" => Self::Plugins,
             _ => Self::default(),
@@ -88,6 +91,7 @@ impl SettingsPage {
 
     pub fn icon_path(&self) -> &'static str {
         match self {
+            SettingsPage::Storefronts => "icons/storefronts.svg",
             SettingsPage::Plugins => "icons/plugins.svg",
             SettingsPage::Appearance => "icons/appearance.svg",
         }
@@ -95,6 +99,7 @@ impl SettingsPage {
 
     pub fn as_str_pretty(&self) -> &'static str {
         match self {
+            SettingsPage::Storefronts => "Storefronts",
             SettingsPage::Plugins => "Plugins",
             SettingsPage::Appearance => "Appearance",
         }

@@ -1,3 +1,4 @@
+mod collections;
 mod home;
 mod library;
 mod settings;
@@ -6,6 +7,7 @@ use crate::components::{Sidebar, Topbar};
 use gpui::{App, IntoElement, ParentElement, RenderOnce, Styled, Window, div};
 use gpui_router::{IntoLayout, Outlet};
 
+pub use collections::*;
 pub use home::*;
 pub use library::*;
 pub use settings::*;

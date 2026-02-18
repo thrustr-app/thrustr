@@ -11,5 +11,8 @@ sidebar_background = "#0A0A0A"
 sidebar_foreground_primary = "#FFFFFF"
 sidebar_foreground_secondary = "#646464"
 sidebar_highlight = "#262626"
+
+card_background = "#252525"
+card_foreground_primary = "#FFFFFF"
 border = "#323232"
 logo = "#B6B6B6"

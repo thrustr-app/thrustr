@@ -6276,6 +6276,7 @@ dependencies = [
  "sqlite-storage",
  "theme-manager",
  "tokio",
+ "ui",
 ]
 
 [[package]]
@@ -6666,6 +6667,15 @@ dependencies = [
  "memoffset",
  "tempfile",
  "winapi",
+]
+
+[[package]]
+name = "ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "smallvec",
+ "theme-manager",
 ]
 
 [[package]]
