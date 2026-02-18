@@ -1,47 +1,31 @@
+use crate::navigation::{LocationExt, Page, Route, SettingsPage};
 use gpui::{
-    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window,
-    div, prelude::FluentBuilder, rems, svg, transparent_black,
+    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled, Window, div,
+    prelude::FluentBuilder, rems, svg, transparent_black,
 };
-use gpui_router::{NavLink, use_location};
+use gpui_router::use_location;
 use theme_manager::ThemeExt;
 
 #[derive(IntoElement)]
 struct SidebarIconButton {
-    path: SharedString,
-    icon_path: SharedString,
+    page: Page,
 }
 
 impl SidebarIconButton {
-    fn new(path: impl Into<SharedString>, icon_path: impl Into<SharedString>) -> Self {
-        Self {
-            path: path.into(),
-            icon_path: icon_path.into(),
-        }
-    }
-
-    fn first_component(path: &str) -> &str {
-        if path == "/" {
-            return "/";
-        }
-
-        match path[1..].find('/') {
-            Some(i) => &path[..=i],
-            None => path,
-        }
+    fn new(page: Page) -> Self {
+        Self { page }
     }
 }
 
 impl RenderOnce for SidebarIconButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-
         let location = use_location(cx);
-        let base_path = Self::first_component(&location.pathname);
 
-        NavLink::new()
-            .to(self.path.clone())
-            .group(self.icon_path.clone())
-            .size(rems(2.75))
+        self.page
+            .nav_link()
+            .group(self.page.as_str())
+            .p(rems(0.625))
             .flex()
             .items_center()
             .justify_center()
@@ -50,14 +34,14 @@ impl RenderOnce for SidebarIconButton {
             .hover(|div| div.bg(theme.colors.sidebar_highlight))
             .child(
                 svg()
-                    .group(self.icon_path.clone())
-                    .path(self.icon_path.clone())
+                    .group(self.page.as_str())
+                    .path(self.page.icon_path())
                     .text_color(theme.colors.sidebar_foreground_secondary)
                     .size(rems(1.5))
-                    .group_hover(self.icon_path, |div| {
+                    .group_hover(self.page.as_str(), |div| {
                         div.text_color(theme.colors.sidebar_foreground_primary)
                     })
-                    .when(self.path == base_path, |svg| {
+                    .when(self.page == location.page(), |svg| {
                         svg.text_color(theme.colors.sidebar_foreground_primary)
                     }),
             )
@@ -82,12 +66,9 @@ impl RenderOnce for Sidebar {
             .flex_col()
             .items_center()
             .gap(rems(0.75))
-            .child(SidebarIconButton::new("/", "icons/home.svg"))
-            .child(SidebarIconButton::new("/library", "icons/library.svg"))
-            .child(SidebarIconButton::new(
-                "/collections",
-                "icons/collections.svg",
-            ));
+            .child(SidebarIconButton::new(Page::Home))
+            .child(SidebarIconButton::new(Page::Library))
+            .child(SidebarIconButton::new(Page::Collections));
 
         let bottom_nav = div()
             .flex()
@@ -95,7 +76,9 @@ impl RenderOnce for Sidebar {
             .items_center()
             .gap(rems(0.75))
             .mb(rems(1.5))
-            .child(SidebarIconButton::new("/settings", "icons/settings.svg"));
+            .child(SidebarIconButton::new(Page::Settings(
+                SettingsPage::default(),
+            )));
 
         div()
             .flex()

@@ -10,8 +10,5 @@ serde_json.workspace = true
 wasi = "0.14"
 wit-bindgen = "0.51"
 
-[package.metadata.component]
-package = "thrustr:storefront"
-
 [lib]
 crate-type = ["cdylib", "rlib"]

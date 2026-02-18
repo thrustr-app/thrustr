@@ -1,11 +1,11 @@
-use gpui::{Context, IntoElement, Render, Styled, Window, blue, div};
+use gpui::{Context, IntoElement, Render, Styled, Window, div};
 use theme_manager::ThemeExt;
 
-pub struct Settings;
+pub struct Appearance;
 
-impl Render for Settings {
+impl Render for Appearance {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _theme = cx.theme();
-        div().bg(blue()).flex_grow()
+        div().flex_grow()
     }
 }

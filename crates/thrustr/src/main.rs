@@ -1,12 +1,12 @@
-use crate::routes::Root;
+use crate::app::App;
 use assets::Assets;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
-use plugin_manager::PluginManagerExt;
 use sqlite_storage::SqliteStorage;
 use std::sync::Arc;
 
+mod app;
 mod components;
-#[path = "routes/root.rs"]
+mod navigation;
 mod routes;
 
 fn main() {
@@ -54,7 +54,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| Root::new(window, cx)),
+            |window, cx| cx.new(|cx| App::new(window, cx)),
         )
         .unwrap();
     });
