@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use anyhow::Result;
-use ports::PluginStorage;
+use ports::storage::ExtensionStorage;
 use std::sync::Arc;
 use wasmtime::{Store, component::HasData};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
@@ -37,11 +37,11 @@ pub struct PluginState {
     http_ctx: WasiHttpCtx,
     table: ResourceTable,
     id: String,
-    storage: Arc<dyn PluginStorage>,
+    storage: Arc<dyn ExtensionStorage>,
 }
 
 impl PluginState {
-    pub fn new(id: &str, storage: Arc<dyn PluginStorage>) -> Self {
+    pub fn new(id: &str, storage: Arc<dyn ExtensionStorage>) -> Self {
         let ctx = WasiCtx::builder()
             .inherit_network()
             .inherit_stdout()

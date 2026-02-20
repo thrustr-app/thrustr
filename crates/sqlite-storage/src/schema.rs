@@ -1,14 +1,14 @@
 diesel::table! {
-    plugin_data (plugin_id, key) {
-        plugin_id -> Text,
+    extension_data (extension_id, key) {
+        extension_id -> Text,
         key -> Text,
         value -> Binary,
     }
 }
 
 diesel::table! {
-    plugin_config (plugin_id, field_id) {
-        plugin_id -> Text,
+    extension_config (extension_id, field_id) {
+        extension_id -> Text,
         field_id -> Text,
         value -> Text,
     }

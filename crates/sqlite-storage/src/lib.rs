@@ -1,4 +1,4 @@
-use crate::schema::{plugin_config, plugin_data};
+use crate::schema::{extension_config, extension_data};
 use anyhow::Result;
 use diesel::{
     SqliteConnection,

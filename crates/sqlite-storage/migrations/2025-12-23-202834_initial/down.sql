@@ -1,1 +1,3 @@
-DROP TABLE IF EXISTS plugin_data;
+DROP TABLE IF EXISTS extension_data;
+
+DROP TABLE IF EXISTS extension_config;

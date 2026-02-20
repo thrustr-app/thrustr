@@ -1,3 +1,3 @@
-mod plugin;
+mod extension;
 
-pub use plugin::*;
+pub use extension::*;

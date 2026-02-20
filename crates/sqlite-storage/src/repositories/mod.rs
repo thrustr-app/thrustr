@@ -1,1 +1,1 @@
-mod plugin_storage;
+mod extension_storage;
