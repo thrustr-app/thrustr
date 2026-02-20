@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Local
-domain.workspace = true
+ports.workspace = true
 
 # External
 anyhow.workspace = true

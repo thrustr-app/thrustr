@@ -2,13 +2,15 @@ use assets::Assets;
 use gpui::{App, Global};
 use std::collections::HashMap;
 
+#[macro_use]
+mod macros;
 mod theme;
 
 pub use theme::*;
 
 type Result<T> = std::result::Result<T, ThemeError>;
 pub enum ThemeError {
-    ThemeNotFound(String),
+    NotFound(String),
 }
 
 pub fn init(cx: &mut App) {
@@ -44,7 +46,7 @@ impl ThemeManager {
             self.active_theme = id;
             Ok(())
         } else {
-            Err(ThemeError::ThemeNotFound(id))
+            Err(ThemeError::NotFound(id))
         }
     }
 

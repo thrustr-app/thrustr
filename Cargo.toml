@@ -7,10 +7,11 @@ default-members = ["crates/thrustr"]
 [workspace.dependencies]
 # Local
 assets = { path = "crates/assets" }
+config = { path = "crates/config" }
 domain = { path = "crates/domain" }
 gpui-tokio = { path = "crates/gpui-tokio" }
-paths = { path = "crates/paths" }
 plugin-manager = { path = "crates/plugin-manager" }
+ports = { path = "crates/ports" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
 thrustr-plugin = { path = "crates/thrustr-plugin" }

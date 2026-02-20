@@ -1,8 +1,8 @@
-use crate::plugin::{Plugin, PluginState};
+use crate::plugin::{Plugin, PluginManifest, PluginState};
 use anyhow::Result;
 use dashmap::DashMap;
-use domain::{PluginManifest, PluginStorage};
 use gpui::{App, Global};
+use ports::PluginStorage;
 use std::{
     fs::{self, File},
     io::Read,

@@ -1,5 +1,6 @@
 use crate::app::App;
 use assets::Assets;
+use config::paths;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
 use sqlite_storage::SqliteStorage;
 use std::sync::Arc;

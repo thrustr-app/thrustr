@@ -6,10 +6,10 @@ edition = "2024"
 [dependencies]
 # Local
 assets.workspace = true
+config.workspace = true
 domain.workspace = true
 gpui-router = "0.3.0"
 gpui-tokio.workspace = true
-paths.workspace = true
 plugin-manager.workspace = true
 sqlite-storage.workspace = true
 theme-manager.workspace = true

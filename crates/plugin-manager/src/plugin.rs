@@ -7,12 +7,30 @@ use crate::{
     },
 };
 use anyhow::Result;
-use domain::{PluginManifest, PluginStorage};
+use ports::PluginStorage;
 use std::sync::Arc;
 use wasmtime::{Store, component::HasData};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 use xutex::AsyncMutex;
+
+use semver::Version;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PluginManifest {
+    pub plugin: PluginInfo,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PluginInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub authors: Vec<String>,
+    pub version: Version,
+    pub description: Option<String>,
+}
 
 pub struct PluginState {
     ctx: WasiCtx,

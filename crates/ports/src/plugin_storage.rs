@@ -1,7 +1,5 @@
 use anyhow::Result;
 
-pub trait Storage: Send + Sync {}
-
 pub trait PluginStorage: Send + Sync {
     fn get_data(&self, plugin_id: &str, key: &str) -> Result<Option<Vec<u8>>>;
 

@@ -1085,6 +1085,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "config"
+version = "0.1.0"
+dependencies = [
+ "directories",
+]
+
+[[package]]
 name = "const-random"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1793,11 +1800,6 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.1.0"
-dependencies = [
- "anyhow",
- "semver",
- "serde",
-]
 
 [[package]]
 name = "downcast-rs"
@@ -4405,13 +4407,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paths"
-version = "0.1.0"
-dependencies = [
- "directories",
-]
-
-[[package]]
 name = "pbkdf2"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4498,8 +4493,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dashmap",
- "domain",
  "gpui",
+ "ports",
+ "semver",
  "serde",
  "serde_json",
  "toml 0.9.8",
@@ -4555,6 +4551,13 @@ name = "pollster"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5da3b0203fd7ee5720aa0b5e790b591aa5d3f41c3ed2c34a3a393382198af2f7"
+
+[[package]]
+name = "ports"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
 
 [[package]]
 name = "postage"
@@ -5806,7 +5809,7 @@ dependencies = [
  "anyhow",
  "diesel",
  "diesel_migrations",
- "domain",
+ "ports",
  "serde",
  "serde_json",
 ]
@@ -6267,11 +6270,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assets",
+ "config",
  "domain",
  "gpui",
  "gpui-router",
  "gpui-tokio",
- "paths",
  "plugin-manager",
  "sqlite-storage",
  "theme-manager",

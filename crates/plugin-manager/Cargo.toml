@@ -5,12 +5,13 @@ edition = "2024"
 
 [dependencies]
 # Local
-domain.workspace = true
+ports.workspace = true
 
 # External
 anyhow.workspace = true
 dashmap = "6"
 gpui.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
