@@ -1,6 +1,7 @@
 use serde_json::Value;
 use thrustr_plugin::{
-    Storefront, StorefrontProviderError, config::Config, kv_store::KvStore, register_storefront,
+    StorefrontProvider, StorefrontProviderError, config::Config, kv_store::KvStore,
+    register_storefront_provider,
 };
 
 use crate::api::models::AuthResponse;
@@ -9,7 +10,7 @@ mod api;
 
 pub struct EpicGames;
 
-impl Storefront for EpicGames {
+impl StorefrontProvider for EpicGames {
     fn init() -> Result<(), StorefrontProviderError> {
         let some_config = Config::get("username")?;
         println!("Username: {some_config}");
@@ -39,4 +40,4 @@ impl Storefront for EpicGames {
     }
 }
 
-register_storefront!(EpicGames);
+register_storefront_provider!(EpicGames);

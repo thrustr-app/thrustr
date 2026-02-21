@@ -1,0 +1,8 @@
+[package]
+name = "storefront-manager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+plugin-manager.workspace = true
+ports.workspace = true

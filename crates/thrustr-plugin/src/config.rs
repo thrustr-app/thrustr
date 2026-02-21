@@ -1,6 +1,6 @@
-use crate::{StorefrontProviderError, wit::thrustr::storefront::config::get};
+use crate::{StorefrontProviderError, wit::thrustr::plugin::config::get};
 
-pub use crate::wit::thrustr::storefront::config::Error as ConfigError;
+pub use crate::wit::thrustr::plugin::config::Error as ConfigError;
 
 pub struct Config;
 

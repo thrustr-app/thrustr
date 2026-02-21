@@ -1,9 +1,9 @@
 use crate::{
     StorefrontProviderError,
-    wit::thrustr::storefront::kv_store::{delete, get, list, set},
+    wit::thrustr::plugin::kv_store::{delete, get, list, set},
 };
 
-pub use crate::wit::thrustr::storefront::kv_store::Error as KvStoreError;
+pub use crate::wit::thrustr::plugin::kv_store::Error as KvStoreError;
 
 pub struct KvStore;
 

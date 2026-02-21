@@ -35,14 +35,14 @@ fn main() {
             .block(plugin_manager.load_plugins_from_dir("target/plugins"))
             .unwrap();
 
-        let plugin = plugin_manager.get_plugin("epic-games").unwrap();
+        let plugin = plugin_manager.plugin("epic-games").unwrap();
 
         cx.background_spawn(async move {
             plugin.init().await.unwrap();
-            plugin.auth("https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code", b"{\"warning\":\"Do not share this code with any 3rd party service. It allows full access to your Epic account.\",\"redirectUrl\":\"https://localhost/launcher/authorized?code=blahblahsomecode\",\"authorizationCode\":\"blahblahsomecode\",\"exchangeCode\":null,\"sid\":null}").await.unwrap();
+            //plugin.auth("https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code", b"{\"warning\":\"Do not share this code with any 3rd party service. It allows full access to your Epic account.\",\"redirectUrl\":\"https://localhost/launcher/authorized?code=blahblahsomecode\",\"authorizationCode\":\"blahblahsomecode\",\"exchangeCode\":null,\"sid\":null}").await.unwrap();
         })
         .detach();
-        // TODO-END.*/
+        // TODO-END. */
 
         cx.activate(true);
         cx.open_window(

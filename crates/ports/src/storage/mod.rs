@@ -1,2 +1,3 @@
-mod extension_storage;
-pub use extension_storage::*;
+mod extension;
+
+pub use extension::*;

@@ -1,4 +1,4 @@
-package thrustr:storefront;
+package thrustr:plugin;
 
 interface kv-store {
     variant error {

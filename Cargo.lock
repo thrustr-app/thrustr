@@ -4492,6 +4492,7 @@ name = "plugin-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "dashmap",
  "gpui",
  "ports",
@@ -4557,6 +4558,7 @@ name = "ports"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
 ]
 
 [[package]]
@@ -5874,6 +5876,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "storefront-manager"
+version = "0.1.0"
+dependencies = [
+ "plugin-manager",
+ "ports",
+]
+
+[[package]]
 name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6276,6 +6286,7 @@ dependencies = [
  "gpui-router",
  "gpui-tokio",
  "plugin-manager",
+ "ports",
  "sqlite-storage",
  "theme-manager",
  "tokio",

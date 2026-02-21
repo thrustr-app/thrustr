@@ -1,36 +1,12 @@
-use crate::{
-    Storefront,
-    exports::thrustr::storefront::storefront_provider::Error as StorefrontProviderError,
-    thrustr::storefront::{
-        config::{Error as ConfigError, Host as ConfigHost},
-        kv_store::{Error as KvStoreError, Host as KvStoreHost},
-    },
+use crate::thrustr::plugin::{
+    config::{Error as ConfigError, Host as ConfigHost},
+    kv_store::{Error as KvStoreError, Host as KvStoreHost},
 };
-use anyhow::Result;
 use ports::storage::ExtensionStorage;
 use std::sync::Arc;
-use wasmtime::{Store, component::HasData};
+use wasmtime::component::HasData;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
-use xutex::AsyncMutex;
-
-use semver::Version;
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PluginManifest {
-    pub plugin: PluginInfo,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PluginInfo {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub authors: Vec<String>,
-    pub version: Version,
-    pub description: Option<String>,
-}
 
 pub struct PluginState {
     ctx: WasiCtx,
@@ -112,49 +88,5 @@ impl WasiHttpView for PluginState {
 
     fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
-    }
-}
-
-pub struct Plugin {
-    manifest: PluginManifest,
-    storefront: Storefront,
-    store: AsyncMutex<Store<PluginState>>,
-}
-
-impl Plugin {
-    pub(crate) fn new(
-        manifest: PluginManifest,
-        storefront: Storefront,
-        store: Store<PluginState>,
-    ) -> Self {
-        Self {
-            manifest,
-            storefront,
-            store: AsyncMutex::new(store),
-        }
-    }
-
-    pub fn id(&self) -> &str {
-        &self.manifest.plugin.id
-    }
-
-    pub async fn init(&self) -> Result<(), StorefrontProviderError> {
-        let mut store = self.store.lock().await;
-
-        self.storefront
-            .thrustr_storefront_storefront_provider()
-            .call_init(&mut *store)
-            .await
-            .unwrap()
-    }
-
-    pub async fn auth(&self, url: &str, body: &[u8]) -> Result<(), StorefrontProviderError> {
-        let mut store = self.store.lock().await;
-
-        self.storefront
-            .thrustr_storefront_storefront_provider()
-            .call_auth(&mut *store, url, body)
-            .await
-            .unwrap()
     }
 }

@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 use wasmtime::{
-    Config, Engine, Store,
+    Config, Engine,
     component::{Component, Linker, bindgen},
 };
 use zip::ZipArchive;
@@ -83,14 +83,16 @@ impl PluginManager {
         };
 
         let component = Component::from_binary(&self.engine, &wasm_bytes)?;
-        let state = PluginState::new(&manifest.plugin.id, self.storage.clone());
-        let mut store = Store::new(&self.engine, state);
 
-        let storefront =
-            Storefront::instantiate_async(&mut store, &component, &self.linker).await?;
+        let instance_pre = self.linker.instantiate_pre(&component)?;
+        let storefront = StorefrontPre::new(instance_pre.clone()).ok();
 
-        let plugin = Arc::new(Plugin::new(manifest, storefront, store));
-        self.plugins.insert(plugin.id().to_owned(), plugin);
+        let mut plugin = Plugin::new(manifest, self.engine.clone(), self.storage.clone());
+        plugin.set_storefront(storefront);
+
+        let arc_plugin = Arc::new(plugin);
+
+        self.plugins.insert(arc_plugin.id().to_owned(), arc_plugin);
 
         Ok(())
     }

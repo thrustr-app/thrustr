@@ -13,12 +13,14 @@ gpui-tokio = { path = "crates/gpui-tokio" }
 plugin-manager = { path = "crates/plugin-manager" }
 ports = { path = "crates/ports" }
 sqlite-storage = { path = "crates/sqlite-storage" }
+storefront-manager = { path = "crates/storefront-manager" }
 theme-manager = { path = "crates/theme-manager" }
 thrustr-plugin = { path = "crates/thrustr-plugin" }
 ui = { path = "crates/ui" }
 
 # External
 anyhow = "1"
+async-trait = "0.1.89"
 futures = "0.3"
 gpui = "0.2.2"
 semver = { version = "1", features = ["serde"] }

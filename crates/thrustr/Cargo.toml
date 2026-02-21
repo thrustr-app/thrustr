@@ -8,9 +8,9 @@ edition = "2024"
 assets.workspace = true
 config.workspace = true
 domain.workspace = true
-gpui-router = "0.3.0"
 gpui-tokio.workspace = true
 plugin-manager.workspace = true
+ports.workspace = true
 sqlite-storage.workspace = true
 theme-manager.workspace = true
 ui.workspace = true
@@ -18,4 +18,5 @@ ui.workspace = true
 # External
 anyhow.workspace = true
 gpui.workspace = true
+gpui-router = "0.3.0"
 tokio.workspace = true
