@@ -6,18 +6,33 @@ fn main() {
     let first_line = msg.lines().next().unwrap_or("").trim();
 
     let valid_types = [
-        "feat", "fix", "docs", "chore", "refactor", "test", "style", "ci",
+        ("feat", "A new feature"),
+        ("fix", "A bug fix"),
+        ("docs", "Documentation changes only"),
+        ("chore", "Maintenance tasks, tooling, dependencies"),
+        (
+            "refactor",
+            "Code change that neither fixes a bug nor adds a feature",
+        ),
+        ("test", "Adding or updating tests"),
+        ("style", "Formatting, whitespace, missing semicolons, etc."),
+        ("ci", "CI/CD configuration and scripts"),
     ];
-    let is_valid = valid_types.iter().any(|t| {
+
+    let is_valid = valid_types.iter().any(|(t, _)| {
         first_line.starts_with(&format!("{t}:")) || first_line.starts_with(&format!("{t}("))
     });
 
     if !is_valid {
         eprintln!("❌ Invalid commit message: '{first_line}'");
-        eprintln!("   Expected format: <type>(<scope>): <description>");
-        eprintln!("   Valid types: {}", valid_types.join(", "));
+        eprintln!();
+        eprintln!("   Expected format: <type>: <description>");
+        eprintln!("   Or:              <type>(<scope>): <description>");
+        eprintln!();
+        eprintln!("   Valid types:");
+        for (t, desc) in &valid_types {
+            eprintln!("     {:<10} {}", t, desc);
+        }
         process::exit(1);
     }
-
-    println!("✅ Commit message is valid.");
 }
