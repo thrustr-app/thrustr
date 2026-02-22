@@ -1,5 +1,5 @@
 use crate::{Storefront, StorefrontPre};
-use ports::providers::StorefrontProviderError;
+use ports::providers::{StorefrontProvider, StorefrontProviderError};
 use ports::storage::ExtensionStorage;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -56,8 +56,10 @@ impl Plugin {
         self.storefront = storefront;
     }
 
-    pub fn is_storefront(&self) -> bool {
-        self.storefront.is_some()
+    pub fn as_storefront(self: &Arc<Self>) -> Option<Arc<dyn StorefrontProvider>> {
+        self.storefront
+            .is_some()
+            .then(|| Arc::clone(self) as Arc<dyn StorefrontProvider>)
     }
 
     pub(crate) async fn instantiate_storefront(

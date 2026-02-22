@@ -10,7 +10,7 @@ ports.workspace = true
 # External
 anyhow.workspace = true
 async-trait.workspace = true
-dashmap = "6"
+dashmap.workspace = true
 gpui.workspace = true
 semver.workspace = true
 serde.workspace = true

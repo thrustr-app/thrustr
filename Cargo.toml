@@ -21,6 +21,7 @@ ui = { path = "crates/ui" }
 # External
 anyhow = "1"
 async-trait = "0.1.89"
+dashmap = "6"
 futures = "0.3"
 gpui = "0.2.2"
 semver = { version = "1", features = ["serde"] }

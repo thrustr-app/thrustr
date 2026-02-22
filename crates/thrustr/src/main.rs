@@ -2,8 +2,11 @@ use crate::app::App;
 use assets::Assets;
 use config::paths;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
+use plugin_manager::PluginManagerExt;
+use ports::managers::StorefrontManager;
 use sqlite_storage::SqliteStorage;
 use std::sync::Arc;
+use storefront_manager::StorefrontManagerExt;
 
 mod app;
 mod components;
@@ -26,23 +29,25 @@ fn main() {
         gpui_router::init(cx);
         gpui_tokio::init(cx);
         theme_manager::init(cx);
-        plugin_manager::init(cx, storage);
-
-        /*let plugin_manager = cx.plugin_manager();
+        let storefront_manager = storefront_manager::init(cx);
+        plugin_manager::init(cx, storage, storefront_manager);
 
         // TODO: For testing purposes for now.
+        let plugin_manager = cx.plugin_manager();
+        let storefront_manager = cx.storefront_manager();
+
         cx.background_executor()
             .block(plugin_manager.load_plugins_from_dir("target/plugins"))
             .unwrap();
 
-        let plugin = plugin_manager.plugin("epic-games").unwrap();
+        let storefront = storefront_manager.storefront("epic-games").unwrap();
 
         cx.background_spawn(async move {
-            plugin.init().await.unwrap();
+            storefront.init().await.unwrap();
             //plugin.auth("https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code", b"{\"warning\":\"Do not share this code with any 3rd party service. It allows full access to your Epic account.\",\"redirectUrl\":\"https://localhost/launcher/authorized?code=blahblahsomecode\",\"authorizationCode\":\"blahblahsomecode\",\"exchangeCode\":null,\"sid\":null}").await.unwrap();
         })
         .detach();
-        // TODO-END. */
+        // TODO-END.
 
         cx.activate(true);
         cx.open_window(

@@ -8,5 +8,6 @@ pub enum StorefrontProviderError {
 
 #[async_trait]
 pub trait StorefrontProvider: Send + Sync {
+    fn id(&self) -> &str;
     async fn init(&self) -> Result<(), StorefrontProviderError>;
 }

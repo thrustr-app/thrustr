@@ -18,6 +18,10 @@ impl From<WasmStorefrontProviderError> for StorefrontProviderError {
 
 #[async_trait]
 impl StorefrontProvider for Plugin {
+    fn id(&self) -> &str {
+        self.id()
+    }
+
     async fn init(&self) -> Result<(), StorefrontProviderError> {
         let (instance, mut store) = self.instantiate_storefront().await?;
 

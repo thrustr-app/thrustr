@@ -2,7 +2,7 @@ use crate::plugin::{Plugin, PluginManifest, PluginState};
 use anyhow::Result;
 use dashmap::DashMap;
 use gpui::{App, Global};
-use ports::storage::ExtensionStorage;
+use ports::{managers::StorefrontManager, storage::ExtensionStorage};
 use std::{
     fs::{self, File},
     io::Read,
@@ -24,7 +24,11 @@ bindgen!({
     exports: { default: async }
 });
 
-pub fn init(cx: &mut App, storage: Arc<dyn ExtensionStorage>) {
+pub fn init(
+    cx: &mut App,
+    storage: Arc<dyn ExtensionStorage>,
+    storefront_manager: Arc<dyn StorefrontManager>,
+) {
     let mut config = Config::new();
     config.async_support(true).wasm_component_model(true);
 
@@ -41,6 +45,7 @@ pub fn init(cx: &mut App, storage: Arc<dyn ExtensionStorage>) {
         linker: Arc::new(linker),
         plugins: Arc::new(DashMap::new()),
         storage,
+        storefront_manager,
     });
 }
 
@@ -50,6 +55,7 @@ pub struct PluginManager {
     linker: Arc<Linker<PluginState>>,
     plugins: Arc<DashMap<String, Arc<Plugin>>>,
     storage: Arc<dyn ExtensionStorage>,
+    storefront_manager: Arc<dyn StorefrontManager>,
 }
 
 impl PluginManager {
@@ -83,16 +89,20 @@ impl PluginManager {
         };
 
         let component = Component::from_binary(&self.engine, &wasm_bytes)?;
-
         let instance_pre = self.linker.instantiate_pre(&component)?;
         let storefront = StorefrontPre::new(instance_pre.clone()).ok();
 
-        let mut plugin = Plugin::new(manifest, self.engine.clone(), self.storage.clone());
-        plugin.set_storefront(storefront);
+        let plugin = {
+            let mut plugin = Plugin::new(manifest, self.engine.clone(), self.storage.clone());
+            plugin.set_storefront(storefront);
+            Arc::new(plugin)
+        };
 
-        let arc_plugin = Arc::new(plugin);
+        if let Some(s) = plugin.as_storefront() {
+            self.storefront_manager.register_storefront(s);
+        }
 
-        self.plugins.insert(arc_plugin.id().to_owned(), arc_plugin);
+        self.plugins.insert(plugin.id().to_owned(), plugin);
 
         Ok(())
     }

@@ -5879,6 +5879,8 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "storefront-manager"
 version = "0.1.0"
 dependencies = [
+ "dashmap",
+ "gpui",
  "plugin-manager",
  "ports",
 ]
@@ -6288,6 +6290,7 @@ dependencies = [
  "plugin-manager",
  "ports",
  "sqlite-storage",
+ "storefront-manager",
  "theme-manager",
  "tokio",
  "ui",
