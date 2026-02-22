@@ -110,6 +110,13 @@ impl PluginManagerTrait for PluginManager {
         Ok(())
     }
 
+    fn plugins(&self) -> Vec<Arc<dyn PluginTrait>> {
+        self.plugins
+            .iter()
+            .map(|p| p.value().clone() as Arc<dyn PluginTrait>)
+            .collect()
+    }
+
     fn plugin(&self, name: &str) -> Option<Arc<dyn PluginTrait>> {
         self.plugins
             .get(name)

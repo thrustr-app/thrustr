@@ -13,5 +13,6 @@ pub trait Plugin: Send + Sync {
 pub trait PluginManager: Send + Sync {
     fn load_plugins_from_dir(&self, dir: impl AsRef<Path>) -> Result<()>;
     fn load_plugin_from_dir(&self, path: impl AsRef<Path>) -> Result<()>;
+    fn plugins(&self) -> Vec<Arc<dyn Plugin>>;
     fn plugin(&self, name: &str) -> Option<Arc<dyn Plugin>>;
 }
