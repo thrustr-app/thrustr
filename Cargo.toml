@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "plugins/*", "xtask"]
+members = ["crates/*", "plugins/*", "tools/*", "xtask"]
 exclude = ["plugins/schemas"]
 default-members = ["crates/thrustr"]
 

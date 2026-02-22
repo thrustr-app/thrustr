@@ -1058,6 +1058,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "commit_lint"
+version = "0.1.0"
+
+[[package]]
 name = "compression-codecs"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
