@@ -1,2 +1,2 @@
 #!/bin/sh
-cargo run -p commit_lint -- "$1"
+cargo run -q -p commit_lint -- "$1"
