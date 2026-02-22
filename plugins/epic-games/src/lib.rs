@@ -31,13 +31,6 @@ impl StorefrontProvider for EpicGames {
 
         Ok(())
     }
-
-    fn auth(_url: String, body: Vec<u8>) -> Result<(), StorefrontProviderError> {
-        let response: AuthResponse = serde_json::from_slice(&body).unwrap();
-        let code = response.authorization_code;
-        println!("Authorization code: {}", code);
-        Ok(())
-    }
 }
 
 register_storefront_provider!(EpicGames);
