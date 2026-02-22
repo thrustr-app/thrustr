@@ -102,7 +102,7 @@ impl PluginManagerTrait for PluginManager {
         };
 
         if let Some(s) = plugin.as_storefront() {
-            self.storefront_manager.register_storefront(s);
+            self.storefront_manager.register_storefront_provider(s);
         }
 
         self.plugins.insert(plugin.id().to_owned(), plugin);

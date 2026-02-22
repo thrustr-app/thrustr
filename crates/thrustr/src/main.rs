@@ -44,7 +44,9 @@ fn main() {
         .join()
         .unwrap();
 
-        let storefront = storefront_manager.storefront("epic-games").unwrap();
+        let storefront = storefront_manager
+            .storefront_provider("epic-games")
+            .unwrap();
 
         cx.background_spawn(async move {
             storefront.init().await.unwrap();

@@ -11,29 +11,32 @@ pub fn init(cx: &mut App) -> Arc<dyn StorefrontManagerTrait> {
 
 #[derive(Clone)]
 pub struct StorefrontManager {
-    storefronts: Arc<DashMap<String, Arc<dyn StorefrontProvider>>>,
+    storefront_providers: Arc<DashMap<String, Arc<dyn StorefrontProvider>>>,
 }
 
 impl StorefrontManager {
     pub fn new() -> Self {
         Self {
-            storefronts: Arc::new(DashMap::new()),
+            storefront_providers: Arc::new(DashMap::new()),
         }
     }
 }
 
 impl StorefrontManagerTrait for StorefrontManager {
-    fn register_storefront(&self, storefront: Arc<dyn StorefrontProvider>) {
-        self.storefronts
+    fn register_storefront_provider(&self, storefront: Arc<dyn StorefrontProvider>) {
+        self.storefront_providers
             .insert(storefront.metadata().id, storefront);
     }
 
-    fn storefronts(&self) -> Vec<Arc<dyn StorefrontProvider>> {
-        self.storefronts.iter().map(|s| s.value().clone()).collect()
+    fn storefront_providers(&self) -> Vec<Arc<dyn StorefrontProvider>> {
+        self.storefront_providers
+            .iter()
+            .map(|s| s.value().clone())
+            .collect()
     }
 
-    fn storefront(&self, id: &str) -> Option<Arc<dyn StorefrontProvider>> {
-        self.storefronts.get(id).map(|s| s.value().clone())
+    fn storefront_provider(&self, id: &str) -> Option<Arc<dyn StorefrontProvider>> {
+        self.storefront_providers.get(id).map(|s| s.value().clone())
     }
 }
 
