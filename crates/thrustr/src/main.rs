@@ -3,9 +3,9 @@ use assets::Assets;
 use config::paths;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
 use plugin_manager::PluginManagerExt;
-use ports::managers::StorefrontManager;
+use ports::managers::{PluginManager, StorefrontManager};
 use sqlite_storage::SqliteStorage;
-use std::sync::Arc;
+use std::{sync::Arc, thread};
 use storefront_manager::StorefrontManagerExt;
 
 mod app;
@@ -36,9 +36,13 @@ fn main() {
         let plugin_manager = cx.plugin_manager();
         let storefront_manager = cx.storefront_manager();
 
-        cx.background_executor()
-            .block(plugin_manager.load_plugins_from_dir("target/plugins"))
-            .unwrap();
+        thread::spawn(move || {
+            plugin_manager
+                .load_plugins_from_dir("target/plugins")
+                .unwrap();
+        })
+        .join()
+        .unwrap();
 
         let storefront = storefront_manager.storefront("epic-games").unwrap();
 

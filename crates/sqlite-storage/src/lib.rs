@@ -1,5 +1,5 @@
 use crate::schema::{extension_config, extension_data};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use diesel::{
     SqliteConnection,
     r2d2::{ConnectionManager, Pool},
@@ -21,7 +21,10 @@ impl SqliteStorage {
     pub fn new(sqlite_file_path: impl AsRef<Path>) -> Result<Self> {
         let url = format!(
             "sqlite://{}?mode=rwc",
-            sqlite_file_path.as_ref().to_str().unwrap()
+            sqlite_file_path
+                .as_ref()
+                .to_str()
+                .ok_or_else(|| anyhow!("non UTF-8 database path"))?
         );
 
         let manager = ConnectionManager::<SqliteConnection>::new(url);

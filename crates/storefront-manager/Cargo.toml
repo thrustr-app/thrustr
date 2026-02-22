@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# Local
+ports.workspace = true
+
+# External
 dashmap.workspace = true
 gpui.workspace = true
-plugin-manager.workspace = true
-ports.workspace = true

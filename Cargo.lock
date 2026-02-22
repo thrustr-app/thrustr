@@ -4559,6 +4559,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "semver",
 ]
 
 [[package]]
@@ -5881,7 +5882,6 @@ version = "0.1.0"
 dependencies = [
  "dashmap",
  "gpui",
- "plugin-manager",
  "ports",
 ]
 

@@ -1,30 +1,17 @@
 use crate::{Storefront, StorefrontPre};
+use ports::managers::Plugin as PluginTrait;
 use ports::providers::{StorefrontProvider, StorefrontProviderError};
 use ports::storage::ExtensionStorage;
 use semver::Version;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wasmtime::{Engine, Store};
 
+mod manifest;
 mod state;
 mod storefront;
 
+pub use manifest::*;
 pub use state::PluginState;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PluginManifest {
-    pub plugin: PluginInfo,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PluginInfo {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub authors: Vec<String>,
-    pub version: Version,
-    pub description: Option<String>,
-}
 
 pub struct Plugin {
     manifest: PluginManifest,
@@ -48,15 +35,11 @@ impl Plugin {
         }
     }
 
-    pub fn id(&self) -> &str {
-        &self.manifest.plugin.id
-    }
-
-    pub fn set_storefront(&mut self, storefront: Option<StorefrontPre<PluginState>>) {
+    pub(crate) fn set_storefront(&mut self, storefront: Option<StorefrontPre<PluginState>>) {
         self.storefront = storefront;
     }
 
-    pub fn as_storefront(self: &Arc<Self>) -> Option<Arc<dyn StorefrontProvider>> {
+    pub(crate) fn as_storefront(self: &Arc<Self>) -> Option<Arc<dyn StorefrontProvider>> {
         self.storefront
             .is_some()
             .then(|| Arc::clone(self) as Arc<dyn StorefrontProvider>)
@@ -81,5 +64,27 @@ impl Plugin {
             .map_err(|e| StorefrontProviderError::Other(format!("Instantiation failed: {e}")))?;
 
         Ok((instance, store))
+    }
+}
+
+impl PluginTrait for Plugin {
+    fn id(&self) -> &str {
+        &self.manifest.plugin.id
+    }
+
+    fn name(&self) -> &str {
+        &self.manifest.plugin.name
+    }
+
+    fn version(&self) -> &Version {
+        &self.manifest.plugin.version
+    }
+
+    fn description(&self) -> Option<&str> {
+        self.manifest.plugin.description.as_deref()
+    }
+
+    fn authors(&self) -> &[String] {
+        &self.manifest.plugin.authors
     }
 }

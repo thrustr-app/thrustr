@@ -2,7 +2,10 @@ use crate::plugin::{Plugin, PluginManifest, PluginState};
 use anyhow::Result;
 use dashmap::DashMap;
 use gpui::{App, Global};
-use ports::{managers::StorefrontManager, storage::ExtensionStorage};
+use ports::{
+    managers::{Plugin as PluginTrait, PluginManager as PluginManagerTrait, StorefrontManager},
+    storage::ExtensionStorage,
+};
 use std::{
     fs::{self, File},
     io::Read,
@@ -58,19 +61,19 @@ pub struct PluginManager {
     storefront_manager: Arc<dyn StorefrontManager>,
 }
 
-impl PluginManager {
-    pub async fn load_plugins_from_dir(&self, dir: impl AsRef<Path>) -> Result<()> {
+impl PluginManagerTrait for PluginManager {
+    fn load_plugins_from_dir(&self, dir: impl AsRef<Path>) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("tp") {
-                self.load_plugin_from_dir(&path).await?;
+                self.load_plugin_from_dir(&path)?;
             }
         }
         Ok(())
     }
 
-    pub async fn load_plugin_from_dir(&self, path: impl AsRef<Path>) -> Result<()> {
+    fn load_plugin_from_dir(&self, path: impl AsRef<Path>) -> Result<()> {
         let file = File::open(path)?;
         let mut archive = ZipArchive::new(file)?;
 
@@ -107,8 +110,10 @@ impl PluginManager {
         Ok(())
     }
 
-    pub fn plugin(&self, name: &str) -> Option<Arc<Plugin>> {
-        self.plugins.get(name).map(|p| Arc::clone(&p))
+    fn plugin(&self, name: &str) -> Option<Arc<dyn PluginTrait>> {
+        self.plugins
+            .get(name)
+            .map(|p| p.value().clone() as Arc<dyn PluginTrait>)
     }
 }
 

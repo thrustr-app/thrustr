@@ -158,6 +158,33 @@ fn bundle_plugin(plugin_path: &Path, workspace_root: &Path, output_dir: &Path) -
     manifest_file.read_to_end(&mut manifest_content)?;
     zip.write_all(&manifest_content)?;
 
+    // Add icon.* if present (any image extension)
+    let icon_path = fs::read_dir(plugin_path)
+        .context("Failed to read plugin directory")?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s == "icon")
+                .unwrap_or(false)
+                && p.extension().is_some()
+        });
+
+    if let Some(icon_path) = icon_path {
+        let icon_file_name = icon_path
+            .file_name()
+            .context("Invalid icon file name")?
+            .to_str()
+            .context("Non-UTF-8 icon file name")?
+            .to_string();
+        zip.start_file(&icon_file_name, options)?;
+        let mut icon_file = File::open(&icon_path)?;
+        let mut icon_content = Vec::new();
+        icon_file.read_to_end(&mut icon_content)?;
+        zip.write_all(&icon_content)?;
+    }
+
     zip.finish()?;
 
     let tp_size = fs::metadata(&tp_path)?.len();

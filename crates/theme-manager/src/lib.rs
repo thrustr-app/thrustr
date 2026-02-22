@@ -1,17 +1,16 @@
+use crate::error::ThemeError;
 use assets::Assets;
 use gpui::{App, Global};
 use std::collections::HashMap;
 
 #[macro_use]
 mod macros;
+mod error;
 mod theme;
 
 pub use theme::*;
 
 type Result<T> = std::result::Result<T, ThemeError>;
-pub enum ThemeError {
-    NotFound(String),
-}
 
 pub fn init(cx: &mut App) {
     let default_theme = load_default_theme();

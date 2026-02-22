@@ -1,6 +1,12 @@
 use async_trait::async_trait;
 
 #[derive(Debug)]
+pub struct StorefrontMetadata {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug)]
 pub enum StorefrontProviderError {
     NotAutorized(String),
     Other(String),
@@ -8,6 +14,6 @@ pub enum StorefrontProviderError {
 
 #[async_trait]
 pub trait StorefrontProvider: Send + Sync {
-    fn id(&self) -> &str;
+    fn metadata(&self) -> StorefrontMetadata;
     async fn init(&self) -> Result<(), StorefrontProviderError>;
 }
