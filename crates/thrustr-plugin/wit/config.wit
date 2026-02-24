@@ -1,0 +1,9 @@
+package thrustr:plugin@0.1.0;
+
+interface config {
+    variant error {
+        internal(string),
+    }
+
+    get: func(field-id: string) -> result<string, error>;
+}

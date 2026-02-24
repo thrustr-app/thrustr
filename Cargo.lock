@@ -4498,7 +4498,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dashmap",
- "gpui",
  "ports",
  "semver",
  "serde",
@@ -5885,7 +5884,6 @@ name = "storefront-manager"
 version = "0.1.0"
 dependencies = [
  "dashmap",
- "gpui",
  "ports",
 ]
 

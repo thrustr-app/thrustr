@@ -1,7 +1,6 @@
 use crate::plugin::{Plugin, PluginManifest, PluginState};
 use anyhow::Result;
 use dashmap::DashMap;
-use gpui::{App, Global};
 use ports::{
     managers::{Plugin as PluginTrait, PluginManager as PluginManagerTrait, StorefrontManager},
     storage::ExtensionStorage,
@@ -27,31 +26,6 @@ bindgen!({
     exports: { default: async }
 });
 
-pub fn init(
-    cx: &mut App,
-    storage: Arc<dyn ExtensionStorage>,
-    storefront_manager: Arc<dyn StorefrontManager>,
-) {
-    let mut config = Config::new();
-    config.async_support(true).wasm_component_model(true);
-
-    let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
-    let mut linker = Linker::new(&engine);
-    wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
-    Storefront::add_to_linker::<_, PluginState>(&mut linker, |state| state)
-        .expect("Failed to add Storefront imports to linker");
-    wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)
-        .expect("Failed to add WASI HTTP to linker");
-
-    cx.set_global(PluginManager {
-        engine,
-        linker: Arc::new(linker),
-        plugins: Arc::new(DashMap::new()),
-        storage,
-        storefront_manager,
-    });
-}
-
 #[derive(Clone)]
 pub struct PluginManager {
     engine: Engine,
@@ -59,6 +33,32 @@ pub struct PluginManager {
     plugins: Arc<DashMap<String, Arc<Plugin>>>,
     storage: Arc<dyn ExtensionStorage>,
     storefront_manager: Arc<dyn StorefrontManager>,
+}
+
+impl PluginManager {
+    pub fn new(
+        storage: Arc<dyn ExtensionStorage>,
+        storefront_manager: Arc<dyn StorefrontManager>,
+    ) -> Self {
+        let mut config = Config::new();
+        config.async_support(true).wasm_component_model(true);
+
+        let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
+        let mut linker = Linker::new(&engine);
+        wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
+        Storefront::add_to_linker::<_, PluginState>(&mut linker, |state| state)
+            .expect("Failed to add Storefront imports to linker");
+        wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)
+            .expect("Failed to add WASI HTTP to linker");
+
+        Self {
+            engine,
+            linker: Arc::new(linker),
+            plugins: Arc::new(DashMap::new()),
+            storage,
+            storefront_manager,
+        }
+    }
 }
 
 impl PluginManagerTrait for PluginManager {
@@ -121,17 +121,5 @@ impl PluginManagerTrait for PluginManager {
         self.plugins
             .get(name)
             .map(|p| p.value().clone() as Arc<dyn PluginTrait>)
-    }
-}
-
-impl Global for PluginManager {}
-
-pub trait PluginManagerExt {
-    fn plugin_manager(&self) -> PluginManager;
-}
-
-impl PluginManagerExt for App {
-    fn plugin_manager(&self) -> PluginManager {
-        self.global::<PluginManager>().clone()
     }
 }

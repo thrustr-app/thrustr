@@ -12,21 +12,6 @@ pub use theme::*;
 
 type Result<T> = std::result::Result<T, ThemeError>;
 
-pub fn init(cx: &mut App) {
-    let default_theme = load_default_theme();
-    let default_id = default_theme.id().to_owned();
-
-    let mut themes = load_builtin_themes(&default_theme);
-
-    themes.insert(default_id.clone(), default_theme);
-
-    cx.set_global(ThemeManager {
-        themes,
-        default_theme: default_id.clone(),
-        active_theme: default_id,
-    });
-}
-
 pub struct ThemeManager {
     themes: HashMap<String, Theme>,
     active_theme: String,
@@ -34,6 +19,20 @@ pub struct ThemeManager {
 }
 
 impl ThemeManager {
+    pub fn new() -> Self {
+        let default_theme = load_default_theme();
+        let default_id = default_theme.id().to_owned();
+
+        let mut themes = load_builtin_themes(&default_theme);
+        themes.insert(default_id.clone(), default_theme);
+
+        Self {
+            themes,
+            default_theme: default_id.clone(),
+            active_theme: default_id,
+        }
+    }
+
     /// List the manifests of all available themes.
     pub fn list_themes(&self) -> Vec<&ThemeManifest> {
         self.themes.values().map(|t| &t.manifest).collect()
@@ -50,7 +49,7 @@ impl ThemeManager {
     }
 
     /// Get the currently active theme or the default theme as a fallback.
-    fn active_theme(&self) -> &Theme {
+    pub fn active_theme(&self) -> &Theme {
         self.themes
             .get(&self.active_theme)
             .or_else(|| self.themes.get(&self.default_theme))

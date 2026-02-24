@@ -1,15 +1,17 @@
-use crate::app::App;
+use crate::{
+    app::App,
+    globals::{PluginManagerExt, StorefrontManagerExt},
+};
 use assets::Assets;
 use config::paths;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
-use plugin_manager::PluginManagerExt;
 use ports::managers::{PluginManager, StorefrontManager};
 use sqlite_storage::SqliteStorage;
 use std::{sync::Arc, thread};
-use storefront_manager::StorefrontManagerExt;
 
 mod app;
 mod components;
+mod globals;
 mod navigation;
 mod routes;
 
@@ -28,9 +30,7 @@ fn main() {
 
         gpui_router::init(cx);
         gpui_tokio::init(cx);
-        theme_manager::init(cx);
-        let storefront_manager = storefront_manager::init(cx);
-        plugin_manager::init(cx, storage, storefront_manager);
+        globals::init(cx, storage);
 
         // TODO: For testing purposes for now.
         let plugin_manager = cx.plugin_manager();

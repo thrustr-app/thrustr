@@ -9,4 +9,3 @@ ports.workspace = true
 
 # External
 dashmap.workspace = true
-gpui.workspace = true
