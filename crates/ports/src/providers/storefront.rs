@@ -7,6 +7,7 @@ pub enum StorefrontProviderError {
     Other(String),
 }
 
+#[derive(Debug, Clone)]
 pub enum StorefrontProviderStatus {
     Active,
     Inactive,
