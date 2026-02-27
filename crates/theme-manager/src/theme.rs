@@ -9,6 +9,9 @@ define_theme_colors!(
     sidebar_highlight,
     card_background,
     card_foreground_primary,
+    card_foreground_secondary,
+    accent,
+    error,
     border,
     logo,
 );

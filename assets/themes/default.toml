@@ -14,5 +14,9 @@ sidebar_highlight = "#262626"
 
 card_background = "#252525"
 card_foreground_primary = "#FFFFFF"
+card_foreground_secondary = "#646464"
+
+accent = "#8BF0FE"
+error = "#CD3F3F"
 border = "#323232"
 logo = "#B6B6B6"

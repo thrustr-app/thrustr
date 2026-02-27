@@ -6,10 +6,11 @@ use ports::storage::ExtensionStorage;
 use semver::Version;
 use std::sync::Arc;
 use wasmtime::{Engine, Store};
+use xutex::Mutex;
 
 mod manifest;
 mod state;
-mod storefront;
+mod storefront_provider;
 
 pub use manifest::*;
 pub use state::PluginState;
@@ -19,7 +20,7 @@ pub(crate) struct PluginBuilder {
     engine: Engine,
     storage: Arc<dyn ExtensionStorage>,
     icon: Option<Image>,
-    storefront: Option<StorefrontPre<PluginState>>,
+    storefront_pre: Option<StorefrontPre<PluginState>>,
 }
 
 impl PluginBuilder {
@@ -33,7 +34,7 @@ impl PluginBuilder {
             engine,
             storage,
             icon: None,
-            storefront: None,
+            storefront_pre: None,
         }
     }
 
@@ -42,8 +43,11 @@ impl PluginBuilder {
         self
     }
 
-    pub(crate) fn storefront(mut self, storefront: Option<StorefrontPre<PluginState>>) -> Self {
-        self.storefront = storefront;
+    pub(crate) fn storefront_pre(
+        mut self,
+        storefront_pre: Option<StorefrontPre<PluginState>>,
+    ) -> Self {
+        self.storefront_pre = storefront_pre;
         self
     }
 
@@ -53,7 +57,8 @@ impl PluginBuilder {
             engine: self.engine,
             storage: self.storage,
             icon: self.icon,
-            storefront: self.storefront,
+            storefront_pre: self.storefront_pre,
+            storefront_provider_error: Mutex::new(None),
         }
     }
 }
@@ -64,12 +69,13 @@ pub struct Plugin {
     engine: Engine,
     storage: Arc<dyn ExtensionStorage>,
 
-    storefront: Option<StorefrontPre<PluginState>>,
+    storefront_pre: Option<StorefrontPre<PluginState>>,
+    storefront_provider_error: Mutex<Option<StorefrontProviderError>>,
 }
 
 impl Plugin {
-    pub(crate) fn as_storefront(self: &Arc<Self>) -> Option<Arc<dyn StorefrontProvider>> {
-        self.storefront
+    pub(crate) fn as_storefront_provider(self: &Arc<Self>) -> Option<Arc<dyn StorefrontProvider>> {
+        self.storefront_pre
             .is_some()
             .then(|| Arc::clone(self) as Arc<dyn StorefrontProvider>)
     }
@@ -78,7 +84,7 @@ impl Plugin {
         &self,
     ) -> Result<(Storefront, Store<PluginState>), StorefrontProviderError> {
         let storefront_pre = self
-            .storefront
+            .storefront_pre
             .as_ref()
             .ok_or(StorefrontProviderError::Other("Not a storefront".into()))?;
 

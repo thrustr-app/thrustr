@@ -112,11 +112,11 @@ impl PluginManagerTrait for PluginManager {
         let plugin = Arc::new(
             PluginBuilder::new(manifest, self.engine.clone(), self.storage.clone())
                 .icon(icon)
-                .storefront(storefront)
+                .storefront_pre(storefront)
                 .build(),
         );
 
-        if let Some(s) = plugin.as_storefront() {
+        if let Some(s) = plugin.as_storefront_provider() {
             self.storefront_manager.register_storefront_provider(s);
         }
 

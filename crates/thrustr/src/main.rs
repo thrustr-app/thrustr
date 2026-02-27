@@ -48,8 +48,7 @@ fn main() {
             .unwrap();
 
         cx.background_spawn(async move {
-            storefront.init().await.unwrap();
-            //plugin.auth("https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code", b"{\"warning\":\"Do not share this code with any 3rd party service. It allows full access to your Epic account.\",\"redirectUrl\":\"https://localhost/launcher/authorized?code=blahblahsomecode\",\"authorizationCode\":\"blahblahsomecode\",\"exchangeCode\":null,\"sid\":null}").await.unwrap();
+            let _ = storefront.init().await;
         })
         .detach();
         // TODO-END.

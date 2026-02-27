@@ -8,7 +8,7 @@ use theme_manager::ThemeExt;
 #[derive(IntoElement)]
 pub struct Card {
     style: StyleRefinement,
-    title: Option<SharedString>,
+    header: Option<AnyElement>,
     children: SmallVec<[AnyElement; 1]>,
 }
 
@@ -16,13 +16,23 @@ impl Card {
     pub fn new() -> Self {
         Self {
             style: StyleRefinement::default(),
-            title: None,
+            header: None,
             children: SmallVec::new(),
         }
     }
 
-    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
-        self.title = Some(title.into());
+    pub fn title(self, title: impl Into<SharedString>) -> Self {
+        self.header(
+            div()
+                .text_size(rems(1.5))
+                .line_height(rems(1.5))
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(title.into()),
+        )
+    }
+
+    pub fn header(mut self, header: impl IntoElement) -> Self {
+        self.header = Some(header.into_any_element());
         self
     }
 }
@@ -51,16 +61,7 @@ impl RenderOnce for Card {
             .flex()
             .flex_col()
             .text_color(theme.colors.card_foreground_primary)
-            .when_some(self.title, |card, title| {
-                card.child(
-                    div()
-                        .text_size(rems(1.5))
-                        .line_height(rems(1.5))
-                        .mb(rems(1.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(title),
-                )
-            })
+            .when_some(self.header, |card, header| card.child(header))
             .children(self.children);
 
         card.style().refine(&self.style);
