@@ -1,4 +1,4 @@
-use crate::{conversions::image::image_format_to_gpui, globals::StorefrontManagerExt};
+use crate::{conversions::image::image_to_gpui, globals::StorefrontManagerExt};
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
     SharedString, Styled, Window, div, img, prelude::FluentBuilder, rems,
@@ -35,12 +35,7 @@ impl Storefronts {
             .map(|provider| StorefrontProvider {
                 name: provider.name().to_string().into(),
                 status: provider.status(),
-                icon: provider.icon().map(|icon| {
-                    Arc::new(GpuiImage::from_bytes(
-                        image_format_to_gpui(icon.format),
-                        icon.bytes.clone(),
-                    ))
-                }),
+                icon: provider.icon().map(image_to_gpui),
             })
             .collect();
         cx.notify();
