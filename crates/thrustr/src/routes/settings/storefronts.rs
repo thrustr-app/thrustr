@@ -84,6 +84,11 @@ impl Render for Storefronts {
                 )
         });
 
-        div().flex_grow().px(rems(1.5)).children(cards)
+        div()
+            .flex_grow()
+            .flex()
+            .gap(rems(1.5))
+            .px(rems(1.5))
+            .children(cards)
     }
 }

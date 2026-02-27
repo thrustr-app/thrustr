@@ -1,0 +1,10 @@
+[package]
+name = "legacy-games"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thrustr-plugin.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
