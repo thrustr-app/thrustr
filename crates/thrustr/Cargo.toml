@@ -7,7 +7,6 @@ edition = "2024"
 # Local
 assets.workspace = true
 config.workspace = true
-domain.workspace = true
 gpui-tokio.workspace = true
 plugin-manager.workspace = true
 ports.workspace = true

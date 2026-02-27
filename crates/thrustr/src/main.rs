@@ -11,6 +11,7 @@ use std::{sync::Arc, thread};
 
 mod app;
 mod components;
+mod conversions;
 mod globals;
 mod navigation;
 mod routes;
@@ -37,9 +38,7 @@ fn main() {
         let storefront_manager = cx.storefront_manager();
 
         thread::spawn(move || {
-            plugin_manager
-                .load_plugins_from_dir("target/plugins")
-                .unwrap();
+            plugin_manager.load_plugins("target/plugins").unwrap();
         })
         .join()
         .unwrap();

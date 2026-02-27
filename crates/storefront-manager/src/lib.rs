@@ -18,7 +18,7 @@ impl StorefrontManager {
 impl StorefrontManagerTrait for StorefrontManager {
     fn register_storefront_provider(&self, storefront: Arc<dyn StorefrontProvider>) {
         self.storefront_providers
-            .insert(storefront.metadata().id, storefront);
+            .insert(storefront.id().to_string(), storefront);
     }
 
     fn storefront_providers(&self) -> Vec<Arc<dyn StorefrontProvider>> {

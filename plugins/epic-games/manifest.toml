@@ -1,6 +1,6 @@
 [plugin]
 id = "epic-games"
-name = "Epic Games Store"
+name = "Epic Games"
 version = "0.0.1"
 authors = ["Jorge Pardo"]
 description = "Plugin to download and launch Epic Games Store games."

@@ -1,5 +1,6 @@
 use crate::{Storefront, StorefrontPre};
 use ports::managers::Plugin as PluginTrait;
+use ports::metadata::{Image, Metadata};
 use ports::providers::{StorefrontProvider, StorefrontProviderError};
 use ports::storage::ExtensionStorage;
 use semver::Version;
@@ -13,15 +14,15 @@ mod storefront;
 pub use manifest::*;
 pub use state::PluginState;
 
-pub struct Plugin {
+pub(crate) struct PluginBuilder {
     manifest: PluginManifest,
     engine: Engine,
     storage: Arc<dyn ExtensionStorage>,
-
+    icon: Option<Image>,
     storefront: Option<StorefrontPre<PluginState>>,
 }
 
-impl Plugin {
+impl PluginBuilder {
     pub(crate) fn new(
         manifest: PluginManifest,
         engine: Engine,
@@ -31,14 +32,42 @@ impl Plugin {
             manifest,
             engine,
             storage,
+            icon: None,
             storefront: None,
         }
     }
 
-    pub(crate) fn set_storefront(&mut self, storefront: Option<StorefrontPre<PluginState>>) {
-        self.storefront = storefront;
+    pub(crate) fn icon(mut self, icon: Option<Image>) -> Self {
+        self.icon = icon;
+        self
     }
 
+    pub(crate) fn storefront(mut self, storefront: Option<StorefrontPre<PluginState>>) -> Self {
+        self.storefront = storefront;
+        self
+    }
+
+    pub(crate) fn build(self) -> Plugin {
+        Plugin {
+            manifest: self.manifest,
+            engine: self.engine,
+            storage: self.storage,
+            icon: self.icon,
+            storefront: self.storefront,
+        }
+    }
+}
+
+pub struct Plugin {
+    manifest: PluginManifest,
+    icon: Option<Image>,
+    engine: Engine,
+    storage: Arc<dyn ExtensionStorage>,
+
+    storefront: Option<StorefrontPre<PluginState>>,
+}
+
+impl Plugin {
     pub(crate) fn as_storefront(self: &Arc<Self>) -> Option<Arc<dyn StorefrontProvider>> {
         self.storefront
             .is_some()
@@ -67,7 +96,7 @@ impl Plugin {
     }
 }
 
-impl PluginTrait for Plugin {
+impl Metadata for Plugin {
     fn id(&self) -> &str {
         &self.manifest.plugin.id
     }
@@ -76,12 +105,18 @@ impl PluginTrait for Plugin {
         &self.manifest.plugin.name
     }
 
-    fn version(&self) -> &Version {
-        &self.manifest.plugin.version
-    }
-
     fn description(&self) -> Option<&str> {
         self.manifest.plugin.description.as_deref()
+    }
+
+    fn icon(&self) -> Option<&Image> {
+        self.icon.as_ref()
+    }
+}
+
+impl PluginTrait for Plugin {
+    fn version(&self) -> &Version {
+        &self.manifest.plugin.version
     }
 
     fn authors(&self) -> &[String] {

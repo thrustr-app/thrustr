@@ -51,11 +51,16 @@ impl RenderOnce for Card {
             .flex()
             .flex_col()
             .text_color(theme.colors.card_foreground_primary)
-            .text_size(rems(1.5))
-            .line_height(rems(1.5))
-            .gap(rems(1.5))
-            .font_weight(FontWeight::SEMIBOLD)
-            .when_some(self.title, |card, title| card.child(title))
+            .when_some(self.title, |card, title| {
+                card.child(
+                    div()
+                        .text_size(rems(1.5))
+                        .line_height(rems(1.5))
+                        .mb(rems(1.5))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(title),
+                )
+            })
             .children(self.children);
 
         card.style().refine(&self.style);

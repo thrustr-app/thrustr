@@ -1,8 +1,9 @@
-use crate::plugin::{Plugin, PluginManifest, PluginState};
+use crate::plugin::{Plugin, PluginBuilder, PluginManifest, PluginState};
 use anyhow::Result;
 use dashmap::DashMap;
 use ports::{
     managers::{Plugin as PluginTrait, PluginManager as PluginManagerTrait, StorefrontManager},
+    metadata::{Image, ImageFormat, Metadata},
     storage::ExtensionStorage,
 };
 use std::{
@@ -62,18 +63,18 @@ impl PluginManager {
 }
 
 impl PluginManagerTrait for PluginManager {
-    fn load_plugins_from_dir(&self, dir: impl AsRef<Path>) -> Result<()> {
+    fn load_plugins(&self, dir: impl AsRef<Path>) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("tp") {
-                self.load_plugin_from_dir(&path)?;
+                self.load_plugin(&path)?;
             }
         }
         Ok(())
     }
 
-    fn load_plugin_from_dir(&self, path: impl AsRef<Path>) -> Result<()> {
+    fn load_plugin(&self, path: impl AsRef<Path>) -> Result<()> {
         let file = File::open(path)?;
         let mut archive = ZipArchive::new(file)?;
 
@@ -91,15 +92,29 @@ impl PluginManagerTrait for PluginManager {
             wasm_content
         };
 
+        let icon: Option<Image> = (0..archive.len()).find_map(|i| {
+            let mut file = archive.by_index(i).ok()?;
+            let name = file.name().to_lowercase();
+            let path = Path::new(&name);
+            if path.file_stem()?.to_str()? != "icon" {
+                return None;
+            }
+            let format = ImageFormat::from_extension(path.extension()?.to_str()?)?;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).ok()?;
+            Some(Image { bytes, format })
+        });
+
         let component = Component::from_binary(&self.engine, &wasm_bytes)?;
         let instance_pre = self.linker.instantiate_pre(&component)?;
-        let storefront = StorefrontPre::new(instance_pre.clone()).ok();
+        let storefront = StorefrontPre::new(instance_pre).ok();
 
-        let plugin = {
-            let mut plugin = Plugin::new(manifest, self.engine.clone(), self.storage.clone());
-            plugin.set_storefront(storefront);
-            Arc::new(plugin)
-        };
+        let plugin = Arc::new(
+            PluginBuilder::new(manifest, self.engine.clone(), self.storage.clone())
+                .icon(icon)
+                .storefront(storefront)
+                .build(),
+        );
 
         if let Some(s) = plugin.as_storefront() {
             self.storefront_manager.register_storefront_provider(s);

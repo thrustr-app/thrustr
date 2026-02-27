@@ -3,10 +3,7 @@ use crate::{
     plugin::Plugin,
 };
 use async_trait::async_trait;
-use ports::{
-    managers::Plugin as PluginTrait,
-    providers::{StorefrontMetadata, StorefrontProvider, StorefrontProviderError},
-};
+use ports::providers::{StorefrontProvider, StorefrontProviderError};
 
 impl From<WasmStorefrontProviderError> for StorefrontProviderError {
     fn from(e: WasmStorefrontProviderError) -> Self {
@@ -21,13 +18,6 @@ impl From<WasmStorefrontProviderError> for StorefrontProviderError {
 
 #[async_trait]
 impl StorefrontProvider for Plugin {
-    fn metadata(&self) -> StorefrontMetadata {
-        StorefrontMetadata {
-            id: self.id().to_string(),
-            name: self.name().to_string(),
-        }
-    }
-
     async fn init(&self) -> Result<(), StorefrontProviderError> {
         let (instance, mut store) = self.instantiate_storefront().await?;
 

@@ -20,8 +20,8 @@ impl App {
         let home = cx.new(|_cx| Home);
         let collections = cx.new(|_cx| Collections);
 
-        let settings_storefonts = cx.new(|_cx| Storefronts);
-        let settings_plugins = cx.new(|_cx| Plugins);
+        let settings_storefonts = cx.new(|cx| Storefronts::new(cx));
+        let settings_plugins = cx.new(|cx| Plugins::new(cx));
         let settings_appearance = cx.new(|_cx| Appearance);
 
         Self {
