@@ -22,7 +22,7 @@ mod plugin;
 
 bindgen!({
     path: "../thrustr-plugin/wit",
-    world: "storefront",
+    world: "storefront-provider-plugin",
     imports: { default: async },
     exports: { default: async }
 });
@@ -42,12 +42,12 @@ impl PluginManager {
         storefront_manager: Arc<dyn StorefrontManager>,
     ) -> Self {
         let mut config = Config::new();
-        config.async_support(true).wasm_component_model(true);
+        config.async_support(true);
 
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
-        Storefront::add_to_linker::<_, PluginState>(&mut linker, |state| state)
+        StorefrontProviderPlugin::add_to_linker::<_, PluginState>(&mut linker, |state| state)
             .expect("Failed to add Storefront imports to linker");
         wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)
             .expect("Failed to add WASI HTTP to linker");
@@ -107,7 +107,7 @@ impl PluginManagerTrait for PluginManager {
 
         let component = Component::from_binary(&self.engine, &wasm_bytes)?;
         let instance_pre = self.linker.instantiate_pre(&component)?;
-        let storefront = StorefrontPre::new(instance_pre).ok();
+        let storefront = StorefrontProviderPluginPre::new(instance_pre).ok();
 
         let plugin = Arc::new(
             PluginBuilder::new(manifest, self.engine.clone(), self.storage.clone())

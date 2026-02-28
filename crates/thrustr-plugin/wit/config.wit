@@ -1,9 +1,7 @@
 package thrustr:plugin@0.1.0;
 
 interface config {
-    variant error {
-        internal(string),
-    }
+    use types.{error};
 
     get: func(field-id: string) -> result<string, error>;
 }

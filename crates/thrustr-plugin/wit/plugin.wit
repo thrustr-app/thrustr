@@ -1,0 +1,14 @@
+package thrustr:plugin@0.1.0;
+
+interface base {
+    use types.{error};
+
+    init: func() -> result<_, error>;
+}
+
+world base-plugin {
+    import config;
+    import kv-store;
+
+    export base;
+}

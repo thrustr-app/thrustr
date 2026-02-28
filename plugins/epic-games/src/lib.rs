@@ -1,18 +1,17 @@
+use crate::api::models::AuthResponse;
 use serde_json::Value;
 use thrustr_plugin::{
-    StorefrontProvider, StorefrontProviderError, config::Config, kv_store::KvStore,
+    Plugin, PluginError, StorefrontProvider, config::Config, kv_store::KvStore,
     register_storefront_provider,
 };
 use wasip2::{clocks::monotonic_clock, io::poll};
-
-use crate::api::models::AuthResponse;
 
 mod api;
 
 pub struct EpicGames;
 
-impl StorefrontProvider for EpicGames {
-    fn init() -> Result<(), StorefrontProviderError> {
+impl Plugin for EpicGames {
+    fn init() -> Result<(), PluginError> {
         let some_config = Config::get("username")?;
         println!("Username: {some_config}");
 
@@ -33,6 +32,12 @@ impl StorefrontProvider for EpicGames {
             println!("Exists: {}", exists);
         }
 
+        Ok(())
+    }
+}
+
+impl StorefrontProvider for EpicGames {
+    fn test() -> Result<(), PluginError> {
         Ok(())
     }
 }

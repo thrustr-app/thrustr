@@ -1,19 +1,10 @@
-use crate::{StorefrontProviderError, wit::thrustr::plugin::config::get};
-
-pub use crate::wit::thrustr::plugin::config::Error as ConfigError;
+use crate::wit::thrustr::plugin::config::Error;
+use crate::wit::thrustr::plugin::config::get;
 
 pub struct Config;
 
 impl Config {
-    pub fn get(field_id: &str) -> Result<String, ConfigError> {
-        Ok(get(field_id)?)
-    }
-}
-
-impl From<ConfigError> for StorefrontProviderError {
-    fn from(err: ConfigError) -> StorefrontProviderError {
-        match err {
-            ConfigError::Internal(msg) => StorefrontProviderError::Other(msg),
-        }
+    pub fn get(field_id: &str) -> Result<String, Error> {
+        get(field_id)
     }
 }

@@ -1,9 +1,7 @@
 package thrustr:plugin@0.1.0;
 
 interface kv-store {
-    variant error {
-        internal(string),
-    }
+    use types.{error};
 
     get: func(key: string) -> result<option<list<u8>>, error>;
     set: func(key: string, value: list<u8>) -> result<_, error>;

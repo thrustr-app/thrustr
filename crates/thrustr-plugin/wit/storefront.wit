@@ -1,17 +1,13 @@
 package thrustr:plugin@0.1.0;
 
 interface storefront-provider {
-    variant error {
-        not-autorized(string),
-        other(string),
-    }
+    use types.{error};
 
-    init: func() -> result<_, error>;
+    test: func() -> result<_, error>;
 }
 
-world storefront {
-    import config;
-    import kv-store;
+world storefront-provider-plugin {
+    include base-plugin;
 
     export storefront-provider;
 }
