@@ -34,7 +34,7 @@ fn main() {
         let plugin_manager = cx.plugin_manager();
 
         thread::spawn(move || {
-            plugin_manager.load_plugins("target/plugins").unwrap();
+            plugin_manager.load_plugins(paths::plugins_dir()).unwrap();
         })
         .join()
         .unwrap();

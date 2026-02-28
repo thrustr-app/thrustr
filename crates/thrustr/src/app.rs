@@ -46,11 +46,11 @@ impl App {
         let providers = cx.storefront_manager().storefront_providers();
         for provider in providers {
             let settings_storefronts = self.settings_storefronts.clone();
-            let background_task = Tokio::spawn(cx, async move {
+            let init_task = Tokio::spawn(cx, async move {
                 let _ = provider.init().await;
             });
             cx.spawn(async move |_, cx| {
-                let _ = background_task.await;
+                let _ = init_task.await;
                 let _ = cx.update_entity(&settings_storefronts, |this, cx| {
                     this.refresh_providers(cx);
                 });
