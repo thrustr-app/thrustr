@@ -1,11 +1,8 @@
-use crate::{
-    app::App,
-    globals::{PluginManagerExt, StorefrontManagerExt},
-};
+use crate::{app::App, globals::PluginManagerExt};
 use assets::Assets;
 use config::paths;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
-use ports::managers::{PluginManager, StorefrontManager};
+use ports::managers::PluginManager;
 use sqlite_storage::SqliteStorage;
 use std::{sync::Arc, thread};
 
@@ -35,7 +32,6 @@ fn main() {
 
         // TODO: For testing purposes for now.
         let plugin_manager = cx.plugin_manager();
-        let storefront_manager = cx.storefront_manager();
 
         thread::spawn(move || {
             plugin_manager.load_plugins("target/plugins").unwrap();
@@ -43,14 +39,6 @@ fn main() {
         .join()
         .unwrap();
 
-        let storefront = storefront_manager
-            .storefront_provider("epic-games")
-            .unwrap();
-
-        cx.background_spawn(async move {
-            let _ = storefront.init().await;
-        })
-        .detach();
         // TODO-END.
 
         cx.activate(true);

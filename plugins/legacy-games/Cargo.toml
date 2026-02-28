@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 thrustr-plugin.workspace = true
+wasip2 = "1"
+
 
 [lib]
 crate-type = ["cdylib"]

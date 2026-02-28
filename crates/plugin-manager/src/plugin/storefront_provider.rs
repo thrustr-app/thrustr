@@ -19,24 +19,24 @@ impl From<WasmStorefrontProviderError> for StorefrontProviderError {
 #[async_trait]
 impl StorefrontProvider for Plugin {
     fn status(&self) -> StorefrontProviderStatus {
-        if let Some(error) = &*self.storefront_provider_error.lock() {
-            StorefrontProviderStatus::Error(error.clone())
-        } else {
-            StorefrontProviderStatus::Active
-        }
+        self.storefront_provider_status.lock().unwrap().clone()
     }
 
     async fn init(&self) -> Result<(), StorefrontProviderError> {
         let (instance, mut store) = self.instantiate_storefront().await?;
 
-        instance
+        let result: Result<_, StorefrontProviderError> = instance
             .thrustr_plugin_storefront_provider()
             .call_init(&mut store)
             .await
             .map_err(|e| StorefrontProviderError::Other(format!("Wasm call failed: {e}")))?
-            .map_err(Into::into)
-            .inspect_err(|e: &StorefrontProviderError| {
-                *self.storefront_provider_error.lock() = Some(e.clone())
-            })
+            .map_err(Into::into);
+
+        *self.storefront_provider_status.lock().unwrap() = result
+            .as_ref()
+            .map(|_| StorefrontProviderStatus::Active)
+            .unwrap_or_else(|e| StorefrontProviderStatus::Error(e.clone()));
+
+        result
     }
 }

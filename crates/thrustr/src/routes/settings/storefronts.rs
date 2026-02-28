@@ -49,6 +49,11 @@ impl Render for Storefronts {
         let cards = self.providers.iter().map(|provider| {
             let mut status = div().font_weight(FontWeight::BOLD).text_size(rems(0.6));
             match provider.status {
+                StorefrontProviderStatus::Initializing => {
+                    status = status
+                        .text_color(theme.colors.warning)
+                        .child("INITIALIZING");
+                }
                 StorefrontProviderStatus::Active => {
                     status = status.text_color(theme.colors.accent).child("ACTIVE");
                 }

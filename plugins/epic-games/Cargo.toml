@@ -8,6 +8,7 @@ serde.workspace = true
 serde_json.workspace = true
 thrustr-plugin.workspace = true
 url = "2.5"
+wasip2 = "1"
 
 [lib]
 crate-type = ["cdylib"]

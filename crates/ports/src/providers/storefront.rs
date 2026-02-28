@@ -9,6 +9,7 @@ pub enum StorefrontProviderError {
 
 #[derive(Debug, Clone)]
 pub enum StorefrontProviderStatus {
+    Initializing,
     Active,
     Inactive,
     Error(StorefrontProviderError),

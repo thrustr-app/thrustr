@@ -1,12 +1,11 @@
 use crate::{Storefront, StorefrontPre};
 use ports::managers::Plugin as PluginTrait;
 use ports::metadata::{Image, Metadata};
-use ports::providers::{StorefrontProvider, StorefrontProviderError};
+use ports::providers::{StorefrontProvider, StorefrontProviderError, StorefrontProviderStatus};
 use ports::storage::ExtensionStorage;
 use semver::Version;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use wasmtime::{Engine, Store};
-use xutex::Mutex;
 
 mod manifest;
 mod state;
@@ -58,7 +57,7 @@ impl PluginBuilder {
             storage: self.storage,
             icon: self.icon,
             storefront_pre: self.storefront_pre,
-            storefront_provider_error: Mutex::new(None),
+            storefront_provider_status: Mutex::new(StorefrontProviderStatus::Initializing),
         }
     }
 }
@@ -70,7 +69,7 @@ pub struct Plugin {
     storage: Arc<dyn ExtensionStorage>,
 
     storefront_pre: Option<StorefrontPre<PluginState>>,
-    storefront_provider_error: Mutex<Option<StorefrontProviderError>>,
+    storefront_provider_status: Mutex<StorefrontProviderStatus>,
 }
 
 impl Plugin {

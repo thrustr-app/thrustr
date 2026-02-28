@@ -695,15 +695,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "branches"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e426eb5cc1900033930ec955317b302e68f19f326cc7bb0c8a86865a826cdf0c"
-dependencies = [
- "rustc_version",
-]
-
-[[package]]
 name = "bstr"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1946,6 +1937,7 @@ dependencies = [
  "serde_json",
  "thrustr-plugin",
  "url",
+ "wasip2",
 ]
 
 [[package]]
@@ -3569,6 +3561,7 @@ name = "legacy-games"
 version = "0.1.0"
 dependencies = [
  "thrustr-plugin",
+ "wasip2",
 ]
 
 [[package]]
@@ -4513,7 +4506,6 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-http",
- "xutex",
  "zip",
 ]
 
@@ -8482,16 +8474,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "zip",
-]
-
-[[package]]
-name = "xutex"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e179a55fe12a8d75c182e1ea63814a4b2b6262b1291d9016e3e1c7f59a1be94"
-dependencies = [
- "branches",
- "crossbeam-queue",
 ]
 
 [[package]]
