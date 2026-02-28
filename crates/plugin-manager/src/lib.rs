@@ -11,6 +11,7 @@ use std::{
     io::Read,
     path::Path,
     sync::Arc,
+    thread,
 };
 use wasmtime::{
     Config, Engine,
@@ -64,14 +65,20 @@ impl PluginManager {
 
 impl PluginManagerTrait for PluginManager {
     fn load_plugins(&self, dir: impl AsRef<Path>) -> Result<()> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("tp") {
-                self.load_plugin(&path)?;
+        let paths = fs::read_dir(dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("tp"));
+
+        thread::scope(|s| {
+            let handles = paths.map(|path| s.spawn(|| self.load_plugin(path)));
+
+            for handle in handles {
+                handle.join().expect("plugin load thread panicked")?;
             }
-        }
-        Ok(())
+
+            Ok(())
+        })
     }
 
     fn load_plugin(&self, path: impl AsRef<Path>) -> Result<()> {

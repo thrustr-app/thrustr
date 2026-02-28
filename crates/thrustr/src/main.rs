@@ -1,10 +1,9 @@
-use crate::{app::App, globals::PluginManagerExt};
+use crate::app::App;
 use assets::Assets;
 use config::paths;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
-use ports::managers::PluginManager;
 use sqlite_storage::SqliteStorage;
-use std::{sync::Arc, thread};
+use std::sync::Arc;
 
 mod app;
 mod components;
@@ -29,17 +28,6 @@ fn main() {
         gpui_router::init(cx);
         gpui_tokio::init(cx);
         globals::init(cx, storage);
-
-        // TODO: For testing purposes for now.
-        let plugin_manager = cx.plugin_manager();
-
-        thread::spawn(move || {
-            plugin_manager.load_plugins(paths::plugins_dir()).unwrap();
-        })
-        .join()
-        .unwrap();
-
-        // TODO-END.
 
         cx.activate(true);
         cx.open_window(

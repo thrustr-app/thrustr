@@ -1,14 +1,14 @@
 use crate::{
-    globals::StorefrontManagerExt,
-    routes::{
-        Appearance, Collections, Home, Library, MainLayout, Plugins, SettingsLayout, Storefronts,
-    },
+    globals::{PluginManagerExt, StorefrontManagerExt},
+    routes::*,
 };
+use config::paths;
 use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div};
 use gpui_router::{Route, Routes};
 use gpui_tokio::Tokio;
-use ports::managers::StorefrontManager;
+use ports::managers::{PluginManager, StorefrontManager};
 use theme_manager::ThemeExt;
+use tokio::task::spawn_blocking;
 
 pub struct App {
     home: Entity<Home>,
@@ -38,18 +38,47 @@ impl App {
             settings_appearance,
         };
 
-        page.init_storefront_providers(cx);
+        page.load_plugins(cx);
         page
     }
 
+    fn load_plugins(&self, cx: &mut Context<Self>) {
+        let plugin_manager = cx.plugin_manager();
+        let load_task = Tokio::spawn(cx, async move {
+            let _ = spawn_blocking(move || plugin_manager.load_plugins(paths::plugins_dir())).await;
+        });
+
+        let settings_storefronts = self.settings_storefronts.clone();
+        cx.spawn(async move |app, cx| {
+            let _ = load_task.await;
+            let _ = cx.update_entity(&settings_storefronts, |this, cx| {
+                this.refresh_providers(cx);
+            });
+
+            let _ = app.update(cx, |app, cx| {
+                app.init_storefront_providers(cx);
+            });
+        })
+        .detach();
+    }
+
     fn init_storefront_providers(&self, cx: &mut Context<Self>) {
-        let providers = cx.storefront_manager().storefront_providers();
-        for provider in providers {
-            let settings_storefronts = self.settings_storefronts.clone();
+        let inactive_providers = cx
+            .storefront_manager()
+            .storefront_providers()
+            .into_iter()
+            .filter(|p| p.status().is_inactive());
+
+        for provider in inactive_providers {
             let init_task = Tokio::spawn(cx, async move {
                 let _ = provider.init().await;
             });
+
+            let settings_storefronts = self.settings_storefronts.clone();
             cx.spawn(async move |_, cx| {
+                let _ = cx.update_entity(&settings_storefronts, |this, cx| {
+                    this.refresh_providers(cx);
+                });
                 let _ = init_task.await;
                 let _ = cx.update_entity(&settings_storefronts, |this, cx| {
                     this.refresh_providers(cx);
