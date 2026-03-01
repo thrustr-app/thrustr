@@ -112,6 +112,8 @@ impl Plugin {
     pub(crate) async fn init(&self) -> Result<(), PluginError> {
         *self.status.lock().unwrap() = PluginStatus::Initializing;
 
+        event::emit("storefront");
+
         let (instance, mut store) = self.instantiate_storefront_provider().await?;
 
         let result: Result<_, PluginError> = instance
@@ -125,6 +127,8 @@ impl Plugin {
             .as_ref()
             .map(|_| PluginStatus::Active)
             .unwrap_or_else(|e| PluginStatus::Error(e.clone()));
+
+        event::emit("storefront");
 
         result
     }

@@ -21,6 +21,7 @@ impl StorefrontManagerTrait for StorefrontManager {
     async fn register_storefront_provider(&self, storefront: Arc<dyn StorefrontProvider>) {
         self.storefront_providers
             .insert(storefront.id().to_string(), storefront);
+        event::emit("storefront");
     }
 
     fn storefront_providers(&self) -> Vec<Arc<dyn StorefrontProvider>> {

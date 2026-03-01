@@ -23,6 +23,17 @@ impl Storefronts {
         let mut page = Self {
             providers: Vec::new(),
         };
+
+        cx.spawn(async |page, cx| {
+            let mut listener = event::listen("storefront");
+            while let Ok(_) = listener.recv().await {
+                let _ = page.update(cx, |page, cx| {
+                    page.refresh_providers(cx);
+                });
+            }
+        })
+        .detach();
+
         page.refresh_providers(cx);
         page
     }

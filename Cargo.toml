@@ -9,6 +9,7 @@ default-members = ["crates/thrustr"]
 assets = { path = "crates/assets" }
 config = { path = "crates/config" }
 domain = { path = "crates/domain" }
+event = { path = "crates/event" }
 gpui-tokio = { path = "crates/gpui-tokio" }
 plugin-manager = { path = "crates/plugin-manager" }
 ports = { path = "crates/ports" }

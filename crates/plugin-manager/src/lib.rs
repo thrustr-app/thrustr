@@ -149,6 +149,8 @@ impl PluginManagerTrait for PluginManager {
 
         self.plugins.insert(plugin.id().to_owned(), plugin);
 
+        event::emit("plugin");
+
         Ok(())
     }
 

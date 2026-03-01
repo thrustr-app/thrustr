@@ -8,7 +8,6 @@ use gpui_router::{Route, Routes};
 use gpui_tokio::Tokio;
 use ports::managers::{PluginManager, StorefrontManager};
 use theme_manager::ThemeExt;
-use tokio::task::spawn_blocking;
 
 pub struct App {
     home: Entity<Home>,
@@ -38,6 +37,16 @@ impl App {
             settings_appearance,
         };
 
+        cx.spawn(async |page, cx| {
+            let mut listener = event::listen("plugin");
+            while let Ok(_) = listener.recv().await {
+                let _ = page.update(cx, |page, cx| {
+                    page.init_storefront_providers(cx);
+                });
+            }
+        })
+        .detach();
+
         page.load_plugins(cx);
         page
     }
@@ -60,19 +69,8 @@ impl App {
             .filter(|p| p.status().is_inactive());
 
         for provider in inactive_providers {
-            let init_task = Tokio::spawn(cx, async move {
+            Tokio::spawn(cx, async move {
                 let _ = provider.init().await;
-            });
-
-            let settings_storefronts = self.settings_storefronts.clone();
-            cx.spawn(async move |_, cx| {
-                let _ = cx.update_entity(&settings_storefronts, |this, cx| {
-                    this.refresh_providers(cx);
-                });
-                let _ = init_task.await;
-                let _ = cx.update_entity(&settings_storefronts, |this, cx| {
-                    this.refresh_providers(cx);
-                });
             })
             .detach();
         }
