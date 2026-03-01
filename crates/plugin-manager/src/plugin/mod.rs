@@ -110,7 +110,17 @@ impl Plugin {
     }
 
     pub(crate) async fn init(&self) -> Result<(), PluginError> {
-        *self.status.lock().unwrap() = PluginStatus::Initializing;
+        {
+            let mut lock = self.status.lock().unwrap();
+            match *lock {
+                PluginStatus::Inactive => *lock = PluginStatus::Initializing,
+                _ => {
+                    return Err(PluginError::Other(
+                        "Plugin is already initializing or active".into(),
+                    ));
+                }
+            }
+        }
 
         event::emit("storefront");
 

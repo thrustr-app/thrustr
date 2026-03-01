@@ -62,12 +62,7 @@ impl App {
     }
 
     fn init_storefront_providers(&self, cx: &mut Context<Self>) {
-        let inactive_providers = cx
-            .storefront_manager()
-            .storefront_providers()
-            .into_iter()
-            .filter(|p| p.status().is_inactive());
-
+        let inactive_providers = cx.storefront_manager().storefront_providers().into_iter();
         for provider in inactive_providers {
             Tokio::spawn(cx, async move {
                 let _ = provider.init().await;
