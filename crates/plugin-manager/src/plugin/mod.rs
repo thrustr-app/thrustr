@@ -1,7 +1,7 @@
 use crate::exports::thrustr::plugin::base::Error as PluginError;
 use crate::{StorefrontProviderPlugin, StorefrontProviderPluginPre};
 use ports::managers::Plugin as PluginTrait;
-use ports::metadata::{Image, Metadata};
+use ports::metadata::{Image, Metadata, Origin};
 use ports::providers::StorefrontProvider;
 use ports::storage::ExtensionStorage;
 use semver::Version;
@@ -61,22 +61,25 @@ impl PluginBuilder {
 
     pub(crate) fn build(self) -> Plugin {
         Plugin {
+            origin: Origin::Plugin(self.manifest.plugin.id.clone()),
             manifest: self.manifest,
+            icon: self.icon,
+            status: Mutex::new(PluginStatus::Inactive),
             engine: self.engine,
             storage: self.storage,
-            icon: self.icon,
             storefront_provider_pre: self.storefront_pre,
-            status: Mutex::new(PluginStatus::Inactive),
         }
     }
 }
 
 pub struct Plugin {
     manifest: PluginManifest,
+    origin: Origin,
     icon: Option<Image>,
+    status: Mutex<PluginStatus>,
+
     engine: Engine,
     storage: Arc<dyn ExtensionStorage>,
-    status: Mutex<PluginStatus>,
 
     storefront_provider_pre: Option<StorefrontProviderPluginPre<PluginState>>,
 }
@@ -152,6 +155,10 @@ impl Metadata for Plugin {
 
     fn name(&self) -> &str {
         &self.manifest.plugin.name
+    }
+
+    fn origin(&self) -> &Origin {
+        &self.origin
     }
 
     fn description(&self) -> Option<&str> {

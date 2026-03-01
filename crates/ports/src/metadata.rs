@@ -29,9 +29,33 @@ pub struct Image {
     pub format: ImageFormat,
 }
 
+#[derive(Debug)]
+pub enum Origin {
+    Core,
+    Plugin(String),
+}
+
+impl Origin {
+    pub fn is_core(&self) -> bool {
+        matches!(self, Self::Core)
+    }
+
+    pub fn is_plugin(&self) -> bool {
+        matches!(self, Self::Plugin(_))
+    }
+
+    pub fn plugin_id(&self) -> Option<&str> {
+        match self {
+            Self::Plugin(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
 pub trait Metadata {
     fn id(&self) -> &str;
     fn name(&self) -> &str;
+    fn origin(&self) -> &Origin;
     fn description(&self) -> Option<&str>;
     fn icon(&self) -> Option<&Image>;
 }

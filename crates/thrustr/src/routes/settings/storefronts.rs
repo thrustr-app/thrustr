@@ -1,17 +1,19 @@
 use crate::{conversions::image::image_to_gpui, globals::StorefrontManagerExt};
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window, div, img, prelude::FluentBuilder, rems,
+    SharedString, Styled, Window, div, green, img, prelude::FluentBuilder, px, rems, svg,
 };
 use ports::{managers::StorefrontManager, providers::StorefrontProviderStatus};
 use std::sync::Arc;
 use theme_manager::ThemeExt;
 use ui::Card;
 
+#[derive(Clone)]
 struct StorefrontProvider {
     name: SharedString,
     status: StorefrontProviderStatus,
     icon: Option<Arc<GpuiImage>>,
+    plugin: Option<SharedString>,
 }
 
 pub struct Storefronts {
@@ -39,7 +41,7 @@ impl Storefronts {
     }
 
     pub fn refresh_providers(&mut self, cx: &mut Context<Self>) {
-        self.providers = cx
+        let mut providers: Vec<StorefrontProvider> = cx
             .storefront_manager()
             .storefront_providers()
             .into_iter()
@@ -47,8 +49,15 @@ impl Storefronts {
                 name: provider.name().to_string().into(),
                 status: provider.status(),
                 icon: provider.icon().map(image_to_gpui),
+                plugin: provider
+                    .origin()
+                    .plugin_id()
+                    .map(|id| id.to_string().into()),
             })
             .collect();
+
+        providers.sort_by(|a, b| a.name.cmp(&b.name));
+        self.providers = providers;
         cx.notify();
     }
 }
@@ -57,7 +66,7 @@ impl Render for Storefronts {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        let cards = self.providers.iter().map(|provider| {
+        let cards = self.providers.clone().into_iter().map(|provider| {
             let mut status = div().font_weight(FontWeight::BOLD).text_size(rems(0.6));
             match provider.status {
                 StorefrontProviderStatus::Initializing => {
@@ -79,10 +88,10 @@ impl Render for Storefronts {
             }
 
             Card::new()
+                .relative()
                 .gap(rems(1.))
-                .items_center()
-                .size(rems(10.))
-                .when_some(provider.icon.clone(), |card, icon| {
+                .size(rems(11.))
+                .when_some(provider.icon, |card, icon| {
                     card.child(img(ImageSource::Image(icon)).size_full())
                 })
                 .child(
@@ -92,9 +101,23 @@ impl Render for Storefronts {
                         .items_center()
                         .child(
                             div()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .gap(rems(0.5))
+                                .when_some(provider.plugin, |this, _| {
+                                    this.child(
+                                        svg()
+                                            .path("icons/plugins.svg")
+                                            .size(rems(1.))
+                                            .flex_shrink_0()
+                                            .text_color(theme.colors.card_foreground_primary),
+                                    )
+                                })
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(theme.colors.card_foreground_primary)
-                                .child(provider.name.clone()),
+                                .child(provider.name),
                         )
                         .child(status),
                 )

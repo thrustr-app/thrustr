@@ -4,3 +4,22 @@ name = "Epic Games"
 version = "0.0.1"
 authors = ["Jorge Pardo"]
 description = "Plugin to download and launch Epic Games Store games."
+
+[config]
+[[config.item]]
+type = "String"
+id = "username"
+label = "Username"
+
+[[config.item]]
+type = "String"
+id = "password"
+label = "Password"
+
+[[config.item]]
+type = "Section"
+name = "Advanced Settings"
+items = [
+    { type = "String", id = "enable_debug", label = "Enable Debug Mode" },
+    { type = "String", id = "verbose_logging", label = "Verbose Logging" }
+]

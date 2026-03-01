@@ -1,7 +1,7 @@
 use semver::Version;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct PluginInfo {
     pub id: String,
     pub name: String,
@@ -11,7 +11,27 @@ pub struct PluginInfo {
     pub description: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum PluginConfigItem {
+    Section {
+        name: String,
+        items: Vec<PluginConfigItem>,
+    },
+    String {
+        id: String,
+        label: String,
+    },
+}
+
+#[derive(Deserialize, Debug)]
+pub struct PluginConfig {
+    #[serde(rename = "item")]
+    pub items: Vec<PluginConfigItem>,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct PluginManifest {
     pub plugin: PluginInfo,
+    pub config: Option<PluginConfig>,
 }
