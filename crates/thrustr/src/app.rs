@@ -44,20 +44,10 @@ impl App {
 
     fn load_plugins(&self, cx: &mut Context<Self>) {
         let plugin_manager = cx.plugin_manager();
-        let load_task = Tokio::spawn(cx, async move {
-            let _ = spawn_blocking(move || plugin_manager.load_plugins(paths::plugins_dir())).await;
-        });
-
-        let settings_storefronts = self.settings_storefronts.clone();
-        cx.spawn(async move |app, cx| {
-            let _ = load_task.await;
-            let _ = cx.update_entity(&settings_storefronts, |this, cx| {
-                this.refresh_providers(cx);
-            });
-
-            let _ = app.update(cx, |app, cx| {
-                app.init_storefront_providers(cx);
-            });
+        cx.background_spawn(async move {
+            let _ = plugin_manager
+                .load_plugins(paths::plugins_dir().as_path())
+                .await;
         })
         .detach();
     }

@@ -8,4 +8,5 @@ edition = "2024"
 ports.workspace = true
 
 # External
+async-trait.workspace = true
 dashmap.workspace = true

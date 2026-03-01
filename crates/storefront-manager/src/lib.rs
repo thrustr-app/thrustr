@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use dashmap::DashMap;
 use ports::{managers::StorefrontManager as StorefrontManagerTrait, providers::StorefrontProvider};
 use std::sync::Arc;
@@ -15,8 +16,9 @@ impl StorefrontManager {
     }
 }
 
+#[async_trait]
 impl StorefrontManagerTrait for StorefrontManager {
-    fn register_storefront_provider(&self, storefront: Arc<dyn StorefrontProvider>) {
+    async fn register_storefront_provider(&self, storefront: Arc<dyn StorefrontProvider>) {
         self.storefront_providers
             .insert(storefront.id().to_string(), storefront);
     }

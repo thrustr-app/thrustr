@@ -1,17 +1,19 @@
 use crate::plugin::{Plugin, PluginBuilder, PluginManifest, PluginState};
 use anyhow::Result;
+use async_trait::async_trait;
 use dashmap::DashMap;
+use futures::TryStreamExt;
 use ports::{
     managers::{Plugin as PluginTrait, PluginManager as PluginManagerTrait, StorefrontManager},
     metadata::{Image, ImageFormat, Metadata},
     storage::ExtensionStorage,
 };
 use std::{
-    fs::{self, File},
+    ffi::OsStr,
+    fs::File,
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
-    thread,
 };
 use wasmtime::{
     Config, Engine,
@@ -63,56 +65,72 @@ impl PluginManager {
     }
 }
 
+#[async_trait]
 impl PluginManagerTrait for PluginManager {
-    fn load_plugins(&self, dir: impl AsRef<Path>) -> Result<()> {
-        let paths = fs::read_dir(dir)?
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("tp"));
+    async fn load_plugins(&self, dir: &Path) -> Result<()> {
+        let mut read_dir = smol::fs::read_dir(dir).await?;
+        let mut paths: Vec<PathBuf> = Vec::new();
 
-        thread::scope(|s| {
-            let handles = paths.map(|path| s.spawn(|| self.load_plugin(path)));
-
-            for handle in handles {
-                handle.join().expect("plugin load thread panicked")?;
+        while let Some(entry) = read_dir.try_next().await? {
+            let path = entry.path();
+            if path.extension() == Some(OsStr::new("tp")) {
+                paths.push(path);
             }
+        }
 
-            Ok(())
-        })
+        futures::stream::iter(paths.into_iter().map(Ok::<PathBuf, anyhow::Error>))
+            .try_for_each_concurrent(None, |path| async move {
+                self.load_plugin(path.as_path()).await
+            })
+            .await?;
+
+        Ok(())
     }
 
-    fn load_plugin(&self, path: impl AsRef<Path>) -> Result<()> {
-        let file = File::open(path)?;
-        let mut archive = ZipArchive::new(file)?;
+    async fn load_plugin(&self, path: &Path) -> Result<()> {
+        let path = path.to_owned();
 
-        let manifest: PluginManifest = {
-            let mut manifest_file = archive.by_name("manifest.toml")?;
-            let mut manifest_content = String::new();
-            manifest_file.read_to_string(&mut manifest_content)?;
-            toml::from_str(&manifest_content)?
-        };
+        let (manifest, wasm_bytes, icon) = smol::unblock(move || {
+            let file = File::open(&path)?;
+            let mut archive = ZipArchive::new(file)?;
 
-        let wasm_bytes: Vec<u8> = {
-            let mut wasm_file = archive.by_name("plugin.wasm")?;
-            let mut wasm_content = Vec::new();
-            wasm_file.read_to_end(&mut wasm_content)?;
-            wasm_content
-        };
+            let manifest: PluginManifest = {
+                let mut manifest_file = archive.by_name("manifest.toml")?;
+                let mut manifest_content = String::new();
+                manifest_file.read_to_string(&mut manifest_content)?;
+                toml::from_str(&manifest_content)?
+            };
 
-        let icon: Option<Image> = (0..archive.len()).find_map(|i| {
-            let mut file = archive.by_index(i).ok()?;
-            let name = file.name().to_lowercase();
-            let path = Path::new(&name);
-            if path.file_stem()?.to_str()? != "icon" {
-                return None;
-            }
-            let format = ImageFormat::from_extension(path.extension()?.to_str()?)?;
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes).ok()?;
-            Some(Image { bytes, format })
-        });
+            let wasm_bytes: Vec<u8> = {
+                let mut wasm_file = archive.by_name("plugin.wasm")?;
+                let mut wasm_content = Vec::new();
+                wasm_file.read_to_end(&mut wasm_content)?;
+                wasm_content
+            };
 
-        let component = Component::from_binary(&self.engine, &wasm_bytes)?;
+            let icon: Option<Image> = (0..archive.len()).find_map(|i| {
+                let mut file = archive.by_index(i).ok()?;
+                let name = file.name().to_lowercase();
+                let path = Path::new(&name);
+                if path.file_stem()?.to_str()? != "icon" {
+                    return None;
+                }
+                let format = ImageFormat::from_extension(path.extension()?.to_str()?)?;
+                let mut bytes = Vec::new();
+                file.read_to_end(&mut bytes).ok()?;
+                Some(Image { bytes, format })
+            });
+
+            Ok::<_, anyhow::Error>((manifest, wasm_bytes, icon))
+        })
+        .await?;
+
+        let component = smol::unblock({
+            let engine = self.engine.clone();
+            move || Component::from_binary(&engine, &wasm_bytes)
+        })
+        .await?;
+
         let instance_pre = self.linker.instantiate_pre(&component)?;
         let storefront = StorefrontProviderPluginPre::new(instance_pre).ok();
 
@@ -124,7 +142,9 @@ impl PluginManagerTrait for PluginManager {
         );
 
         if let Some(s) = plugin.as_storefront_provider() {
-            self.storefront_manager.register_storefront_provider(s);
+            self.storefront_manager
+                .register_storefront_provider(s)
+                .await;
         }
 
         self.plugins.insert(plugin.id().to_owned(), plugin);
