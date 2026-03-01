@@ -124,19 +124,20 @@ impl Plugin {
 
         event::emit("storefront");
 
-        let (instance, mut store) = self.instantiate_storefront_provider().await?;
+        let result: Result<(), PluginError> = match self.instantiate_storefront_provider().await {
+            Ok((instance, mut store)) => instance
+                .thrustr_plugin_base()
+                .call_init(&mut store)
+                .await
+                .map_err(|e| PluginError::Other(format!("Wasm call failed: {e}")))?
+                .map_err(Into::into),
+            Err(e) => Err(e.into()),
+        };
 
-        let result: Result<_, PluginError> = instance
-            .thrustr_plugin_base()
-            .call_init(&mut store)
-            .await
-            .map_err(|e| PluginError::Other(format!("Wasm call failed: {e}")))?
-            .map_err(Into::into);
-
-        *self.status.lock().unwrap() = result
-            .as_ref()
-            .map(|_| PluginStatus::Active)
-            .unwrap_or_else(|e| PluginStatus::Error(e.clone()));
+        *self.status.lock().unwrap() = match &result {
+            Ok(_) => PluginStatus::Active,
+            Err(e) => PluginStatus::Error(e.clone()),
+        };
 
         event::emit("storefront");
 
