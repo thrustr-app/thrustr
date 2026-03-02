@@ -19,5 +19,5 @@ ui.workspace = true
 # External
 anyhow.workspace = true
 gpui.workspace = true
-gpui-router = "0.3.0"
+
 tokio.workspace = true

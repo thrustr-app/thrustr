@@ -25,7 +25,7 @@ fn main() {
             .load_fonts(cx)
             .expect("Failed to load embedded fonts");
 
-        gpui_router::init(cx);
+        navigation::init(cx);
         gpui_tokio::init(cx);
         globals::init(cx, storage);
 

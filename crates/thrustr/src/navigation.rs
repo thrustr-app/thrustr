@@ -1,24 +1,12 @@
-use gpui_router::{Location, NavLink};
+use gpui::{AnyView, App, AppContext, BorrowAppContext, Global};
 
-/// Shared behaviour for all route enums.
-pub trait Route: Copy {
-    /// Returns `(label, path)`.
-    fn route(&self) -> (&'static str, &'static str);
+use crate::routes::*;
 
-    fn as_str(&self) -> &'static str {
-        self.route().0
-    }
-
-    fn as_path(&self) -> &'static str {
-        self.route().1
-    }
-
-    fn nav_link(&self) -> NavLink {
-        NavLink::new().to(self.as_path())
-    }
+pub fn init(cx: &mut App) {
+    cx.set_global(Navigator::new(Page::Home));
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub enum Page {
     Home,
     Library,
@@ -31,21 +19,8 @@ impl PartialEq for Page {
         use Page::*;
         match (self, other) {
             (Home, Home) | (Library, Library) | (Collections, Collections) => true,
-            (Settings(_), Settings(_)) => true, // ignore inner SettingsPage
+            (Settings(_), Settings(_)) => true,
             _ => false,
-        }
-    }
-}
-
-impl Eq for Page {}
-
-impl Route for Page {
-    fn route(&self) -> (&'static str, &'static str) {
-        match self {
-            Page::Home => ("home", "/"),
-            Page::Library => ("library", "/library"),
-            Page::Collections => ("collections", "/collections"),
-            Page::Settings(sub) => sub.route(),
         }
     }
 }
@@ -59,6 +34,24 @@ impl Page {
             Page::Settings(_) => "icons/settings.svg",
         }
     }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Page::Home => "home",
+            Page::Library => "library",
+            Page::Collections => "collections",
+            Page::Settings(sub) => sub.label(),
+        }
+    }
+
+    pub fn build_view(&self, cx: &mut App) -> AnyView {
+        match self {
+            Page::Home => cx.new(|_cx| Home).into(),
+            Page::Library => cx.new(|_cx| Library).into(),
+            Page::Collections => cx.new(|_cx| Collections).into(),
+            Page::Settings(sub) => cx.new(|cx| Settings::new(*sub, cx)).into(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -69,23 +62,20 @@ pub enum SettingsPage {
     Appearance,
 }
 
-impl Route for SettingsPage {
-    fn route(&self) -> (&'static str, &'static str) {
+impl SettingsPage {
+    pub fn label(&self) -> &'static str {
         match self {
-            SettingsPage::Storefronts => ("storefronts", "/settings/storefronts"),
-            SettingsPage::Plugins => ("plugins", "/settings/plugins"),
-            SettingsPage::Appearance => ("appearance", "/settings/appearance"),
+            SettingsPage::Storefronts => "storefronts",
+            SettingsPage::Plugins => "plugins",
+            SettingsPage::Appearance => "appearance",
         }
     }
-}
 
-impl SettingsPage {
-    fn from_path(path: &str) -> Self {
-        match path {
-            "/settings/storefronts" => Self::Storefronts,
-            "/settings/appearance" => Self::Appearance,
-            "/settings/plugins" => Self::Plugins,
-            _ => Self::default(),
+    pub fn label_pretty(&self) -> &'static str {
+        match self {
+            SettingsPage::Storefronts => "Storefronts",
+            SettingsPage::Plugins => "Plugins",
+            SettingsPage::Appearance => "Appearance",
         }
     }
 
@@ -97,35 +87,49 @@ impl SettingsPage {
         }
     }
 
-    pub fn as_str_pretty(&self) -> &'static str {
+    pub fn build_view(&self, cx: &mut App) -> AnyView {
         match self {
-            SettingsPage::Storefronts => "Storefronts",
-            SettingsPage::Plugins => "Plugins",
-            SettingsPage::Appearance => "Appearance",
+            SettingsPage::Storefronts => cx.new(|cx| Storefronts::new(cx)).into(),
+            SettingsPage::Plugins => cx.new(|cx| Plugins::new(cx)).into(),
+            SettingsPage::Appearance => cx.new(|_cx| Appearance).into(),
         }
     }
 }
 
-pub trait LocationExt {
-    fn page(&self) -> Page;
-    fn settings_page(&self) -> Option<SettingsPage> {
-        if let Page::Settings(settings_page) = self.page() {
-            Some(settings_page)
+pub struct Navigator {
+    current: Page,
+}
+
+impl Global for Navigator {}
+
+impl Navigator {
+    fn new(initial: Page) -> Self {
+        Self { current: initial }
+    }
+
+    pub fn current_page(&self) -> Page {
+        self.current
+    }
+
+    pub fn settings_page(&self) -> Option<SettingsPage> {
+        if let Page::Settings(sub) = self.current {
+            Some(sub)
         } else {
             None
         }
     }
 }
 
-impl LocationExt for Location {
-    fn page(&self) -> Page {
-        let path = self.pathname.as_str();
-        match path {
-            "/" => Page::Home,
-            p if p.starts_with("/library") => Page::Library,
-            p if p.starts_with("/collections") => Page::Collections,
-            p if p.starts_with("/settings") => Page::Settings(SettingsPage::from_path(p)),
-            _ => Page::Home,
-        }
-    }
+pub fn navigate(cx: &mut App, page: Page) {
+    cx.update_global::<Navigator, _>(|nav, _cx| {
+        nav.current = page;
+    });
+}
+
+pub fn current_page(cx: &App) -> Page {
+    cx.global::<Navigator>().current_page()
+}
+
+pub fn current_settings_page(cx: &App) -> Option<SettingsPage> {
+    cx.global::<Navigator>().settings_page()
 }

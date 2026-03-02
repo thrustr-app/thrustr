@@ -1,7 +1,10 @@
-use crate::{conversions::image::image_to_gpui, globals::StorefrontManagerExt};
+use crate::{
+    conversions::image::image_to_gpui,
+    globals::{EventListenerExt, StorefrontManagerExt},
+};
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window, div, green, img, prelude::FluentBuilder, px, rems, svg,
+    SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
 };
 use ports::{managers::StorefrontManager, providers::StorefrontProviderStatus};
 use std::sync::Arc;
@@ -18,23 +21,20 @@ struct StorefrontProvider {
 
 pub struct Storefronts {
     providers: Vec<StorefrontProvider>,
+    _tasks: Vec<Task<()>>,
 }
 
 impl Storefronts {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut page = Self {
             providers: Vec::new(),
+            _tasks: Vec::new(),
         };
 
-        cx.spawn(async |page, cx| {
-            let mut listener = event::listen("storefront");
-            while let Ok(_) = listener.recv().await {
-                let _ = page.update(cx, |page, cx| {
-                    page.refresh_providers(cx);
-                });
-            }
-        })
-        .detach();
+        let task = cx.listen("storefront", |page, cx| {
+            page.refresh_providers(cx);
+        });
+        page._tasks.push(task);
 
         page.refresh_providers(cx);
         page

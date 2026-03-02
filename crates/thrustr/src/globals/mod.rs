@@ -2,10 +2,12 @@ use gpui::App;
 use ports::storage::ExtensionStorage;
 use std::sync::Arc;
 
+mod event;
 mod plugin;
 mod storefront;
 mod theme;
 
+pub use event::EventListenerExt;
 pub use plugin::PluginManagerExt;
 pub use storefront::StorefrontManagerExt;
 

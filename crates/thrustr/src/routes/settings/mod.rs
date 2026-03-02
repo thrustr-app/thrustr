@@ -1,9 +1,9 @@
-use crate::navigation::{LocationExt, Route, SettingsPage};
+use crate::navigation::{self, Navigator, Page, SettingsPage};
 use gpui::{
-    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled, Window, div,
+    AnyView, App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, Render,
+    RenderOnce, StatefulInteractiveElement, Styled, Subscription, Window, div,
     prelude::FluentBuilder, rems, svg, transparent_black,
 };
-use gpui_router::{IntoLayout, Outlet, use_location};
 use theme_manager::ThemeExt;
 
 mod appearance;
@@ -28,10 +28,17 @@ impl SettingsPageButton {
 impl RenderOnce for SettingsPageButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let location = use_location(cx);
+        let current_settings = navigation::current_settings_page(cx);
+        let target = self.page;
 
-        self.page
-            .nav_link()
+        div()
+            .id(self.page.label())
+            .cursor_pointer()
+            .on_click(
+                move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                    navigation::navigate(cx, Page::Settings(target));
+                },
+            )
             .py(rems(0.625))
             .px(rems(1.25))
             .w_full()
@@ -41,7 +48,7 @@ impl RenderOnce for SettingsPageButton {
             .gap(rems(0.75))
             .bg(transparent_black())
             .hover(|style| style.bg(theme.colors.sidebar_highlight))
-            .when(Some(self.page) == location.settings_page(), |style| {
+            .when(current_settings == Some(self.page), |style| {
                 style
                     .bg(theme.colors.sidebar_highlight)
                     .text_color(theme.colors.sidebar_foreground_primary)
@@ -52,29 +59,39 @@ impl RenderOnce for SettingsPageButton {
                     .path(self.page.icon_path())
                     .text_color(theme.colors.sidebar_foreground_secondary)
                     .size(rems(1.5))
-                    .when(Some(self.page) == location.settings_page(), |svg| {
+                    .when(current_settings == Some(self.page), |svg| {
                         svg.text_color(theme.colors.sidebar_foreground_primary)
                     }),
             )
-            .child(div().child(self.page.as_str_pretty()))
+            .child(div().child(self.page.label_pretty()))
     }
 }
 
-#[derive(IntoElement, IntoLayout)]
-pub struct SettingsLayout {
-    outlet: Outlet,
+pub struct Settings {
+    active_view: AnyView,
+    _subscriptions: Vec<Subscription>,
 }
 
-impl SettingsLayout {
-    pub fn new() -> Self {
+impl Settings {
+    pub fn new(sub: SettingsPage, cx: &mut Context<Self>) -> Self {
+        let active_view = sub.build_view(cx);
+
+        let subscription = cx.observe_global::<Navigator>(|this, cx| {
+            if let Some(sub) = navigation::current_settings_page(cx) {
+                this.active_view = sub.build_view(cx);
+                cx.notify();
+            }
+        });
+
         Self {
-            outlet: Outlet::new(),
+            active_view,
+            _subscriptions: vec![subscription],
         }
     }
 }
 
-impl RenderOnce for SettingsLayout {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+impl Render for Settings {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         div()
             .px(rems(1.5))
@@ -97,6 +114,6 @@ impl RenderOnce for SettingsLayout {
                     .child(SettingsPageButton::new(SettingsPage::Plugins))
                     .child(SettingsPageButton::new(SettingsPage::Appearance)),
             )
-            .child(self.outlet)
+            .child(self.active_view.clone())
     }
 }

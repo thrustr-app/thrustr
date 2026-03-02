@@ -1,9 +1,9 @@
-use crate::navigation::{LocationExt, Page, Route, SettingsPage};
+use crate::navigation::{self, Page, SettingsPage};
 use gpui::{
-    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, Styled, Window, div,
-    prelude::FluentBuilder, rems, svg, transparent_black,
+    App, ClickEvent, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
+    transparent_black,
 };
-use gpui_router::use_location;
 use theme_manager::ThemeExt;
 
 #[derive(IntoElement)]
@@ -20,11 +20,20 @@ impl SidebarIconButton {
 impl RenderOnce for SidebarIconButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let location = use_location(cx);
+        let current = navigation::current_page(cx);
+        let target = self.page;
+        let label = self.page.label();
+        let is_active = self.page == current;
 
-        self.page
-            .nav_link()
-            .group(self.page.as_str())
+        div()
+            .id(label)
+            .cursor_pointer()
+            .on_click(
+                move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                    navigation::navigate(cx, target);
+                },
+            )
+            .group(label)
             .p(rems(0.625))
             .flex()
             .items_center()
@@ -32,19 +41,17 @@ impl RenderOnce for SidebarIconButton {
             .rounded_full()
             .bg(transparent_black())
             .hover(|div| div.bg(theme.colors.sidebar_highlight))
-            .when(self.page == location.page(), |div| {
-                div.bg(theme.colors.sidebar_highlight)
-            })
+            .when(is_active, |div| div.bg(theme.colors.sidebar_highlight))
             .child(
                 svg()
-                    .group(self.page.as_str())
+                    .group(label)
                     .path(self.page.icon_path())
                     .text_color(theme.colors.sidebar_foreground_secondary)
                     .size(rems(1.5))
-                    .group_hover(self.page.as_str(), |div| {
+                    .group_hover(label, |div| {
                         div.text_color(theme.colors.sidebar_foreground_primary)
                     })
-                    .when(self.page == location.page(), |svg| {
+                    .when(is_active, |svg| {
                         svg.text_color(theme.colors.sidebar_foreground_primary)
                     }),
             )
