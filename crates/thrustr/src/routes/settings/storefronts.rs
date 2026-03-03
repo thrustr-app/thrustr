@@ -6,7 +6,7 @@ use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
 };
-use ports::capabilities::CapabilityProviderStatus;
+use ports::capabilities::ComponentStatus;
 use std::sync::Arc;
 use theme_manager::ThemeExt;
 use ui::Card;
@@ -14,7 +14,7 @@ use ui::Card;
 #[derive(Clone)]
 struct Storefront {
     name: SharedString,
-    status: CapabilityProviderStatus,
+    status: ComponentStatus,
     icon: Option<Arc<GpuiImage>>,
     plugin: Option<SharedString>,
 }
@@ -46,11 +46,12 @@ impl Storefronts {
             .storefronts()
             .into_iter()
             .map(|storefront| Storefront {
-                name: storefront.name().to_string().into(),
+                name: storefront.metadata().name.to_owned().into(),
                 status: storefront.status(),
-                icon: storefront.icon().map(image_to_gpui),
+                icon: storefront.metadata().icon.as_ref().map(image_to_gpui),
                 plugin: storefront
-                    .origin()
+                    .metadata()
+                    .origin
                     .plugin_id()
                     .map(|id| id.to_string().into()),
             })
@@ -69,20 +70,20 @@ impl Render for Storefronts {
         let cards = self.storefronts.clone().into_iter().map(|storefront| {
             let mut status = div().font_weight(FontWeight::BOLD).text_size(rems(0.6));
             match storefront.status {
-                CapabilityProviderStatus::Initializing => {
+                ComponentStatus::Initializing => {
                     status = status
                         .text_color(theme.colors.warning)
                         .child("INITIALIZING");
                 }
-                CapabilityProviderStatus::Active => {
+                ComponentStatus::Active => {
                     status = status.text_color(theme.colors.accent).child("ACTIVE");
                 }
-                CapabilityProviderStatus::Inactive => {
+                ComponentStatus::Inactive => {
                     status = status
                         .text_color(theme.colors.card_foreground_secondary)
                         .child("INACTIVE");
                 }
-                CapabilityProviderStatus::Error(_) => {
+                ComponentStatus::Error(_) => {
                     status = status.text_color(theme.colors.error).child("ERROR");
                 }
             }

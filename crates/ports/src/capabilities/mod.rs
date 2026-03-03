@@ -91,15 +91,19 @@ impl ComponentStatus {
     }
 }
 
+pub struct ComponentMetadata {
+    pub id: String,
+    pub name: String,
+    pub origin: ComponentOrigin,
+    pub description: Option<String>,
+    pub icon: Option<Image>,
+    pub version: Version,
+    pub authors: Vec<String>,
+}
+
 #[async_trait]
 pub trait Component: Send + Sync {
-    fn id(&self) -> &str;
-    fn name(&self) -> &str;
-    fn origin(&self) -> &ComponentOrigin;
-    fn description(&self) -> Option<&str>;
-    fn icon(&self) -> Option<&Image>;
-    fn version(&self) -> &Version;
-    fn authors(&self) -> &[String];
+    fn metadata(&self) -> &ComponentMetadata;
 
     fn status(&self) -> ComponentStatus;
     async fn init(&self) -> Result<(), ComponentError>;

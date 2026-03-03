@@ -141,7 +141,7 @@ impl PluginManager {
             self.storefront_manager.register_storefront(s);
         }
 
-        self.plugins.insert(plugin.id().to_owned(), plugin);
+        self.plugins.insert(plugin.metadata().id.to_owned(), plugin);
 
         event::emit("plugin");
 

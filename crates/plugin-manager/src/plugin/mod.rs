@@ -2,10 +2,10 @@ use crate::exports::thrustr::plugin::base::Error as PluginError;
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use ports::capabilities::{
-    Component, ComponentError, ComponentOrigin, ComponentStatus, Image, Storefront,
+    Component, ComponentError, ComponentMetadata, ComponentOrigin, ComponentStatus, Image,
+    Storefront,
 };
 use ports::storage::ComponentStorage;
-use semver::Version;
 use std::sync::{Arc, Mutex};
 use wasmtime::{Engine, Store};
 
@@ -53,10 +53,18 @@ impl PluginBuilder {
     }
 
     pub(crate) fn build(self) -> Plugin {
-        Plugin {
-            origin: ComponentOrigin::Plugin(self.manifest.plugin.id.clone()),
-            manifest: self.manifest,
+        let metadata = ComponentMetadata {
+            id: self.manifest.plugin.id.clone(),
+            name: self.manifest.plugin.name,
+            origin: ComponentOrigin::Plugin(self.manifest.plugin.id),
+            description: self.manifest.plugin.description,
             icon: self.icon,
+            version: self.manifest.plugin.version,
+            authors: self.manifest.plugin.authors,
+        };
+
+        Plugin {
+            metadata,
             status: Mutex::new(ComponentStatus::Inactive),
             engine: self.engine,
             storage: self.storage,
@@ -66,9 +74,7 @@ impl PluginBuilder {
 }
 
 pub struct Plugin {
-    manifest: PluginManifest,
-    origin: ComponentOrigin,
-    icon: Option<Image>,
+    metadata: ComponentMetadata,
     status: Mutex<ComponentStatus>,
 
     engine: Engine,
@@ -94,7 +100,7 @@ impl Plugin {
 
         let mut store = Store::new(
             &self.engine,
-            PluginState::new(self.id(), self.storage.clone()),
+            PluginState::new(&self.metadata.id, self.storage.clone()),
         );
 
         let instance = storefront_pre
@@ -113,32 +119,8 @@ impl Plugin {
 
 #[async_trait]
 impl Component for Plugin {
-    fn id(&self) -> &str {
-        &self.manifest.plugin.id
-    }
-
-    fn name(&self) -> &str {
-        &self.manifest.plugin.name
-    }
-
-    fn origin(&self) -> &ComponentOrigin {
-        &self.origin
-    }
-
-    fn description(&self) -> Option<&str> {
-        self.manifest.plugin.description.as_deref()
-    }
-
-    fn icon(&self) -> Option<&Image> {
-        self.icon.as_ref()
-    }
-
-    fn version(&self) -> &Version {
-        &self.manifest.plugin.version
-    }
-
-    fn authors(&self) -> &[String] {
-        &self.manifest.plugin.authors
+    fn metadata(&self) -> &ComponentMetadata {
+        &self.metadata
     }
 
     fn status(&self) -> ComponentStatus {

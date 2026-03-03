@@ -16,7 +16,7 @@ impl StorefrontManager {
 
     pub fn register_storefront(&self, storefront: Arc<dyn Storefront>) {
         self.storefronts
-            .insert(storefront.id().to_string(), storefront);
+            .insert(storefront.metadata().id.to_owned(), storefront);
         event::emit("capability");
     }
 
