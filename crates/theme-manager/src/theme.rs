@@ -12,6 +12,7 @@ define_theme_colors!(
     card_foreground_secondary,
     accent,
     error,
+    error_background,
     warning,
     border,
     logo,

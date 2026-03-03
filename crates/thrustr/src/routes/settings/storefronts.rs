@@ -9,7 +9,7 @@ use gpui::{
 use ports::capabilities::ComponentStatus;
 use std::sync::Arc;
 use theme_manager::ThemeExt;
-use ui::Card;
+use ui::{Alert, Card};
 
 #[derive(Clone)]
 struct Storefront {
@@ -21,6 +21,7 @@ struct Storefront {
 
 pub struct Storefronts {
     storefronts: Vec<Storefront>,
+    has_errors: bool,
     _tasks: Vec<Task<()>>,
 }
 
@@ -28,6 +29,7 @@ impl Storefronts {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut page = Self {
             storefronts: Vec::new(),
+            has_errors: false,
             _tasks: Vec::new(),
         };
 
@@ -44,15 +46,21 @@ impl Storefronts {
         let mut storefronts: Vec<Storefront> = cx
             .storefronts()
             .into_iter()
-            .map(|storefront| Storefront {
-                name: storefront.metadata().name.to_owned().into(),
-                status: storefront.status(),
-                icon: storefront.metadata().icon.as_ref().map(image_to_gpui),
-                plugin: storefront
-                    .metadata()
-                    .origin
-                    .plugin_id()
-                    .map(|id| id.to_string().into()),
+            .map(|storefront| {
+                if storefront.status().is_error() {
+                    self.has_errors = true;
+                }
+
+                Storefront {
+                    name: storefront.metadata().name.to_owned().into(),
+                    status: storefront.status(),
+                    icon: storefront.metadata().icon.as_ref().map(image_to_gpui),
+                    plugin: storefront
+                        .metadata()
+                        .origin
+                        .plugin_id()
+                        .map(|id| id.to_string().into()),
+                }
             })
             .collect();
 
@@ -126,8 +134,14 @@ impl Render for Storefronts {
         div()
             .flex_grow()
             .flex()
-            .gap(rems(1.5))
+            .flex_col()
             .px(rems(1.5))
-            .children(cards)
+            .gap(rems(1.5))
+            .when(self.has_errors, |div| {
+                div.child(Alert::new().title("Storefront errors").description(
+                    "One or more storefronts have encountered errors, open them to view details.",
+                ))
+            })
+            .child(div().flex().gap(rems(1.5)).children(cards))
     }
 }

@@ -18,6 +18,7 @@ card_foreground_secondary = "#646464"
 
 accent = "#8BF0FE"
 error = "#CD3F3F"
+error_background = "#b86262"
 warning = "#FDF85F"
 border = "#323232"
 logo = "#B6B6B6"

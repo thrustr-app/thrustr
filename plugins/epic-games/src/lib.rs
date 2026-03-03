@@ -11,6 +11,9 @@ pub struct EpicGames;
 
 impl Plugin for EpicGames {
     fn init() -> Result<(), PluginError> {
+        let pollable = monotonic_clock::subscribe_duration(10_000_000_000);
+        poll::poll(&[&pollable]);
+
         let some_config = Config::get("username")?;
         println!("Username: {some_config}");
 
@@ -21,9 +24,6 @@ impl Plugin for EpicGames {
 
         let list = KvStore::list(None)?;
         println!("{:?}", list);
-
-        let pollable = monotonic_clock::subscribe_duration(10_000_000_000);
-        poll::poll(&[&pollable]);
 
         KvStore::set_string("login", "lololol")?;
 

@@ -1,3 +1,3 @@
-DROP TABLE IF EXISTS extension_data;
+DROP TABLE IF EXISTS component_data;
 
-DROP TABLE IF EXISTS extension_config;
+DROP TABLE IF EXISTS component_config;
