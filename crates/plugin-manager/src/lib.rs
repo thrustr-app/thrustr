@@ -1,10 +1,9 @@
-use crate::plugin::{Plugin, PluginBuilder, PluginManifest, PluginState};
+use crate::plugin::{PluginBuilder, PluginManifest, PluginState};
 use anyhow::Result;
 use component_manager::ComponentManager;
-use dashmap::DashMap;
 use futures::TryStreamExt;
 use ports::{
-    capabilities::{Component, Image, ImageFormat},
+    capabilities::{Image, ImageFormat},
     storage::ComponentStorage,
 };
 use std::{
@@ -33,7 +32,6 @@ bindgen!({
 pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
-    plugins: Arc<DashMap<String, Arc<Plugin>>>,
     storage: Arc<dyn ComponentStorage>,
     component_manager: Arc<ComponentManager>,
 }
@@ -57,7 +55,6 @@ impl PluginManager {
         Self {
             engine,
             linker: Arc::new(linker),
-            plugins: Arc::new(DashMap::new()),
             storage,
             component_manager,
         }
@@ -137,22 +134,10 @@ impl PluginManager {
                 .build(),
         );
 
-        if let Some(s) = plugin.as_storefront() {
-            self.component_manager.register_storefront(s);
-        }
-
-        self.plugins.insert(plugin.metadata().id.to_owned(), plugin);
+        self.component_manager.register(plugin);
 
         event::emit("plugin");
 
         Ok(())
-    }
-
-    pub fn plugins(&self) -> Vec<Arc<Plugin>> {
-        self.plugins.iter().map(|p| p.value().clone()).collect()
-    }
-
-    pub fn plugin(&self, name: &str) -> Option<Arc<Plugin>> {
-        self.plugins.get(name).map(|p| p.value().clone())
     }
 }

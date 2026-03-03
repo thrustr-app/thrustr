@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use semver::Version;
 
@@ -105,6 +107,10 @@ pub struct ComponentMetadata {
 pub trait Component: Send + Sync {
     fn metadata(&self) -> &ComponentMetadata;
     fn status(&self) -> ComponentStatus;
+
+    fn storefront(self: Arc<Self>) -> Option<Arc<dyn Storefront>> {
+        None
+    }
 
     async fn init(&self) -> Result<(), ComponentError>;
 }

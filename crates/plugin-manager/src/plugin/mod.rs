@@ -84,12 +84,6 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    pub(crate) fn as_storefront(self: &Arc<Self>) -> Option<Arc<dyn Storefront>> {
-        self.storefront_pre
-            .is_some()
-            .then(|| Arc::clone(self) as Arc<dyn Storefront>)
-    }
-
     pub(crate) async fn instantiate_storefront(
         &self,
     ) -> Result<(StorefrontPlugin, Store<PluginState>), PluginError> {
@@ -125,6 +119,12 @@ impl Component for Plugin {
 
     fn status(&self) -> ComponentStatus {
         self.status.lock().unwrap().clone()
+    }
+
+    fn storefront(self: Arc<Self>) -> Option<Arc<dyn Storefront>> {
+        self.storefront_pre
+            .is_some()
+            .then(|| self as Arc<dyn Storefront>)
     }
 
     async fn init(&self) -> Result<(), ComponentError> {

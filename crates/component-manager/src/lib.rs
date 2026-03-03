@@ -1,30 +1,45 @@
 use dashmap::DashMap;
-use ports::capabilities::Storefront;
+use ports::capabilities::{Component, Storefront};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ComponentManager {
-    storefronts: Arc<DashMap<String, Arc<dyn Storefront>>>,
+    components: Arc<DashMap<String, Arc<dyn Component>>>,
 }
 
 impl ComponentManager {
     pub fn new() -> Self {
         Self {
-            storefronts: Arc::new(DashMap::new()),
+            components: Arc::new(DashMap::new()),
         }
     }
 
-    pub fn register_storefront(&self, storefront: Arc<dyn Storefront>) {
-        self.storefronts
-            .insert(storefront.metadata().id.to_owned(), storefront);
-        event::emit("component");
+    pub fn register(&self, component: Arc<dyn Component>) {
+        self.components
+            .insert(component.metadata().id.to_owned(), component);
+    }
+
+    pub fn plugins(&self) -> Vec<Arc<dyn Component>> {
+        self.components
+            .iter()
+            .filter(|c| c.value().metadata().origin.is_plugin())
+            .map(|c| Arc::clone(c.value()))
+            .collect()
     }
 
     pub fn storefronts(&self) -> Vec<Arc<dyn Storefront>> {
-        self.storefronts.iter().map(|s| s.value().clone()).collect()
+        self.components
+            .iter()
+            .filter_map(|c| {
+                let component = Arc::clone(c.value());
+                component.storefront()
+            })
+            .collect()
     }
 
     pub fn storefront(&self, id: &str) -> Option<Arc<dyn Storefront>> {
-        self.storefronts.get(id).map(|s| s.value().clone())
+        self.components
+            .get(id)
+            .and_then(|c| Arc::clone(c.value()).storefront())
     }
 }
