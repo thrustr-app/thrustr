@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use crate::app::App;
 use assets::Assets;
 use config::paths;
