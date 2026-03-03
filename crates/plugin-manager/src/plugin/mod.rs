@@ -2,7 +2,7 @@ use crate::exports::thrustr::plugin::base::Error as PluginError;
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use ports::capabilities::{
-    Component, Error as ComponentError, Image, Metadata, Origin, Status, Storefront,
+    Capability, Component, Error as ComponentError, Image, Metadata, Origin, Status, Storefront,
 };
 use ports::storage::ComponentStorage;
 use std::sync::{Arc, Mutex};
@@ -157,5 +157,11 @@ impl Component for Plugin {
         });
 
         result
+    }
+}
+
+impl Capability for Plugin {
+    fn component(&self) -> &dyn Component {
+        self as &dyn Component
     }
 }

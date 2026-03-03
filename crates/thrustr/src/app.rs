@@ -49,7 +49,7 @@ impl App {
         let storefronts = cx.storefronts().into_iter();
         for storefront in storefronts {
             Tokio::spawn(cx, async move {
-                let _ = storefront.init().await;
+                let _ = storefront.component().init().await;
             })
             .detach();
         }

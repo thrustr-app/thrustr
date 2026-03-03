@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use semver::Version;
+use std::sync::Arc;
 
 mod storefront;
 
@@ -103,6 +102,8 @@ pub struct Metadata {
     pub authors: Vec<String>,
 }
 
+/// A component is a unit of functionality provided by the core application or by a plugin.
+/// A component may expose one or more capabilities.
 #[async_trait]
 pub trait Component: Send + Sync {
     fn metadata(&self) -> &Metadata;
@@ -113,4 +114,10 @@ pub trait Component: Send + Sync {
     }
 
     async fn init(&self) -> Result<(), Error>;
+}
+
+/// A capability represents a specific functionality exposed by a component.
+pub trait Capability: Send + Sync {
+    /// Returns the component that provides this capability.
+    fn component(&self) -> &dyn Component;
 }

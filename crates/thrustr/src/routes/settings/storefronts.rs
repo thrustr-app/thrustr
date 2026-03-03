@@ -47,15 +47,16 @@ impl Storefronts {
             .storefronts()
             .into_iter()
             .map(|storefront| {
-                if storefront.status().is_error() {
+                let component = storefront.component();
+                if component.status().is_error() {
                     self.has_errors = true;
                 }
 
                 Storefront {
-                    name: storefront.metadata().name.to_owned().into(),
-                    status: storefront.status(),
-                    icon: storefront.metadata().icon.as_ref().map(image_to_gpui),
-                    plugin: storefront
+                    name: component.metadata().name.to_owned().into(),
+                    status: component.status(),
+                    icon: component.metadata().icon.as_ref().map(image_to_gpui),
+                    plugin: component
                         .metadata()
                         .origin
                         .plugin_id()

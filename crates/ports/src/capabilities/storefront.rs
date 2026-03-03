@@ -1,4 +1,4 @@
-use crate::capabilities::Component;
+use crate::capabilities::Capability;
 use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
@@ -8,4 +8,4 @@ pub enum StorefrontError {
 }
 
 #[async_trait]
-pub trait Storefront: Component + Send + Sync {}
+pub trait Storefront: Capability {}
