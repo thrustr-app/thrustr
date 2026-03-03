@@ -1,5 +1,6 @@
 use crate::plugin::{Plugin, PluginBuilder, PluginManifest, PluginState};
 use anyhow::Result;
+use component_manager::ComponentManager;
 use dashmap::DashMap;
 use futures::TryStreamExt;
 use ports::{
@@ -13,7 +14,6 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use storefront_manager::StorefrontManager;
 use wasmtime::{
     Config, Engine,
     component::{Component as WasmComponent, Linker, bindgen},
@@ -35,13 +35,13 @@ pub struct PluginManager {
     linker: Arc<Linker<PluginState>>,
     plugins: Arc<DashMap<String, Arc<Plugin>>>,
     storage: Arc<dyn ComponentStorage>,
-    storefront_manager: Arc<StorefrontManager>,
+    component_manager: Arc<ComponentManager>,
 }
 
 impl PluginManager {
     pub fn new(
         storage: Arc<dyn ComponentStorage>,
-        storefront_manager: Arc<StorefrontManager>,
+        component_manager: Arc<ComponentManager>,
     ) -> Self {
         let mut config = Config::new();
         config.async_support(true);
@@ -59,7 +59,7 @@ impl PluginManager {
             linker: Arc::new(linker),
             plugins: Arc::new(DashMap::new()),
             storage,
-            storefront_manager,
+            component_manager,
         }
     }
 
@@ -138,7 +138,7 @@ impl PluginManager {
         );
 
         if let Some(s) = plugin.as_storefront() {
-            self.storefront_manager.register_storefront(s);
+            self.component_manager.register_storefront(s);
         }
 
         self.plugins.insert(plugin.metadata().id.to_owned(), plugin);

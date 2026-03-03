@@ -5,9 +5,9 @@ edition = "2024"
 
 [dependencies]
 # Local
+component-manager.workspace = true
 event.workspace = true
 ports.workspace = true
-storefront-manager.workspace = true
 
 # External
 anyhow.workspace = true

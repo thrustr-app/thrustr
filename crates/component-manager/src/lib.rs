@@ -3,11 +3,11 @@ use ports::capabilities::Storefront;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct StorefrontManager {
+pub struct ComponentManager {
     storefronts: Arc<DashMap<String, Arc<dyn Storefront>>>,
 }
 
-impl StorefrontManager {
+impl ComponentManager {
     pub fn new() -> Self {
         Self {
             storefronts: Arc::new(DashMap::new()),
@@ -17,7 +17,7 @@ impl StorefrontManager {
     pub fn register_storefront(&self, storefront: Arc<dyn Storefront>) {
         self.storefronts
             .insert(storefront.metadata().id.to_owned(), storefront);
-        event::emit("capability");
+        event::emit("component");
     }
 
     pub fn storefronts(&self) -> Vec<Arc<dyn Storefront>> {

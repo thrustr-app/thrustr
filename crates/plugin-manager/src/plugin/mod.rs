@@ -113,7 +113,7 @@ impl Plugin {
 
     fn set_status(&self, status: ComponentStatus) {
         *self.status.lock().unwrap() = status;
-        event::emit("capability");
+        event::emit("component");
     }
 }
 

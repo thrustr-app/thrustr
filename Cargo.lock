@@ -1053,6 +1053,16 @@ name = "commit_lint"
 version = "0.1.0"
 
 [[package]]
+name = "component-manager"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "event",
+ "ports",
+]
+
+[[package]]
 name = "compression-codecs"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4473,6 +4483,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "component-manager",
  "dashmap",
  "event",
  "futures",
@@ -4481,7 +4492,6 @@ dependencies = [
  "serde",
  "serde_json",
  "smol",
- "storefront-manager",
  "toml 0.9.8",
  "wasmtime",
  "wasmtime-wasi",
@@ -5859,16 +5869,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "storefront-manager"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "dashmap",
- "event",
- "ports",
-]
-
-[[package]]
 name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6265,6 +6265,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assets",
+ "component-manager",
  "config",
  "event",
  "gpui",
@@ -6272,7 +6273,6 @@ dependencies = [
  "plugin-manager",
  "ports",
  "sqlite-storage",
- "storefront-manager",
  "theme-manager",
  "tokio",
  "ui",

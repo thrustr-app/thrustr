@@ -1,6 +1,6 @@
 use crate::{
     conversions::image::image_to_gpui,
-    globals::{EventListenerExt, StorefrontManagerExt},
+    globals::{ComponentManagerExt, EventListenerExt},
 };
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
@@ -31,7 +31,7 @@ impl Storefronts {
             _tasks: Vec::new(),
         };
 
-        let task = cx.listen("capability", |page, cx| {
+        let task = cx.listen("component", |page, cx| {
             page.refresh_storefronts(cx);
         });
         page._tasks.push(task);
@@ -42,7 +42,6 @@ impl Storefronts {
 
     pub fn refresh_storefronts(&mut self, cx: &mut Context<Self>) {
         let mut storefronts: Vec<Storefront> = cx
-            .storefront_manager()
             .storefronts()
             .into_iter()
             .map(|storefront| Storefront {

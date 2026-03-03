@@ -1,8 +1,8 @@
-use crate::globals::EventListenerExt;
+use crate::globals::{ComponentManagerExt, EventListenerExt};
 use crate::navigation::Navigator;
 use crate::{
     components::{Sidebar, Topbar},
-    globals::{PluginManagerExt, StorefrontManagerExt},
+    globals::PluginManagerExt,
     navigation::{self},
 };
 use config::paths;
@@ -46,7 +46,7 @@ impl App {
     }
 
     fn init_storefront(&self, cx: &mut Context<Self>) {
-        let storefronts = cx.storefront_manager().storefronts().into_iter();
+        let storefronts = cx.storefronts().into_iter();
         for storefront in storefronts {
             Tokio::spawn(cx, async move {
                 let _ = storefront.init().await;

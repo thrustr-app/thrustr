@@ -104,7 +104,7 @@ pub struct ComponentMetadata {
 #[async_trait]
 pub trait Component: Send + Sync {
     fn metadata(&self) -> &ComponentMetadata;
-
     fn status(&self) -> ComponentStatus;
+
     async fn init(&self) -> Result<(), ComponentError>;
 }
