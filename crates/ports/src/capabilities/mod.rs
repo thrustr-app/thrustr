@@ -37,12 +37,12 @@ pub struct Image {
 }
 
 #[derive(Debug)]
-pub enum CapabilityProviderOrigin {
+pub enum ComponentOrigin {
     Core,
     Plugin(String),
 }
 
-impl CapabilityProviderOrigin {
+impl ComponentOrigin {
     pub fn is_core(&self) -> bool {
         matches!(self, Self::Core)
     }
@@ -60,20 +60,20 @@ impl CapabilityProviderOrigin {
 }
 
 #[derive(Debug, Clone)]
-pub enum CapabilityProviderError {
+pub enum ComponentError {
     Initialization(String),
     Runtime(String),
 }
 
 #[derive(Debug, Clone)]
-pub enum CapabilityProviderStatus {
+pub enum ComponentStatus {
     Inactive,
     Active,
     Initializing,
-    Error(CapabilityProviderError),
+    Error(ComponentError),
 }
 
-impl CapabilityProviderStatus {
+impl ComponentStatus {
     pub fn is_inactive(&self) -> bool {
         matches!(self, Self::Inactive)
     }
@@ -92,15 +92,15 @@ impl CapabilityProviderStatus {
 }
 
 #[async_trait]
-pub trait CapabilityProvider: Send + Sync {
+pub trait Component: Send + Sync {
     fn id(&self) -> &str;
     fn name(&self) -> &str;
-    fn origin(&self) -> &CapabilityProviderOrigin;
+    fn origin(&self) -> &ComponentOrigin;
     fn description(&self) -> Option<&str>;
     fn icon(&self) -> Option<&Image>;
     fn version(&self) -> &Version;
     fn authors(&self) -> &[String];
 
-    fn status(&self) -> CapabilityProviderStatus;
-    async fn init(&self) -> Result<(), CapabilityProviderError>;
+    fn status(&self) -> ComponentStatus;
+    async fn init(&self) -> Result<(), ComponentError>;
 }

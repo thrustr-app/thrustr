@@ -1,1 +1,1 @@
-mod extension_storage;
+mod component_storage;

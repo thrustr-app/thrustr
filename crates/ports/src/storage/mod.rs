@@ -1,3 +1,3 @@
-mod extension;
+mod component;
 
-pub use extension::*;
+pub use component::*;

@@ -2,10 +2,9 @@ use crate::exports::thrustr::plugin::base::Error as PluginError;
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use ports::capabilities::{
-    CapabilityProvider, CapabilityProviderError, CapabilityProviderOrigin,
-    CapabilityProviderStatus, Image, Storefront,
+    Component, ComponentError, ComponentOrigin, ComponentStatus, Image, Storefront,
 };
-use ports::storage::ExtensionStorage;
+use ports::storage::ComponentStorage;
 use semver::Version;
 use std::sync::{Arc, Mutex};
 use wasmtime::{Engine, Store};
@@ -20,7 +19,7 @@ pub use state::PluginState;
 pub(crate) struct PluginBuilder {
     manifest: PluginManifest,
     engine: Engine,
-    storage: Arc<dyn ExtensionStorage>,
+    storage: Arc<dyn ComponentStorage>,
     icon: Option<Image>,
     storefront_pre: Option<StorefrontPluginPre<PluginState>>,
 }
@@ -29,7 +28,7 @@ impl PluginBuilder {
     pub(crate) fn new(
         manifest: PluginManifest,
         engine: Engine,
-        storage: Arc<dyn ExtensionStorage>,
+        storage: Arc<dyn ComponentStorage>,
     ) -> Self {
         Self {
             manifest,
@@ -55,10 +54,10 @@ impl PluginBuilder {
 
     pub(crate) fn build(self) -> Plugin {
         Plugin {
-            origin: CapabilityProviderOrigin::Plugin(self.manifest.plugin.id.clone()),
+            origin: ComponentOrigin::Plugin(self.manifest.plugin.id.clone()),
             manifest: self.manifest,
             icon: self.icon,
-            status: Mutex::new(CapabilityProviderStatus::Inactive),
+            status: Mutex::new(ComponentStatus::Inactive),
             engine: self.engine,
             storage: self.storage,
             storefront_pre: self.storefront_pre,
@@ -68,12 +67,12 @@ impl PluginBuilder {
 
 pub struct Plugin {
     manifest: PluginManifest,
-    origin: CapabilityProviderOrigin,
+    origin: ComponentOrigin,
     icon: Option<Image>,
-    status: Mutex<CapabilityProviderStatus>,
+    status: Mutex<ComponentStatus>,
 
     engine: Engine,
-    storage: Arc<dyn ExtensionStorage>,
+    storage: Arc<dyn ComponentStorage>,
 
     storefront_pre: Option<StorefrontPluginPre<PluginState>>,
 }
@@ -106,14 +105,14 @@ impl Plugin {
         Ok((instance, store))
     }
 
-    fn set_status(&self, status: CapabilityProviderStatus) {
+    fn set_status(&self, status: ComponentStatus) {
         *self.status.lock().unwrap() = status;
         event::emit("capability");
     }
 }
 
 #[async_trait]
-impl CapabilityProvider for Plugin {
+impl Component for Plugin {
     fn id(&self) -> &str {
         &self.manifest.plugin.id
     }
@@ -122,7 +121,7 @@ impl CapabilityProvider for Plugin {
         &self.manifest.plugin.name
     }
 
-    fn origin(&self) -> &CapabilityProviderOrigin {
+    fn origin(&self) -> &ComponentOrigin {
         &self.origin
     }
 
@@ -142,45 +141,38 @@ impl CapabilityProvider for Plugin {
         &self.manifest.plugin.authors
     }
 
-    fn status(&self) -> CapabilityProviderStatus {
+    fn status(&self) -> ComponentStatus {
         self.status.lock().unwrap().clone()
     }
 
-    async fn init(&self) -> Result<(), CapabilityProviderError> {
+    async fn init(&self) -> Result<(), ComponentError> {
         {
             let mut lock = self.status.lock().unwrap();
             match *lock {
-                CapabilityProviderStatus::Inactive => {
-                    *lock = CapabilityProviderStatus::Initializing
-                }
+                ComponentStatus::Inactive => *lock = ComponentStatus::Initializing,
                 _ => {
-                    return Err(CapabilityProviderError::Initialization(
+                    return Err(ComponentError::Initialization(
                         "Plugin is already initializing or active".into(),
                     ));
                 }
             }
         }
 
-        self.set_status(CapabilityProviderStatus::Initializing);
+        self.set_status(ComponentStatus::Initializing);
 
-        let result: Result<(), CapabilityProviderError> = match self.instantiate_storefront().await
-        {
+        let result: Result<(), ComponentError> = match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_init(&mut store)
                 .await
-                .map_err(|e| {
-                    CapabilityProviderError::Initialization(format!("Wasm call failed: {e}"))
-                })?
-                .map_err(|e: PluginError| {
-                    CapabilityProviderError::Initialization(format!("{e:?}"))
-                }),
-            Err(e) => Err(CapabilityProviderError::Initialization(format!("{e:?}"))),
+                .map_err(|e| ComponentError::Initialization(format!("Wasm call failed: {e}")))?
+                .map_err(|e: PluginError| ComponentError::Initialization(format!("{e:?}"))),
+            Err(e) => Err(ComponentError::Initialization(format!("{e:?}"))),
         };
 
         self.set_status(match &result {
-            Ok(_) => CapabilityProviderStatus::Active,
-            Err(e) => CapabilityProviderStatus::Error(e.clone()),
+            Ok(_) => ComponentStatus::Active,
+            Err(e) => ComponentStatus::Error(e.clone()),
         });
 
         result

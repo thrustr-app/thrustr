@@ -3,7 +3,7 @@ use crate::thrustr::plugin::{
     kv_store::{Error as KvStoreError, Host as KvStoreHost},
     types::Host as PluginTypes,
 };
-use ports::storage::ExtensionStorage;
+use ports::storage::ComponentStorage;
 use std::sync::Arc;
 use wasmtime::component::HasData;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
@@ -14,11 +14,11 @@ pub struct PluginState {
     http_ctx: WasiHttpCtx,
     table: ResourceTable,
     id: String,
-    storage: Arc<dyn ExtensionStorage>,
+    storage: Arc<dyn ComponentStorage>,
 }
 
 impl PluginState {
-    pub fn new(id: &str, storage: Arc<dyn ExtensionStorage>) -> Self {
+    pub fn new(id: &str, storage: Arc<dyn ComponentStorage>) -> Self {
         let ctx = WasiCtx::builder()
             .inherit_network()
             .inherit_stdout()

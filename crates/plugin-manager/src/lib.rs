@@ -3,8 +3,8 @@ use anyhow::Result;
 use dashmap::DashMap;
 use futures::TryStreamExt;
 use ports::{
-    capabilities::{CapabilityProvider, Image, ImageFormat},
-    storage::ExtensionStorage,
+    capabilities::{Component, Image, ImageFormat},
+    storage::ComponentStorage,
 };
 use std::{
     ffi::OsStr,
@@ -16,7 +16,7 @@ use std::{
 use storefront_manager::StorefrontManager;
 use wasmtime::{
     Config, Engine,
-    component::{Component, Linker, bindgen},
+    component::{Component as WasmComponent, Linker, bindgen},
 };
 use zip::ZipArchive;
 
@@ -34,13 +34,13 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     plugins: Arc<DashMap<String, Arc<Plugin>>>,
-    storage: Arc<dyn ExtensionStorage>,
+    storage: Arc<dyn ComponentStorage>,
     storefront_manager: Arc<StorefrontManager>,
 }
 
 impl PluginManager {
     pub fn new(
-        storage: Arc<dyn ExtensionStorage>,
+        storage: Arc<dyn ComponentStorage>,
         storefront_manager: Arc<StorefrontManager>,
     ) -> Self {
         let mut config = Config::new();
@@ -123,7 +123,7 @@ impl PluginManager {
 
         let component = smol::unblock({
             let engine = self.engine.clone();
-            move || Component::from_binary(&engine, &wasm_bytes)
+            move || WasmComponent::from_binary(&engine, &wasm_bytes)
         })
         .await?;
 
@@ -148,16 +148,16 @@ impl PluginManager {
         Ok(())
     }
 
-    pub fn plugins(&self) -> Vec<Arc<dyn CapabilityProvider>> {
+    pub fn plugins(&self) -> Vec<Arc<dyn Component>> {
         self.plugins
             .iter()
-            .map(|p| p.value().clone() as Arc<dyn CapabilityProvider>)
+            .map(|p| p.value().clone() as Arc<dyn Component>)
             .collect()
     }
 
-    pub fn plugin(&self, name: &str) -> Option<Arc<dyn CapabilityProvider>> {
+    pub fn plugin(&self, name: &str) -> Option<Arc<dyn Component>> {
         self.plugins
             .get(name)
-            .map(|p| p.value().clone() as Arc<dyn CapabilityProvider>)
+            .map(|p| p.value().clone() as Arc<dyn Component>)
     }
 }
