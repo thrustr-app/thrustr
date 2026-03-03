@@ -1,37 +1,34 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
-use ports::{managers::StorefrontManager as StorefrontManagerTrait, providers::StorefrontProvider};
+use ports::{capabilities::Storefront, managers::StorefrontManager as StorefrontManagerTrait};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct StorefrontManager {
-    storefront_providers: Arc<DashMap<String, Arc<dyn StorefrontProvider>>>,
+    storefronts: Arc<DashMap<String, Arc<dyn Storefront>>>,
 }
 
 impl StorefrontManager {
     pub fn new() -> Self {
         Self {
-            storefront_providers: Arc::new(DashMap::new()),
+            storefronts: Arc::new(DashMap::new()),
         }
     }
 }
 
 #[async_trait]
 impl StorefrontManagerTrait for StorefrontManager {
-    async fn register_storefront_provider(&self, storefront: Arc<dyn StorefrontProvider>) {
-        self.storefront_providers
+    async fn register_storefront(&self, storefront: Arc<dyn Storefront>) {
+        self.storefronts
             .insert(storefront.id().to_string(), storefront);
         event::emit("storefront");
     }
 
-    fn storefront_providers(&self) -> Vec<Arc<dyn StorefrontProvider>> {
-        self.storefront_providers
-            .iter()
-            .map(|s| s.value().clone())
-            .collect()
+    fn storefronts(&self) -> Vec<Arc<dyn Storefront>> {
+        self.storefronts.iter().map(|s| s.value().clone()).collect()
     }
 
-    fn storefront_provider(&self, id: &str) -> Option<Arc<dyn StorefrontProvider>> {
-        self.storefront_providers.get(id).map(|s| s.value().clone())
+    fn storefront(&self, id: &str) -> Option<Arc<dyn Storefront>> {
+        self.storefronts.get(id).map(|s| s.value().clone())
     }
 }

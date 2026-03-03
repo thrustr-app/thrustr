@@ -1,10 +1,10 @@
-use crate::metadata::Metadata;
+use crate::manifest::Manifest;
 use anyhow::Result;
 use async_trait::async_trait;
 use semver::Version;
 use std::{path::Path, sync::Arc};
 
-pub trait Plugin: Metadata + Send + Sync {
+pub trait Plugin: Manifest + Send + Sync {
     fn version(&self) -> &Version;
     fn authors(&self) -> &[String];
 }

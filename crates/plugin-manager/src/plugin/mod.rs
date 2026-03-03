@@ -1,8 +1,8 @@
 use crate::exports::thrustr::plugin::base::Error as PluginError;
-use crate::{StorefrontProviderPlugin, StorefrontProviderPluginPre};
+use crate::{StorefrontPlugin, StorefrontPluginPre};
+use ports::capabilities::Storefront;
 use ports::managers::Plugin as PluginTrait;
-use ports::metadata::{Image, Metadata, Origin};
-use ports::providers::StorefrontProvider;
+use ports::manifest::{Image, Manifest, Origin};
 use ports::storage::ExtensionStorage;
 use semver::Version;
 use std::sync::{Arc, Mutex};
@@ -10,7 +10,7 @@ use wasmtime::{Engine, Store};
 
 mod manifest;
 mod state;
-mod storefront_provider;
+mod storefront;
 
 pub use manifest::*;
 pub use state::PluginState;
@@ -28,7 +28,7 @@ pub(crate) struct PluginBuilder {
     engine: Engine,
     storage: Arc<dyn ExtensionStorage>,
     icon: Option<Image>,
-    storefront_pre: Option<StorefrontProviderPluginPre<PluginState>>,
+    storefront_pre: Option<StorefrontPluginPre<PluginState>>,
 }
 
 impl PluginBuilder {
@@ -53,7 +53,7 @@ impl PluginBuilder {
 
     pub(crate) fn storefront_pre(
         mut self,
-        storefront_pre: Option<StorefrontProviderPluginPre<PluginState>>,
+        storefront_pre: Option<StorefrontPluginPre<PluginState>>,
     ) -> Self {
         self.storefront_pre = storefront_pre;
         self
@@ -67,7 +67,7 @@ impl PluginBuilder {
             status: Mutex::new(PluginStatus::Inactive),
             engine: self.engine,
             storage: self.storage,
-            storefront_provider_pre: self.storefront_pre,
+            storefront_pre: self.storefront_pre,
         }
     }
 }
@@ -81,21 +81,21 @@ pub struct Plugin {
     engine: Engine,
     storage: Arc<dyn ExtensionStorage>,
 
-    storefront_provider_pre: Option<StorefrontProviderPluginPre<PluginState>>,
+    storefront_pre: Option<StorefrontPluginPre<PluginState>>,
 }
 
 impl Plugin {
-    pub(crate) fn as_storefront_provider(self: &Arc<Self>) -> Option<Arc<dyn StorefrontProvider>> {
-        self.storefront_provider_pre
+    pub(crate) fn as_storefront(self: &Arc<Self>) -> Option<Arc<dyn Storefront>> {
+        self.storefront_pre
             .is_some()
-            .then(|| Arc::clone(self) as Arc<dyn StorefrontProvider>)
+            .then(|| Arc::clone(self) as Arc<dyn Storefront>)
     }
 
-    pub(crate) async fn instantiate_storefront_provider(
+    pub(crate) async fn instantiate_storefront(
         &self,
-    ) -> Result<(StorefrontProviderPlugin, Store<PluginState>), PluginError> {
+    ) -> Result<(StorefrontPlugin, Store<PluginState>), PluginError> {
         let storefront_pre = self
-            .storefront_provider_pre
+            .storefront_pre
             .as_ref()
             .ok_or(PluginError::Other("Not a storefront".into()))?;
 
@@ -127,7 +127,7 @@ impl Plugin {
 
         event::emit("storefront");
 
-        let result: Result<(), PluginError> = match self.instantiate_storefront_provider().await {
+        let result: Result<(), PluginError> = match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_init(&mut store)
@@ -148,7 +148,7 @@ impl Plugin {
     }
 }
 
-impl Metadata for Plugin {
+impl Manifest for Plugin {
     fn id(&self) -> &str {
         &self.manifest.plugin.id
     }

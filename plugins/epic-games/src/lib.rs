@@ -1,8 +1,7 @@
 use crate::api::models::AuthResponse;
 use serde_json::Value;
 use thrustr_plugin::{
-    Plugin, PluginError, StorefrontProvider, config::Config, kv_store::KvStore,
-    register_storefront_provider,
+    Plugin, PluginError, Storefront, config::Config, kv_store::KvStore, register_storefront,
 };
 use wasip2::{clocks::monotonic_clock, io::poll};
 
@@ -36,10 +35,10 @@ impl Plugin for EpicGames {
     }
 }
 
-impl StorefrontProvider for EpicGames {
+impl Storefront for EpicGames {
     fn test() -> Result<(), PluginError> {
         Ok(())
     }
 }
 
-register_storefront_provider!(EpicGames);
+register_storefront!(EpicGames);

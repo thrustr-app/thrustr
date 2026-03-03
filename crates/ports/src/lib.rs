@@ -1,4 +1,4 @@
+pub mod capabilities;
 pub mod managers;
-pub mod metadata;
-pub mod providers;
+pub mod manifest;
 pub mod storage;

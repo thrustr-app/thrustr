@@ -4,7 +4,7 @@ pub mod kv_store;
 #[doc(hidden)]
 pub mod wit {
     wit_bindgen::generate!({
-        world: "storefront-provider-plugin",
+        world: "storefront-plugin",
         pub_export_macro: true,
     });
 }
@@ -12,16 +12,16 @@ pub mod wit {
 pub use wit::exports::thrustr::plugin::base::Error as PluginError;
 pub use wit::exports::thrustr::plugin::base::Guest as Plugin;
 
-pub use wit::exports::thrustr::plugin::storefront_provider::Guest as StorefrontProvider;
+pub use wit::exports::thrustr::plugin::storefront::Guest as Storefront;
 
 #[macro_export]
-macro_rules! register_storefront_provider {
+macro_rules! register_storefront {
     ($plugin_type:ty) => {
         struct Guest;
 
-        impl $crate::wit::exports::thrustr::plugin::storefront_provider::Guest for Guest {
+        impl $crate::wit::exports::thrustr::plugin::storefront::Guest for Guest {
             fn test() -> Result<(), $crate::PluginError> {
-                <$plugin_type as $crate::StorefrontProvider>::test()
+                <$plugin_type as $crate::Storefront>::test()
             }
         }
 

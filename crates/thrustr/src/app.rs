@@ -27,7 +27,7 @@ impl App {
         .detach();
 
         cx.listen("plugin", |app, cx| {
-            app.init_storefront_providers(cx);
+            app.init_storefront(cx);
         })
         .detach();
 
@@ -46,11 +46,11 @@ impl App {
         .detach();
     }
 
-    fn init_storefront_providers(&self, cx: &mut Context<Self>) {
-        let inactive_providers = cx.storefront_manager().storefront_providers().into_iter();
-        for provider in inactive_providers {
+    fn init_storefront(&self, cx: &mut Context<Self>) {
+        let storefronts = cx.storefront_manager().storefronts().into_iter();
+        for storefront in storefronts {
             Tokio::spawn(cx, async move {
-                let _ = provider.init().await;
+                let _ = storefront.init().await;
             })
             .detach();
         }

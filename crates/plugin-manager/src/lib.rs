@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use futures::TryStreamExt;
 use ports::{
     managers::{Plugin as PluginTrait, PluginManager as PluginManagerTrait, StorefrontManager},
-    metadata::{Image, ImageFormat, Metadata},
+    manifest::{Image, ImageFormat, Manifest},
     storage::ExtensionStorage,
 };
 use std::{
@@ -25,7 +25,7 @@ mod plugin;
 
 bindgen!({
     path: "../thrustr-plugin/wit",
-    world: "storefront-provider-plugin",
+    world: "storefront-plugin",
     imports: { default: async },
     exports: { default: async }
 });
@@ -50,7 +50,7 @@ impl PluginManager {
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
-        StorefrontProviderPlugin::add_to_linker::<_, PluginState>(&mut linker, |state| state)
+        StorefrontPlugin::add_to_linker::<_, PluginState>(&mut linker, |state| state)
             .expect("Failed to add Storefront imports to linker");
         wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)
             .expect("Failed to add WASI HTTP to linker");
@@ -132,7 +132,7 @@ impl PluginManagerTrait for PluginManager {
         .await?;
 
         let instance_pre = self.linker.instantiate_pre(&component)?;
-        let storefront = StorefrontProviderPluginPre::new(instance_pre).ok();
+        let storefront = StorefrontPluginPre::new(instance_pre).ok();
 
         let plugin = Arc::new(
             PluginBuilder::new(manifest, self.engine.clone(), self.storage.clone())
@@ -141,10 +141,8 @@ impl PluginManagerTrait for PluginManager {
                 .build(),
         );
 
-        if let Some(s) = plugin.as_storefront_provider() {
-            self.storefront_manager
-                .register_storefront_provider(s)
-                .await;
+        if let Some(s) = plugin.as_storefront() {
+            self.storefront_manager.register_storefront(s).await;
         }
 
         self.plugins.insert(plugin.id().to_owned(), plugin);

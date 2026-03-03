@@ -52,7 +52,7 @@ impl Origin {
     }
 }
 
-pub trait Metadata {
+pub trait Manifest {
     fn id(&self) -> &str;
     fn name(&self) -> &str;
     fn origin(&self) -> &Origin;

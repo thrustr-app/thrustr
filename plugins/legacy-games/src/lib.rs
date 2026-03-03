@@ -1,4 +1,4 @@
-use thrustr_plugin::{Plugin, PluginError, StorefrontProvider, register_storefront_provider};
+use thrustr_plugin::{Plugin, PluginError, Storefront, register_storefront};
 use wasip2::{clocks::monotonic_clock, io::poll};
 
 pub struct LegacyGames;
@@ -11,10 +11,10 @@ impl Plugin for LegacyGames {
     }
 }
 
-impl StorefrontProvider for LegacyGames {
+impl Storefront for LegacyGames {
     fn test() -> Result<(), PluginError> {
         Ok(())
     }
 }
 
-register_storefront_provider!(LegacyGames);
+register_storefront!(LegacyGames);

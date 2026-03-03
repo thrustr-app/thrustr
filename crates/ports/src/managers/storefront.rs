@@ -1,11 +1,12 @@
 use async_trait::async_trait;
 
-use crate::providers::StorefrontProvider;
 use std::sync::Arc;
+
+use crate::capabilities::Storefront;
 
 #[async_trait]
 pub trait StorefrontManager: Send + Sync {
-    async fn register_storefront_provider(&self, storefront: Arc<dyn StorefrontProvider>);
-    fn storefront_providers(&self) -> Vec<Arc<dyn StorefrontProvider>>;
-    fn storefront_provider(&self, id: &str) -> Option<Arc<dyn StorefrontProvider>>;
+    async fn register_storefront(&self, storefront: Arc<dyn Storefront>);
+    fn storefronts(&self) -> Vec<Arc<dyn Storefront>>;
+    fn storefront(&self, id: &str) -> Option<Arc<dyn Storefront>>;
 }

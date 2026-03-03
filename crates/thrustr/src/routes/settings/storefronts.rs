@@ -6,58 +6,58 @@ use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
 };
-use ports::{managers::StorefrontManager, providers::StorefrontProviderStatus};
+use ports::{capabilities::StorefrontStatus, managers::StorefrontManager};
 use std::sync::Arc;
 use theme_manager::ThemeExt;
 use ui::Card;
 
 #[derive(Clone)]
-struct StorefrontProvider {
+struct Storefront {
     name: SharedString,
-    status: StorefrontProviderStatus,
+    status: StorefrontStatus,
     icon: Option<Arc<GpuiImage>>,
     plugin: Option<SharedString>,
 }
 
 pub struct Storefronts {
-    providers: Vec<StorefrontProvider>,
+    storefronts: Vec<Storefront>,
     _tasks: Vec<Task<()>>,
 }
 
 impl Storefronts {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut page = Self {
-            providers: Vec::new(),
+            storefronts: Vec::new(),
             _tasks: Vec::new(),
         };
 
         let task = cx.listen("storefront", |page, cx| {
-            page.refresh_providers(cx);
+            page.refresh_storefronts(cx);
         });
         page._tasks.push(task);
 
-        page.refresh_providers(cx);
+        page.refresh_storefronts(cx);
         page
     }
 
-    pub fn refresh_providers(&mut self, cx: &mut Context<Self>) {
-        let mut providers: Vec<StorefrontProvider> = cx
+    pub fn refresh_storefronts(&mut self, cx: &mut Context<Self>) {
+        let mut storefronts: Vec<Storefront> = cx
             .storefront_manager()
-            .storefront_providers()
+            .storefronts()
             .into_iter()
-            .map(|provider| StorefrontProvider {
-                name: provider.name().to_string().into(),
-                status: provider.status(),
-                icon: provider.icon().map(image_to_gpui),
-                plugin: provider
+            .map(|storefront| Storefront {
+                name: storefront.name().to_string().into(),
+                status: storefront.status(),
+                icon: storefront.icon().map(image_to_gpui),
+                plugin: storefront
                     .origin()
                     .plugin_id()
                     .map(|id| id.to_string().into()),
             })
             .collect();
 
-        providers.sort_by(|a, b| a.name.cmp(&b.name));
-        self.providers = providers;
+        storefronts.sort_by(|a, b| a.name.cmp(&b.name));
+        self.storefronts = storefronts;
         cx.notify();
     }
 }
@@ -66,23 +66,23 @@ impl Render for Storefronts {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        let cards = self.providers.clone().into_iter().map(|provider| {
+        let cards = self.storefronts.clone().into_iter().map(|storefront| {
             let mut status = div().font_weight(FontWeight::BOLD).text_size(rems(0.6));
-            match provider.status {
-                StorefrontProviderStatus::Initializing => {
+            match storefront.status {
+                StorefrontStatus::Initializing => {
                     status = status
                         .text_color(theme.colors.warning)
                         .child("INITIALIZING");
                 }
-                StorefrontProviderStatus::Active => {
+                StorefrontStatus::Active => {
                     status = status.text_color(theme.colors.accent).child("ACTIVE");
                 }
-                StorefrontProviderStatus::Inactive => {
+                StorefrontStatus::Inactive => {
                     status = status
                         .text_color(theme.colors.card_foreground_secondary)
                         .child("INACTIVE");
                 }
-                StorefrontProviderStatus::Error(_) => {
+                StorefrontStatus::Error(_) => {
                     status = status.text_color(theme.colors.error).child("ERROR");
                 }
             }
@@ -91,7 +91,7 @@ impl Render for Storefronts {
                 .relative()
                 .gap(rems(1.))
                 .size(rems(11.))
-                .when_some(provider.icon, |card, icon| {
+                .when_some(storefront.icon, |card, icon| {
                     card.child(img(ImageSource::Image(icon)).size_full())
                 })
                 .child(
@@ -106,7 +106,7 @@ impl Render for Storefronts {
                                 .items_center()
                                 .justify_center()
                                 .gap(rems(0.5))
-                                .when_some(provider.plugin, |this, _| {
+                                .when_some(storefront.plugin, |this, _| {
                                     this.child(
                                         svg()
                                             .path("icons/plugins.svg")
@@ -117,7 +117,7 @@ impl Render for Storefronts {
                                 })
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(theme.colors.card_foreground_primary)
-                                .child(provider.name),
+                                .child(storefront.name),
                         )
                         .child(status),
                 )

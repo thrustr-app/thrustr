@@ -1,13 +1,13 @@
 package thrustr:plugin@0.1.0;
 
-interface storefront-provider {
+interface storefront {
     use types.{error};
 
     test: func() -> result<_, error>;
 }
 
-world storefront-provider-plugin {
+world storefront-plugin {
     include base-plugin;
 
-    export storefront-provider;
+    export storefront;
 }
