@@ -148,16 +148,11 @@ impl PluginManager {
         Ok(())
     }
 
-    pub fn plugins(&self) -> Vec<Arc<dyn Component>> {
-        self.plugins
-            .iter()
-            .map(|p| p.value().clone() as Arc<dyn Component>)
-            .collect()
+    pub fn plugins(&self) -> Vec<Arc<Plugin>> {
+        self.plugins.iter().map(|p| p.value().clone()).collect()
     }
 
-    pub fn plugin(&self, name: &str) -> Option<Arc<dyn Component>> {
-        self.plugins
-            .get(name)
-            .map(|p| p.value().clone() as Arc<dyn Component>)
+    pub fn plugin(&self, name: &str) -> Option<Arc<Plugin>> {
+        self.plugins.get(name).map(|p| p.value().clone())
     }
 }
