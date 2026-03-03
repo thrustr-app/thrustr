@@ -2,8 +2,7 @@ use crate::exports::thrustr::plugin::base::Error as PluginError;
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use ports::capabilities::{
-    Component, ComponentError, ComponentMetadata, ComponentOrigin, ComponentStatus, Image,
-    Storefront,
+    Component, Error as ComponentError, Image, Metadata, Origin, Status, Storefront,
 };
 use ports::storage::ComponentStorage;
 use std::sync::{Arc, Mutex};
@@ -53,10 +52,10 @@ impl PluginBuilder {
     }
 
     pub(crate) fn build(self) -> Plugin {
-        let metadata = ComponentMetadata {
+        let metadata = Metadata {
             id: self.manifest.plugin.id.clone(),
             name: self.manifest.plugin.name,
-            origin: ComponentOrigin::Plugin(self.manifest.plugin.id),
+            origin: Origin::Plugin(self.manifest.plugin.id),
             description: self.manifest.plugin.description,
             icon: self.icon,
             version: self.manifest.plugin.version,
@@ -65,7 +64,7 @@ impl PluginBuilder {
 
         Plugin {
             metadata,
-            status: Mutex::new(ComponentStatus::Inactive),
+            status: Mutex::new(Status::Inactive),
             engine: self.engine,
             storage: self.storage,
             storefront_pre: self.storefront_pre,
@@ -74,8 +73,8 @@ impl PluginBuilder {
 }
 
 pub struct Plugin {
-    metadata: ComponentMetadata,
-    status: Mutex<ComponentStatus>,
+    metadata: Metadata,
+    status: Mutex<Status>,
 
     engine: Engine,
     storage: Arc<dyn ComponentStorage>,
@@ -105,7 +104,7 @@ impl Plugin {
         Ok((instance, store))
     }
 
-    fn set_status(&self, status: ComponentStatus) {
+    fn set_status(&self, status: Status) {
         *self.status.lock().unwrap() = status;
         event::emit("component");
     }
@@ -113,11 +112,11 @@ impl Plugin {
 
 #[async_trait]
 impl Component for Plugin {
-    fn metadata(&self) -> &ComponentMetadata {
+    fn metadata(&self) -> &Metadata {
         &self.metadata
     }
 
-    fn status(&self) -> ComponentStatus {
+    fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
     }
 
@@ -131,7 +130,7 @@ impl Component for Plugin {
         {
             let mut lock = self.status.lock().unwrap();
             match *lock {
-                ComponentStatus::Inactive => *lock = ComponentStatus::Initializing,
+                Status::Inactive => *lock = Status::Initializing,
                 _ => {
                     return Err(ComponentError::Initialization(
                         "Plugin is already initializing or active".into(),
@@ -140,7 +139,7 @@ impl Component for Plugin {
             }
         }
 
-        self.set_status(ComponentStatus::Initializing);
+        self.set_status(Status::Initializing);
 
         let result: Result<(), ComponentError> = match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
@@ -153,8 +152,8 @@ impl Component for Plugin {
         };
 
         self.set_status(match &result {
-            Ok(_) => ComponentStatus::Active,
-            Err(e) => ComponentStatus::Error(e.clone()),
+            Ok(_) => Status::Active,
+            Err(e) => Status::Error(e.clone()),
         });
 
         result

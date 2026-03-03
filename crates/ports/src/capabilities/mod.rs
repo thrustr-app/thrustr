@@ -39,12 +39,12 @@ pub struct Image {
 }
 
 #[derive(Debug)]
-pub enum ComponentOrigin {
+pub enum Origin {
     Core,
     Plugin(String),
 }
 
-impl ComponentOrigin {
+impl Origin {
     pub fn is_core(&self) -> bool {
         matches!(self, Self::Core)
     }
@@ -62,20 +62,20 @@ impl ComponentOrigin {
 }
 
 #[derive(Debug, Clone)]
-pub enum ComponentError {
+pub enum Error {
     Initialization(String),
     Runtime(String),
 }
 
 #[derive(Debug, Clone)]
-pub enum ComponentStatus {
+pub enum Status {
     Inactive,
     Active,
     Initializing,
-    Error(ComponentError),
+    Error(Error),
 }
 
-impl ComponentStatus {
+impl Status {
     pub fn is_inactive(&self) -> bool {
         matches!(self, Self::Inactive)
     }
@@ -93,10 +93,10 @@ impl ComponentStatus {
     }
 }
 
-pub struct ComponentMetadata {
+pub struct Metadata {
     pub id: String,
     pub name: String,
-    pub origin: ComponentOrigin,
+    pub origin: Origin,
     pub description: Option<String>,
     pub icon: Option<Image>,
     pub version: Version,
@@ -105,12 +105,12 @@ pub struct ComponentMetadata {
 
 #[async_trait]
 pub trait Component: Send + Sync {
-    fn metadata(&self) -> &ComponentMetadata;
-    fn status(&self) -> ComponentStatus;
+    fn metadata(&self) -> &Metadata;
+    fn status(&self) -> Status;
 
     fn storefront(self: Arc<Self>) -> Option<Arc<dyn Storefront>> {
         None
     }
 
-    async fn init(&self) -> Result<(), ComponentError>;
+    async fn init(&self) -> Result<(), Error>;
 }
