@@ -1,11 +1,9 @@
 use crate::plugin::{Plugin, PluginBuilder, PluginManifest, PluginState};
 use anyhow::Result;
-use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::TryStreamExt;
 use ports::{
-    managers::{Plugin as PluginTrait, PluginManager as PluginManagerTrait, StorefrontManager},
-    manifest::{Image, ImageFormat, Manifest},
+    capabilities::{CapabilityProvider, Image, ImageFormat},
     storage::ExtensionStorage,
 };
 use std::{
@@ -15,6 +13,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use storefront_manager::StorefrontManager;
 use wasmtime::{
     Config, Engine,
     component::{Component, Linker, bindgen},
@@ -36,13 +35,13 @@ pub struct PluginManager {
     linker: Arc<Linker<PluginState>>,
     plugins: Arc<DashMap<String, Arc<Plugin>>>,
     storage: Arc<dyn ExtensionStorage>,
-    storefront_manager: Arc<dyn StorefrontManager>,
+    storefront_manager: Arc<StorefrontManager>,
 }
 
 impl PluginManager {
     pub fn new(
         storage: Arc<dyn ExtensionStorage>,
-        storefront_manager: Arc<dyn StorefrontManager>,
+        storefront_manager: Arc<StorefrontManager>,
     ) -> Self {
         let mut config = Config::new();
         config.async_support(true);
@@ -63,11 +62,8 @@ impl PluginManager {
             storefront_manager,
         }
     }
-}
 
-#[async_trait]
-impl PluginManagerTrait for PluginManager {
-    async fn load_plugins(&self, dir: &Path) -> Result<()> {
+    pub async fn load_plugins(&self, dir: &Path) -> Result<()> {
         let mut read_dir = smol::fs::read_dir(dir).await?;
         let mut paths: Vec<PathBuf> = Vec::new();
 
@@ -87,7 +83,7 @@ impl PluginManagerTrait for PluginManager {
         Ok(())
     }
 
-    async fn load_plugin(&self, path: &Path) -> Result<()> {
+    pub async fn load_plugin(&self, path: &Path) -> Result<()> {
         let path = path.to_owned();
 
         let (manifest, wasm_bytes, icon) = smol::unblock(move || {
@@ -142,7 +138,7 @@ impl PluginManagerTrait for PluginManager {
         );
 
         if let Some(s) = plugin.as_storefront() {
-            self.storefront_manager.register_storefront(s).await;
+            self.storefront_manager.register_storefront(s);
         }
 
         self.plugins.insert(plugin.id().to_owned(), plugin);
@@ -152,16 +148,16 @@ impl PluginManagerTrait for PluginManager {
         Ok(())
     }
 
-    fn plugins(&self) -> Vec<Arc<dyn PluginTrait>> {
+    pub fn plugins(&self) -> Vec<Arc<dyn CapabilityProvider>> {
         self.plugins
             .iter()
-            .map(|p| p.value().clone() as Arc<dyn PluginTrait>)
+            .map(|p| p.value().clone() as Arc<dyn CapabilityProvider>)
             .collect()
     }
 
-    fn plugin(&self, name: &str) -> Option<Arc<dyn PluginTrait>> {
+    pub fn plugin(&self, name: &str) -> Option<Arc<dyn CapabilityProvider>> {
         self.plugins
             .get(name)
-            .map(|p| p.value().clone() as Arc<dyn PluginTrait>)
+            .map(|p| p.value().clone() as Arc<dyn CapabilityProvider>)
     }
 }

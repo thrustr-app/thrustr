@@ -1,7 +1,8 @@
 use gpui::{App, Global};
 use plugin_manager::PluginManager;
-use ports::{managers::StorefrontManager, storage::ExtensionStorage};
+use ports::storage::ExtensionStorage;
 use std::sync::Arc;
+use storefront_manager::StorefrontManager;
 
 pub struct PluginManagerGlobal(PluginManager);
 
@@ -10,7 +11,7 @@ impl Global for PluginManagerGlobal {}
 pub fn init(
     cx: &mut App,
     storage: Arc<dyn ExtensionStorage>,
-    storefront_manager: Arc<dyn StorefrontManager>,
+    storefront_manager: Arc<StorefrontManager>,
 ) {
     cx.set_global(PluginManagerGlobal(PluginManager::new(
         storage,

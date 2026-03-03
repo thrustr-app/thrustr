@@ -1,6 +1,5 @@
-use async_trait::async_trait;
 use dashmap::DashMap;
-use ports::{capabilities::Storefront, managers::StorefrontManager as StorefrontManagerTrait};
+use ports::capabilities::Storefront;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -14,21 +13,18 @@ impl StorefrontManager {
             storefronts: Arc::new(DashMap::new()),
         }
     }
-}
 
-#[async_trait]
-impl StorefrontManagerTrait for StorefrontManager {
-    async fn register_storefront(&self, storefront: Arc<dyn Storefront>) {
+    pub fn register_storefront(&self, storefront: Arc<dyn Storefront>) {
         self.storefronts
             .insert(storefront.id().to_string(), storefront);
-        event::emit("storefront");
+        event::emit("capability");
     }
 
-    fn storefronts(&self) -> Vec<Arc<dyn Storefront>> {
+    pub fn storefronts(&self) -> Vec<Arc<dyn Storefront>> {
         self.storefronts.iter().map(|s| s.value().clone()).collect()
     }
 
-    fn storefront(&self, id: &str) -> Option<Arc<dyn Storefront>> {
+    pub fn storefront(&self, id: &str) -> Option<Arc<dyn Storefront>> {
         self.storefronts.get(id).map(|s| s.value().clone())
     }
 }

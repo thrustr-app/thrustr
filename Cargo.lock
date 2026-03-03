@@ -4481,6 +4481,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smol",
+ "storefront-manager",
  "toml 0.9.8",
  "wasmtime",
  "wasmtime-wasi",

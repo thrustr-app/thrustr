@@ -8,7 +8,6 @@ use crate::{
 use config::paths;
 use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 use gpui_tokio::Tokio;
-use ports::managers::{PluginManager, StorefrontManager};
 use theme_manager::ThemeExt;
 
 pub struct App {
