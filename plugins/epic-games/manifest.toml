@@ -5,21 +5,28 @@ version = "0.0.1"
 authors = ["Jorge Pardo"]
 description = "Plugin to download and launch Epic Games Store games."
 
-[config]
-[[config.items]]
-type = "text"
-id = "username"
-label = "Username"
+[[config.section]]
+name = "General"
 
-[[config.items]]
-type = "text"
-id = "password"
-label = "Password"
+    [[config.section.field]]
+    type = "text"
+    id = "username"
+    label = "Username"
 
-[[config.items]]
-type = "section"
+    [[config.section.field]]
+    type = "text"
+    id = "password"
+    label = "Password"
+
+[[config.section]]
 name = "Advanced Settings"
-items = [
-    { type = "text", id = "enable_debug", label = "Enable Debug Mode" },
-    { type = "text", id = "verbose_logging", label = "Verbose Logging" }
-]
+
+    [[config.section.field]]
+    type = "text"
+    id = "enable_debug"
+    label = "Enable Debug Mode"
+
+    [[config.section.field]]
+    type = "text"
+    id = "verbose_logging"
+    label = "Verbose Logging"

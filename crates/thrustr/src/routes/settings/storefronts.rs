@@ -58,7 +58,7 @@ impl Storefronts {
                     id: component.metadata().id.to_owned().into(),
                     name: component.metadata().name.to_owned().into(),
                     status: component.status(),
-                    icon: component.metadata().icon.as_ref().map(image_to_gpui),
+                    icon: component.metadata().icon.clone().map(image_to_gpui),
                     plugin: component
                         .metadata()
                         .origin

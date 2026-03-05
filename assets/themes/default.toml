@@ -7,18 +7,22 @@ description = "The default dark theme for Thrustr."
 
 [colors]
 background = "#0A0A0A"
+foreground_primary = "#FFFFFF"
+foreground_secondary = "#646464"
+highlight = "#262626"
+accent = "#8BF0FE"
+border = "#323232"
+
 sidebar_background = "#0A0A0A"
 sidebar_foreground_primary = "#FFFFFF"
 sidebar_foreground_secondary = "#646464"
 sidebar_highlight = "#262626"
+logo = "#B6B6B6"
 
 card_background = "#252525"
 card_foreground_primary = "#FFFFFF"
 card_foreground_secondary = "#646464"
 
-accent = "#8BF0FE"
 error = "#CD3F3F"
 error_background = "#b86262"
 warning = "#FDF85F"
-border = "#323232"
-logo = "#B6B6B6"

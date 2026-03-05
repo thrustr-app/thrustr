@@ -19,6 +19,10 @@ impl ComponentManager {
             .insert(component.metadata().id.to_owned(), component);
     }
 
+    pub fn component(&self, id: &str) -> Option<Arc<dyn Component>> {
+        self.components.get(id).map(|c| Arc::clone(c.value()))
+    }
+
     pub fn plugins(&self) -> Vec<Arc<dyn Component>> {
         self.components
             .iter()

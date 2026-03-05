@@ -3,19 +3,22 @@ use serde::Deserialize;
 
 define_theme_colors!(
     background,
+    foreground_primary,
+    foreground_secondary,
+    highlight,
+    accent,
+    border,
     sidebar_background,
     sidebar_foreground_primary,
     sidebar_foreground_secondary,
     sidebar_highlight,
+    logo,
     card_background,
     card_foreground_primary,
     card_foreground_secondary,
-    accent,
     error,
     error_background,
     warning,
-    border,
-    logo,
 );
 
 #[derive(Debug, Deserialize)]

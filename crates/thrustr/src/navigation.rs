@@ -52,6 +52,15 @@ impl Page {
             Self::Settings(sub) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
         }
     }
+
+    fn is_same_page(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Page::Settings(a), Page::Settings(b)) => {
+                std::mem::discriminant(a) == std::mem::discriminant(b)
+            }
+            _ => self == other,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq)]
@@ -124,7 +133,7 @@ impl SettingsPage {
             Self::Storefronts(None) => cx.new(|cx| routes::Storefronts::new(cx)).into(),
             Self::Plugins(None) => cx.new(|cx| routes::Plugins::new(cx)).into(),
             Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => {
-                cx.new(|_| routes::Config::new(id.clone())).into()
+                cx.new(|cx| routes::Config::new(cx, id)).into()
             }
             Self::Appearance => cx.new(|_| routes::Appearance).into(),
         }
@@ -137,13 +146,18 @@ impl Into<Page> for SettingsPage {
     }
 }
 
+#[derive(Debug)]
 pub struct Navigator {
     current: Page,
+    history: Vec<Page>,
 }
 
 impl Navigator {
     fn new(initial: Page) -> Self {
-        Self { current: initial }
+        Self {
+            current: initial,
+            history: Vec::new(),
+        }
     }
 }
 
@@ -152,14 +166,33 @@ impl Global for Navigator {}
 pub trait NavigationExt {
     fn navigate(&mut self, page: impl Into<Page>);
     fn current_page(&self) -> Page;
+    fn navigate_back(&mut self);
 }
 
 impl NavigationExt for App {
     fn navigate(&mut self, page: impl Into<Page>) {
-        self.update_global::<Navigator, _>(|nav, _| nav.current = page.into());
+        self.update_global::<Navigator, _>(|nav, _| {
+            let previous = nav.current.clone();
+            nav.current = page.into();
+
+            if !nav.current.is_same_page(&previous) {
+                nav.history.push(previous);
+                if nav.history.len() > 20 {
+                    nav.history.remove(0);
+                }
+            }
+        });
     }
 
     fn current_page(&self) -> Page {
         self.global::<Navigator>().current.clone()
+    }
+
+    fn navigate_back(&mut self) {
+        self.update_global::<Navigator, _>(|nav, _| {
+            if let Some(previous) = nav.history.pop() {
+                nav.current = previous;
+            }
+        });
     }
 }

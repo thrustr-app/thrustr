@@ -33,6 +33,7 @@ impl ImageFormat {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Image {
     pub bytes: Vec<u8>,
     pub format: ImageFormat,
