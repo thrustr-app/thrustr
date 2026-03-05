@@ -1,16 +1,18 @@
-use crate::navigation::{self, Navigator, Page, SettingsPage};
+use crate::navigation::{NavigationExt, SettingsPage};
 use gpui::{
     AnyView, App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, Render,
-    RenderOnce, StatefulInteractiveElement, Styled, Subscription, Window, div,
-    prelude::FluentBuilder, rems, svg, transparent_black,
+    RenderOnce, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
+    transparent_black,
 };
 use theme_manager::ThemeExt;
 
 mod appearance;
+mod config;
 mod plugins;
 mod storefronts;
 
 pub use appearance::Appearance;
+pub use config::Config;
 pub use plugins::Plugins;
 pub use storefronts::Storefronts;
 
@@ -28,15 +30,16 @@ impl SettingsPageButton {
 impl RenderOnce for SettingsPageButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let current_settings = navigation::current_settings_page(cx);
-        let target = self.page;
+        let current_page = cx.current_page();
+        let is_active = current_page == self.page;
+        let target = self.page.clone();
 
         div()
             .id(self.page.label())
             .cursor_pointer()
             .on_click(
                 move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                    navigation::navigate(cx, Page::Settings(target));
+                    cx.navigate(target.clone());
                 },
             )
             .py(rems(0.625))
@@ -48,7 +51,7 @@ impl RenderOnce for SettingsPageButton {
             .gap(rems(0.75))
             .bg(transparent_black())
             .hover(|style| style.bg(theme.colors.sidebar_highlight))
-            .when(current_settings == Some(self.page), |style| {
+            .when(is_active, |style| {
                 style
                     .bg(theme.colors.sidebar_highlight)
                     .text_color(theme.colors.sidebar_foreground_primary)
@@ -59,34 +62,23 @@ impl RenderOnce for SettingsPageButton {
                     .path(self.page.icon_path())
                     .text_color(theme.colors.sidebar_foreground_secondary)
                     .size(rems(1.5))
-                    .when(current_settings == Some(self.page), |svg| {
+                    .when(is_active, |svg| {
                         svg.text_color(theme.colors.sidebar_foreground_primary)
                     }),
             )
-            .child(div().child(self.page.label_pretty()))
+            .child(div().child(self.page.label()))
     }
 }
 
 pub struct Settings {
     active_view: AnyView,
-    _subscriptions: Vec<Subscription>,
 }
 
 impl Settings {
-    pub fn new(sub: SettingsPage, cx: &mut Context<Self>) -> Self {
-        let active_view = sub.build_view(cx);
+    pub fn new(page: SettingsPage, cx: &mut Context<Self>) -> Self {
+        let active_view = page.build_view(cx);
 
-        let subscription = cx.observe_global::<Navigator>(|this, cx| {
-            if let Some(sub) = navigation::current_settings_page(cx) {
-                this.active_view = sub.build_view(cx);
-                cx.notify();
-            }
-        });
-
-        Self {
-            active_view,
-            _subscriptions: vec![subscription],
-        }
+        Self { active_view }
     }
 }
 
@@ -110,8 +102,8 @@ impl Render for Settings {
                     .border_r_1()
                     .border_color(theme.colors.border)
                     .text_color(theme.colors.sidebar_foreground_secondary)
-                    .child(SettingsPageButton::new(SettingsPage::Storefronts))
-                    .child(SettingsPageButton::new(SettingsPage::Plugins))
+                    .child(SettingsPageButton::new(SettingsPage::Storefronts(None)))
+                    .child(SettingsPageButton::new(SettingsPage::Plugins(None)))
                     .child(SettingsPageButton::new(SettingsPage::Appearance)),
             )
             .child(self.active_view.clone())

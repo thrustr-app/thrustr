@@ -1,4 +1,4 @@
-use crate::navigation::{self, Page, SettingsPage};
+use crate::navigation::{NavigationExt, Page, SettingsPage};
 use gpui::{
     App, ClickEvent, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
@@ -20,8 +20,8 @@ impl SidebarIconButton {
 impl RenderOnce for SidebarIconButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let current = navigation::current_page(cx);
-        let target = self.page;
+        let current = cx.current_page();
+        let target = self.page.clone();
         let label = self.page.label();
         let is_active = self.page == current;
 
@@ -30,7 +30,7 @@ impl RenderOnce for SidebarIconButton {
             .cursor_pointer()
             .on_click(
                 move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                    navigation::navigate(cx, target);
+                    cx.navigate(target.clone());
                 },
             )
             .group(label)

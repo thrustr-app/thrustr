@@ -1,6 +1,7 @@
 use crate::{
     conversions::image::image_to_gpui,
     globals::{ComponentManagerExt, EventListenerExt},
+    navigation::{NavigationExt, SettingsPage},
 };
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
@@ -13,6 +14,7 @@ use ui::{Alert, Card};
 
 #[derive(Clone)]
 struct Storefront {
+    id: SharedString,
     name: SharedString,
     status: Status,
     icon: Option<Arc<GpuiImage>>,
@@ -53,6 +55,7 @@ impl Storefronts {
                 }
 
                 Storefront {
+                    id: component.metadata().id.to_owned().into(),
                     name: component.metadata().name.to_owned().into(),
                     status: component.status(),
                     icon: component.metadata().icon.as_ref().map(image_to_gpui),
@@ -96,12 +99,24 @@ impl Render for Storefronts {
                 }
             }
 
-            Card::new()
+            let sorefront_id = storefront.id.clone();
+            let is_plugin = storefront.plugin.is_some();
+
+            Card::new(storefront.id)
                 .relative()
                 .gap(rems(1.))
                 .size(rems(11.))
                 .when_some(storefront.icon, |card, icon| {
                     card.child(img(ImageSource::Image(icon)).size_full())
+                })
+                .on_click(move |_, _, cx| {
+                    let route = if is_plugin {
+                        SettingsPage::Plugins(Some(sorefront_id.clone()))
+                    } else {
+                        SettingsPage::Storefronts(Some(sorefront_id.clone()))
+                    };
+
+                    cx.navigate(route);
                 })
                 .child(
                     div()

@@ -1,9 +1,8 @@
 use crate::globals::{ComponentManagerExt, EventListenerExt};
-use crate::navigation::Navigator;
+use crate::navigation::{NavigationExt, Navigator};
 use crate::{
     components::{Sidebar, Topbar},
     globals::PluginManagerExt,
-    navigation::{self},
 };
 use config::paths;
 use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
@@ -16,10 +15,11 @@ pub struct App {
 
 impl App {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let active_view = navigation::current_page(cx).build_view(cx);
+        let current_page = cx.current_page();
+        let active_view = current_page.build_view(cx);
 
         cx.observe_global::<Navigator>(|this, cx| {
-            let page = navigation::current_page(cx);
+            let page = cx.current_page();
             this.active_view = page.build_view(cx);
             cx.notify();
         })
