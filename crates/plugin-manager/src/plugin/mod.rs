@@ -1,8 +1,9 @@
 use crate::exports::thrustr::plugin::base::Error as PluginError;
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
-use ports::capabilities::{
-    Capability, Component, Error as ComponentError, Image, Metadata, Origin, Status, Storefront,
+use ports::capabilities::{Capability, Storefront};
+use ports::component::{
+    Component, Config, Error as ComponentError, Image, Metadata, Origin, Status,
 };
 use ports::storage::ComponentStorage;
 use std::sync::{Arc, Mutex};
@@ -64,6 +65,7 @@ impl PluginBuilder {
 
         Plugin {
             metadata,
+            config: self.manifest.config,
             status: Mutex::new(Status::Inactive),
             engine: self.engine,
             storage: self.storage,
@@ -74,6 +76,7 @@ impl PluginBuilder {
 
 pub struct Plugin {
     metadata: Metadata,
+    config: Option<Config>,
     status: Mutex<Status>,
 
     engine: Engine,
@@ -118,6 +121,10 @@ impl Component for Plugin {
 
     fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
+    }
+
+    fn config(&self) -> Option<&Config> {
+        self.config.as_ref()
     }
 
     fn storefront(self: Arc<Self>) -> Option<Arc<dyn Storefront>> {

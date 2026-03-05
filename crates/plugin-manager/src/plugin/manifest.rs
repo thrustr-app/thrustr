@@ -1,3 +1,4 @@
+use ports::component::Config;
 use semver::Version;
 use serde::Deserialize;
 
@@ -12,26 +13,7 @@ pub struct PluginInfo {
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum PluginConfigItem {
-    Section {
-        name: String,
-        items: Vec<PluginConfigItem>,
-    },
-    String {
-        id: String,
-        label: String,
-    },
-}
-
-#[derive(Deserialize, Debug)]
-pub struct PluginConfig {
-    #[serde(rename = "item")]
-    pub items: Vec<PluginConfigItem>,
-}
-
-#[derive(Deserialize, Debug)]
 pub struct PluginManifest {
     pub plugin: PluginInfo,
-    pub config: Option<PluginConfig>,
+    pub config: Option<Config>,
 }

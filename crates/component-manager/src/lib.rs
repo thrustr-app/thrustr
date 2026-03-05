@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use ports::capabilities::{Component, Storefront};
+use ports::{capabilities::Storefront, component::Component};
 use std::sync::Arc;
 
 #[derive(Clone)]

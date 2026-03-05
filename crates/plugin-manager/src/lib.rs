@@ -3,7 +3,7 @@ use anyhow::Result;
 use component_manager::ComponentManager;
 use futures::TryStreamExt;
 use ports::{
-    capabilities::{Image, ImageFormat},
+    component::{Image, ImageFormat},
     storage::ComponentStorage,
 };
 use std::{

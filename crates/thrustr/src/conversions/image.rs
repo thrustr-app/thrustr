@@ -1,5 +1,5 @@
 use gpui::{Image as GpuiImage, ImageFormat as GpuiImageFormat};
-use ports::capabilities::{Image, ImageFormat};
+use ports::component::{Image, ImageFormat};
 use std::sync::Arc;
 
 pub fn image_format_to_gpui(format: ImageFormat) -> GpuiImageFormat {

@@ -8,3 +8,4 @@ edition = "2024"
 anyhow.workspace = true
 async-trait.workspace = true
 semver.workspace = true
+serde.workspace = true
