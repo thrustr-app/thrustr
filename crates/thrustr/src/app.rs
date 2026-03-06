@@ -1,5 +1,5 @@
 use crate::globals::{ComponentManagerExt, EventListenerExt};
-use crate::navigation::{NavigationExt, Navigator};
+use crate::navigation::{NavigationExt, Navigator, Page};
 use crate::{
     components::{Sidebar, Topbar},
     globals::PluginManagerExt,
@@ -10,6 +10,7 @@ use gpui_tokio::Tokio;
 use theme_manager::ThemeExt;
 
 pub struct App {
+    current_page: Page,
     active_view: AnyView,
 }
 
@@ -21,6 +22,7 @@ impl App {
         cx.observe_global::<Navigator>(|this, cx| {
             let page = cx.current_page();
             this.active_view = page.build_view(cx);
+            this.current_page = page;
             cx.notify();
         })
         .detach();
@@ -30,7 +32,10 @@ impl App {
         })
         .detach();
 
-        let app = Self { active_view };
+        let app = Self {
+            current_page,
+            active_view,
+        };
         app.load_plugins(cx);
         app
     }
@@ -66,7 +71,7 @@ impl Render for App {
                     .flex_grow()
                     .flex()
                     .flex_col()
-                    .child(Topbar::new())
+                    .child(Topbar::new(self.current_page.label()))
                     .child(self.active_view.clone()),
             ),
         )

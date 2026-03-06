@@ -104,7 +104,7 @@ impl RenderOnce for Sidebar {
                 svg()
                     .path("icons/logo.svg")
                     .text_color(theme.colors.logo)
-                    .mt(rems(1.25))
+                    .mt(rems(1.5))
                     .size(rems(3.)),
             )
             .child(

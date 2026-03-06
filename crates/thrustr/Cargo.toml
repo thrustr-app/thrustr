@@ -19,5 +19,5 @@ ui.workspace = true
 # External
 anyhow.workspace = true
 gpui.workspace = true
-
+smallvec = "1"
 tokio.workspace = true

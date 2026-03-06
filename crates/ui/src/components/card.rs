@@ -1,9 +1,11 @@
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Window, div, prelude::FluentBuilder, rems,
+    ParentElement, Refineable, RenderOnce, SharedString, StyleRefinement, Styled, Window, div,
+    prelude::FluentBuilder, rems,
 };
+use gpui_animation::{animation::TransitionExt, transition::general::EaseOutQuad};
 use smallvec::SmallVec;
+use std::time::Duration;
 use theme_manager::ThemeExt;
 
 #[derive(IntoElement)]
@@ -29,9 +31,9 @@ impl Card {
     pub fn title(self, title: impl Into<SharedString>) -> Self {
         self.header(
             div()
-                .text_size(rems(1.5))
-                .line_height(rems(1.5))
-                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(rems(1.25))
+                .line_height(rems(1.25))
+                .font_weight(FontWeight::MEDIUM)
                 .child(title.into()),
         )
     }
@@ -67,17 +69,32 @@ impl RenderOnce for Card {
         let theme = cx.theme();
 
         let mut card = div()
-            .id(self.id)
+            .id((self.id.clone(), "card"))
             .bg(theme.colors.card_background)
             .overflow_hidden()
             .p(rems(1.5))
             .rounded(rems(1.5))
             .flex()
+            .gap(rems(1.5))
             .flex_col()
-            .text_color(theme.colors.card_foreground_primary)
+            .with_transition((self.id, "card"))
+            .mt_0()
+            .text_color(theme.colors.card_primary)
             .when_some(self.header, |card, header| card.child(header))
             .when_some(self.on_click, |card, on_click| {
-                card.cursor_pointer().on_click(on_click)
+                card.cursor_pointer()
+                    .on_click(on_click)
+                    .transition_on_hover(
+                        Duration::from_millis(80),
+                        EaseOutQuad,
+                        |hovered, style| {
+                            if *hovered {
+                                style.mt(rems(-0.5))
+                            } else {
+                                style.mt_0()
+                            }
+                        },
+                    )
             })
             .children(self.children);
 

@@ -20,8 +20,9 @@ sidebar_highlight = "#262626"
 logo = "#B6B6B6"
 
 card_background = "#252525"
-card_foreground_primary = "#FFFFFF"
-card_foreground_secondary = "#646464"
+card_foreground = "#3A3A3A"
+card_primary = "#FFFFFF"
+card_secondary = "#646464"
 
 error = "#CD3F3F"
 error_background = "#b86262"

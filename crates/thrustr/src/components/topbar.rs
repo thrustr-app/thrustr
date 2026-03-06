@@ -1,12 +1,19 @@
-use gpui::{App, IntoElement, RenderOnce, Styled, Window, div, rems};
+use gpui::{
+    App, FontWeight, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, blue,
+    div, green, rems,
+};
 use theme_manager::ThemeExt;
 
 #[derive(IntoElement)]
-pub struct Topbar;
+pub struct Topbar {
+    title: SharedString,
+}
 
 impl Topbar {
-    pub fn new() -> Self {
-        Self
+    pub fn new(title: impl Into<SharedString>) -> Self {
+        Self {
+            title: title.into(),
+        }
     }
 }
 
@@ -15,9 +22,19 @@ impl RenderOnce for Topbar {
         let theme = cx.theme();
 
         div()
-            .h(rems(5.5))
+            .px(rems(2.))
+            .h(rems(6.))
             .bg(theme.colors.background)
             .w_full()
             .flex_shrink_0()
+            .flex()
+            .items_center()
+            .child(
+                div()
+                    .child(self.title)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(rems(1.5))
+                    .text_color(theme.colors.foreground_primary),
+            )
     }
 }

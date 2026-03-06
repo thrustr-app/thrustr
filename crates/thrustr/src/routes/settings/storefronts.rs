@@ -91,7 +91,7 @@ impl Render for Storefronts {
                 }
                 Status::Inactive => {
                     status = status
-                        .text_color(theme.colors.card_foreground_secondary)
+                        .text_color(theme.colors.card_secondary)
                         .child("INACTIVE");
                 }
                 Status::Error(_) => {
@@ -136,11 +136,11 @@ impl Render for Storefronts {
                                             .path("icons/plugins.svg")
                                             .size(rems(1.))
                                             .flex_shrink_0()
-                                            .text_color(theme.colors.card_foreground_primary),
+                                            .text_color(theme.colors.card_primary),
                                     )
                                 })
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(theme.colors.card_foreground_primary)
+                                .text_color(theme.colors.card_primary)
                                 .child(storefront.name),
                         )
                         .child(status),

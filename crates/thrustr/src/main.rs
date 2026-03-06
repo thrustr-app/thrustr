@@ -6,6 +6,7 @@ use config::paths;
 use gpui::{AppContext, Application, TitlebarOptions, WindowOptions};
 use sqlite_storage::SqliteStorage;
 use std::sync::Arc;
+use ui::UiProvider;
 
 mod app;
 mod components;
@@ -42,7 +43,10 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| App::new(window, cx)),
+            |window, cx| {
+                let view = cx.new(|cx| App::new(window, cx));
+                UiProvider::new(view, window, cx)
+            },
         )
         .unwrap();
     });
