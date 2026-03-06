@@ -12,11 +12,13 @@ name = "General"
     type = "text"
     id = "username"
     label = "Username"
+    placeholder = "johndoe"
 
     [[config.section.field]]
     type = "text"
     id = "password"
     label = "Password"
+    placeholder = "1234"
 
 [[config.section]]
 name = "Advanced Settings"

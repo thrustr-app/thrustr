@@ -41,10 +41,14 @@ impl Config {
                 let mut fields = Vec::new();
                 for field in section.fields.iter() {
                     let field = match field {
-                        ConfigField::Text { id, label } => Field {
+                        ConfigField::Text {
+                            id,
+                            label,
+                            placeholder,
+                        } => Field {
                             id: id.clone().into(),
                             label: label.clone().into(),
-                            placeholder: None,
+                            placeholder: placeholder.clone().map(Into::into),
                         },
                     };
                     fields.push(field);

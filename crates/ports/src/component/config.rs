@@ -3,7 +3,11 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Field {
-    Text { id: String, label: String },
+    Text {
+        id: String,
+        label: String,
+        placeholder: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Debug)]
