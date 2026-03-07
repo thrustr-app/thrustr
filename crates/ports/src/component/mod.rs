@@ -65,6 +65,7 @@ impl Origin {
 #[derive(Debug, Clone)]
 pub enum Error {
     Initialization(String),
+    Configuration(String),
     Runtime(String),
 }
 
@@ -120,4 +121,5 @@ pub trait Component: Send + Sync {
     }
 
     async fn init(&self) -> Result<(), Error>;
+    async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), Error>;
 }

@@ -1,10 +1,10 @@
 use crate::{
     SqliteStorage,
-    models::{ComponentConfig, ComponentData},
+    models::{ComponentConfig, ComponentData, NewComponentConfig, NewComponentData},
 };
 use anyhow::Result;
 use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, TextExpressionMethods,
+    Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, TextExpressionMethods,
     upsert::excluded,
 };
 use ports::storage::ComponentStorage;
@@ -23,18 +23,16 @@ impl ComponentStorage for SqliteStorage {
         Ok(result.map(|pd| pd.value))
     }
 
-    fn set_data(&self, component_id: &str, key: &str, data: Vec<u8>) -> Result<()> {
+    fn set_data(&self, component_id: &str, key: &str, data: &[u8]) -> Result<()> {
         use crate::schema::component_data::dsl;
-
-        let value = ComponentData {
-            component_id: component_id.to_owned(),
-            key: key.to_owned(),
-            value: data,
-        };
 
         let mut conn = self.pool.get()?;
         diesel::insert_into(dsl::component_data)
-            .values(&value)
+            .values(NewComponentData {
+                component_id,
+                key,
+                value: &data,
+            })
             .on_conflict((dsl::component_id, dsl::key))
             .do_update()
             .set(dsl::value.eq(excluded(dsl::value)))
@@ -73,7 +71,7 @@ impl ComponentStorage for SqliteStorage {
         Ok(query.load::<String>(&mut conn)?)
     }
 
-    fn get_config(&self, component_id: &str, field_id: &str) -> Result<Option<String>> {
+    fn get_config_value(&self, component_id: &str, field_id: &str) -> Result<Option<String>> {
         use crate::schema::component_config::dsl;
 
         let mut conn = self.pool.get()?;
@@ -84,5 +82,43 @@ impl ComponentStorage for SqliteStorage {
             .optional()?;
 
         Ok(result.map(|pd| pd.value))
+    }
+
+    fn set_config_value(&self, component_id: &str, field_id: &str, value: &str) -> Result<()> {
+        use crate::schema::component_config::dsl;
+
+        let mut conn = self.pool.get()?;
+        diesel::insert_into(dsl::component_config)
+            .values(NewComponentConfig {
+                component_id,
+                field_id,
+                value: &value,
+            })
+            .on_conflict((dsl::component_id, dsl::field_id))
+            .do_update()
+            .set(dsl::value.eq(excluded(dsl::value)))
+            .execute(&mut conn)?;
+
+        Ok(())
+    }
+
+    fn set_config_values(&self, component_id: &str, fields: &[(String, String)]) -> Result<()> {
+        use crate::schema::component_config::dsl;
+        let mut conn = self.pool.get()?;
+        conn.transaction(|conn| {
+            for (field_id, value) in fields {
+                diesel::insert_into(dsl::component_config)
+                    .values(NewComponentConfig {
+                        component_id,
+                        field_id,
+                        value,
+                    })
+                    .on_conflict((dsl::component_id, dsl::field_id))
+                    .do_update()
+                    .set(dsl::value.eq(excluded(dsl::value)))
+                    .execute(conn)?;
+            }
+            Ok(())
+        })
     }
 }

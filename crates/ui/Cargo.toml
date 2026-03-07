@@ -9,6 +9,5 @@ gpui.workspace = true
 theme-manager.workspace = true
 
 # External
-gpui-animation = "0.2.4"
 smallvec = "1"
 unicode-segmentation = "1.12.0"

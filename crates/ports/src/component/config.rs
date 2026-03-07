@@ -10,6 +10,14 @@ pub enum Field {
     },
 }
 
+impl Field {
+    pub fn id(&self) -> &str {
+        match self {
+            Field::Text { id, .. } => id,
+        }
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct Section {
     pub name: String,

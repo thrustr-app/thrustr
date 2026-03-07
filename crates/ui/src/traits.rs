@@ -1,6 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Size {
-    Small,
     Medium,
     Large,
 }
@@ -8,28 +7,29 @@ pub enum Size {
 pub trait WithSize: Sized {
     fn size(self, size: Size) -> Self;
 
-    fn size_small(self) -> Self {
-        self.size(Size::Small)
-    }
-
-    fn size_medium(self) -> Self {
+    fn size_md(self) -> Self {
         self.size(Size::Medium)
     }
 
-    fn size_large(self) -> Self {
+    fn size_lg(self) -> Self {
         self.size(Size::Large)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
+    Accent,
     Ghost,
 }
 
 pub trait WithVariant: Sized {
     fn variant(self, variant: Variant) -> Self;
 
-    fn ghost(self) -> Self {
+    fn variant_accent(self) -> Self {
+        self.variant(Variant::Accent)
+    }
+
+    fn variant_ghost(self) -> Self {
         self.variant(Variant::Ghost)
     }
 }

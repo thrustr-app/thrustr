@@ -24,7 +24,7 @@ use theme_manager::ThemeExt;
 const CONTEXT: &str = "input";
 
 pub fn input(id: impl Into<ElementId>) -> Input {
-    let id = id.into();
+    let id: ElementId = (id.into(), "input").into();
     Input {
         id: id.clone(),
         base: div()
@@ -38,6 +38,7 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         value: None,
         on_input: None,
         on_change: None,
+        label: None,
         placeholder: None,
         placeholder_color: None,
         selection_color: None,
@@ -58,6 +59,7 @@ pub struct Input {
     value: Option<SharedString>,
     on_input: Option<Box<dyn Fn(&InputEvent, &mut Window, &mut App) + 'static>>,
     on_change: Option<Box<dyn Fn(&ChangeEvent, &mut Window, &mut App) + 'static>>,
+    label: Option<SharedString>,
     placeholder: Option<SharedString>,
     placeholder_color: Option<Hsla>,
     selection_color: Option<Hsla>,
@@ -87,6 +89,11 @@ impl Input {
         callback: impl Fn(&ChangeEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_change = Some(Box::new(callback));
+        self
+    }
+
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
         self
     }
 
@@ -138,7 +145,7 @@ impl StatefulInteractiveElement for Input {}
 impl RenderOnce for Input {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window
-            .use_keyed_state(self.id, cx, |window, cx| {
+            .use_keyed_state(self.id.clone(), cx, |window, cx| {
                 cx.new(|cx| InputState::new(window, cx))
             })
             .read(cx)
@@ -224,6 +231,21 @@ impl RenderOnce for Input {
             .child(state.clone());
 
         input.style().refine(&self.style);
-        input
+
+        let width = input.style().max_size.width;
+
+        div()
+            .when_some(width, |container, width| container.max_w(width))
+            .when_some(self.label, |container, label| {
+                container.child(
+                    div()
+                        .id(self.id)
+                        .track_focus(&focus_handle)
+                        .child(label)
+                        .mb(rems(0.5))
+                        .text_color(theme.colors.card_primary),
+                )
+            })
+            .child(input)
     }
 }

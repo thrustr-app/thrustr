@@ -2703,18 +2703,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-animation"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fe73f0dd0e2936f2fa9695c0e4e7ca983566260c23b1eb60c0f118659b4cc80"
-dependencies = [
- "dashmap",
- "gpui",
- "parking_lot",
- "smol",
-]
-
-[[package]]
 name = "gpui-macros"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6286,6 +6274,7 @@ dependencies = [
  "plugin-manager",
  "ports",
  "smallvec",
+ "smol",
  "sqlite-storage",
  "theme-manager",
  "tokio",
@@ -6686,7 +6675,6 @@ name = "ui"
 version = "0.1.0"
 dependencies = [
  "gpui",
- "gpui-animation",
  "smallvec",
  "theme-manager",
  "unicode-segmentation",

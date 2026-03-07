@@ -1,8 +1,8 @@
-use crate::{Size, WithSize};
+use crate::{Size, Variant, WithSize, WithVariant};
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
     Refineable, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
-    prelude::FluentBuilder, rems,
+    prelude::FluentBuilder, rems, transparent_black,
 };
 use smallvec::SmallVec;
 use theme_manager::ThemeExt;
@@ -11,6 +11,7 @@ use theme_manager::ThemeExt;
 pub struct Button {
     id: ElementId,
     style: StyleRefinement,
+    variant: Variant,
     size: Size,
     circular: bool,
     children: SmallVec<[AnyElement; 1]>,
@@ -25,6 +26,7 @@ impl Button {
         Self {
             id: (id.into(), "button").into(),
             style: StyleRefinement::default(),
+            variant: Variant::Accent,
             size: Size::Medium,
             circular: false,
             children: SmallVec::new(),
@@ -83,6 +85,13 @@ impl WithSize for Button {
     }
 }
 
+impl WithVariant for Button {
+    fn variant(mut self, variant: Variant) -> Self {
+        self.variant = variant;
+        self
+    }
+}
+
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let mut focus_handle = window
@@ -108,23 +117,44 @@ impl RenderOnce for Button {
         let mut button = div()
             .id(self.id)
             .track_focus(&focus_handle)
+            .rounded(rems(0.5))
             .when(self.circular, |button| button.rounded_full())
             .when(self.size == Size::Medium, |button| {
-                button.size(rems(2.)).p(rems(0.5))
+                button
+                    .h(rems(2.25))
+                    .min_w(rems(2.25))
+                    .p(rems(0.6))
+                    .text_size(rems(1.))
+            })
+            .when(self.size == Size::Large, |button| {
+                button
+                    .h(rems(2.5))
+                    .min_w(rems(2.5))
+                    .p(rems(0.625))
+                    .text_size(rems(1.))
             })
             .border_1()
-            .border_color(theme.colors.border)
             .flex()
             .items_center()
             .justify_center()
             .cursor_pointer()
             .when_some(self.on_click, |button, on_click| button.on_click(on_click))
-            .focus(|input| {
-                input
-                    .border_1()
-                    .border_color(theme.colors.foreground_primary)
-            })
             .children(self.children);
+
+        match self.variant {
+            Variant::Accent => {
+                button = button
+                    .bg(theme.colors.accent)
+                    .text_color(theme.colors.background)
+                    .focus(|input| input.border_color(theme.colors.foreground_primary));
+            }
+            Variant::Ghost => {
+                button = button
+                    .bg(transparent_black())
+                    .border_color(theme.colors.border)
+                    .focus(|input| input.border_color(theme.colors.foreground_primary));
+            }
+        }
 
         button.style().refine(&self.style);
         button

@@ -45,7 +45,7 @@ impl KvStoreHost for PluginState {
 
     async fn set(&mut self, key: String, value: Vec<u8>) -> Result<(), KvStoreError> {
         self.storage
-            .set_data(&self.id, &key, value)
+            .set_data(&self.id, &key, &value)
             .map_err(|e| KvStoreError::Other(e.to_string()))
     }
 
@@ -65,7 +65,7 @@ impl KvStoreHost for PluginState {
 impl ConfigHost for PluginState {
     async fn get(&mut self, field_id: String) -> Result<String, ConfigError> {
         self.storage
-            .get_config(&self.id, &field_id)
+            .get_config_value(&self.id, &field_id)
             .map(|v| v.unwrap_or_default())
             .map_err(|e| ConfigError::Other(e.to_string()))
     }

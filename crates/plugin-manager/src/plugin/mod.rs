@@ -153,9 +153,28 @@ impl Component for Plugin {
                 .thrustr_plugin_base()
                 .call_init(&mut store)
                 .await
-                .map_err(|e| ComponentError::Initialization(format!("Wasm call failed: {e}")))?
+                .map_err(|e| ComponentError::Runtime(format!("Wasm call failed: {e}")))?
                 .map_err(|e: PluginError| ComponentError::Initialization(format!("{e:?}"))),
-            Err(e) => Err(ComponentError::Initialization(format!("{e:?}"))),
+            Err(e) => Err(ComponentError::Runtime(format!("{e:?}"))),
+        };
+
+        self.set_status(match &result {
+            Ok(_) => Status::Active,
+            Err(e) => Status::Error(e.clone()),
+        });
+
+        result
+    }
+
+    async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), ComponentError> {
+        let result: Result<(), ComponentError> = match self.instantiate_storefront().await {
+            Ok((instance, mut store)) => instance
+                .thrustr_plugin_base()
+                .call_validate_config(&mut store, fields)
+                .await
+                .map_err(|e| ComponentError::Runtime(format!("Wasm call failed: {e}")))?
+                .map_err(|e: PluginError| ComponentError::Configuration(format!("{e:?}"))),
+            Err(e) => Err(ComponentError::Runtime(format!("{e:?}"))),
         };
 
         self.set_status(match &result {

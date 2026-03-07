@@ -1,16 +1,18 @@
 use dashmap::DashMap;
-use ports::{capabilities::Storefront, component::Component};
+use ports::{capabilities::Storefront, component::Component, storage::ComponentStorage};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ComponentManager {
     components: Arc<DashMap<String, Arc<dyn Component>>>,
+    storage: Arc<dyn ComponentStorage>,
 }
 
 impl ComponentManager {
-    pub fn new() -> Self {
+    pub fn new(storage: Arc<dyn ComponentStorage>) -> Self {
         Self {
             components: Arc::new(DashMap::new()),
+            storage: storage,
         }
     }
 
@@ -19,8 +21,16 @@ impl ComponentManager {
             .insert(component.metadata().id.to_owned(), component);
     }
 
-    pub fn component(&self, id: &str) -> Option<Arc<dyn Component>> {
-        self.components.get(id).map(|c| Arc::clone(c.value()))
+    pub fn component(&self, component_id: &str) -> Option<Arc<dyn Component>> {
+        self.components
+            .get(component_id)
+            .map(|c| Arc::clone(c.value()))
+    }
+
+    pub fn save_config(&self, component_id: &str, fields: &[(String, String)]) {
+        self.storage
+            .set_config_values(component_id, fields)
+            .unwrap();
     }
 
     pub fn plugins(&self) -> Vec<Arc<dyn Component>> {

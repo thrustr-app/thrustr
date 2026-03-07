@@ -33,6 +33,26 @@ impl Plugin for EpicGames {
 
         Ok(())
     }
+    fn validate_config(fields: Vec<(String, String)>) -> Result<(), PluginError> {
+        let old_username = Config::get("username")?;
+        println!("Old username: {old_username}");
+        let old_password = Config::get("password")?;
+        println!("Old password: {old_password}");
+
+        let username = fields
+            .iter()
+            .find(|(id, _)| id == "username")
+            .map(|(_, v)| v.as_str());
+        let password = fields
+            .iter()
+            .find(|(id, _)| id == "password")
+            .map(|(_, v)| v.as_str());
+
+        println!("Username: {:?}", username);
+        println!("Password: {:?}", password);
+
+        Ok(())
+    }
 }
 
 impl Storefront for EpicGames {

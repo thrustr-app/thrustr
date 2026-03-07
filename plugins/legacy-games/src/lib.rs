@@ -9,6 +9,10 @@ impl Plugin for LegacyGames {
         poll::poll(&[&pollable]);
         Ok(())
     }
+
+    fn validate_config(_fields: Vec<(String, String)>) -> Result<(), PluginError> {
+        Ok(())
+    }
 }
 
 impl Storefront for LegacyGames {

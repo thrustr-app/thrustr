@@ -1,11 +1,9 @@
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, Refineable, RenderOnce, SharedString, StyleRefinement, Styled, Window, div,
-    prelude::FluentBuilder, rems,
+    ParentElement, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, div, prelude::FluentBuilder, rems,
 };
-use gpui_animation::{animation::TransitionExt, transition::general::EaseOutQuad};
 use smallvec::SmallVec;
-use std::time::Duration;
 use theme_manager::ThemeExt;
 
 #[derive(IntoElement)]
@@ -77,24 +75,11 @@ impl RenderOnce for Card {
             .flex()
             .gap(rems(1.5))
             .flex_col()
-            .with_transition((self.id, "card"))
             .mt_0()
             .text_color(theme.colors.card_primary)
             .when_some(self.header, |card, header| card.child(header))
             .when_some(self.on_click, |card, on_click| {
-                card.cursor_pointer()
-                    .on_click(on_click)
-                    .transition_on_hover(
-                        Duration::from_millis(80),
-                        EaseOutQuad,
-                        |hovered, style| {
-                            if *hovered {
-                                style.mt(rems(-0.5))
-                            } else {
-                                style.mt_0()
-                            }
-                        },
-                    )
+                card.cursor_pointer().on_click(on_click)
             })
             .children(self.children);
 

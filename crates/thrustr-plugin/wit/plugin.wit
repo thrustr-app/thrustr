@@ -4,6 +4,7 @@ interface base {
     use types.{error};
 
     init: func() -> result<_, error>;
+    validate-config: func(fields: list<tuple<string, string>>) -> result<_, error>;
 }
 
 world base-plugin {

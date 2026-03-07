@@ -29,6 +29,10 @@ macro_rules! register_storefront {
             fn init() -> Result<(), $crate::PluginError> {
                 <$plugin_type as $crate::Plugin>::init()
             }
+
+            fn validate_config(fields: Vec<(String, String)>) -> Result<(), $crate::PluginError> {
+                <$plugin_type as $crate::Plugin>::validate_config(fields)
+            }
         }
 
         $crate::wit::export!(Guest with_types_in $crate::wit);
