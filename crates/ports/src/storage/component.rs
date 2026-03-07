@@ -12,6 +12,8 @@ pub trait ComponentStorage: Send + Sync {
     // None if not found. If empty value -> Empty string ""
     fn get_config_value(&self, component_id: &str, field_id: &str) -> Result<Option<String>>;
 
+    fn get_config_values(&self, component_id: &str) -> Result<Vec<(String, String)>>;
+
     fn set_config_value(&self, component_id: &str, field_id: &str, value: &str) -> Result<()>;
 
     fn set_config_values(&self, component_id: &str, fields: &[(String, String)]) -> Result<()>;

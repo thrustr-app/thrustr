@@ -84,6 +84,15 @@ impl ComponentStorage for SqliteStorage {
         Ok(result.map(|pd| pd.value))
     }
 
+    fn get_config_values(&self, component_id: &str) -> Result<Vec<(String, String)>> {
+        use crate::schema::component_config::dsl;
+        let mut conn = self.pool.get()?;
+        Ok(dsl::component_config
+            .select((dsl::field_id, dsl::value))
+            .filter(dsl::component_id.eq(component_id))
+            .load::<(String, String)>(&mut conn)?)
+    }
+
     fn set_config_value(&self, component_id: &str, field_id: &str, value: &str) -> Result<()> {
         use crate::schema::component_config::dsl;
 

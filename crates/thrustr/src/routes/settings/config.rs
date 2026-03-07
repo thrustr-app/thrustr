@@ -31,47 +31,56 @@ pub struct Config {
 
 impl Config {
     pub fn new(cx: &mut Context<Self>, component_id: &str) -> Self {
-        let component = cx.component_manager().component(component_id).unwrap();
+        let component_manager = cx.component_manager();
+        let component = component_manager.component(component_id).unwrap();
         let metadata = component.metadata();
         let icon = metadata.icon.clone().map(image_to_gpui);
 
-        let mut sections = Vec::new();
-        let mut values = HashMap::new();
+        let values: HashMap<SharedString, SharedString> = component_manager
+            .get_config_values(&metadata.id)
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect();
 
-        if let Some(config) = component.config() {
-            for section in config.sections.iter() {
-                let mut fields = Vec::new();
-                for field in section.fields.iter() {
-                    values.insert(field.id().to_string().into(), SharedString::new(""));
-                    let field = match field {
-                        ConfigField::Text {
-                            id,
-                            label,
-                            placeholder,
-                        } => Field {
-                            id: id.clone().into(),
-                            label: label.clone().into(),
-                            placeholder: placeholder.clone().map(Into::into),
-                        },
-                    };
-                    fields.push(field);
-                }
+        let sections = component
+            .config()
+            .map(|config| {
+                config
+                    .sections
+                    .iter()
+                    .map(|section| {
+                        let fields = section
+                            .fields
+                            .iter()
+                            .map(|field| match field {
+                                ConfigField::Text {
+                                    id,
+                                    label,
+                                    placeholder,
+                                } => Field {
+                                    id: id.clone().into(),
+                                    label: label.clone().into(),
+                                    placeholder: placeholder.clone().map(Into::into),
+                                },
+                            })
+                            .collect();
 
-                sections.push(Section {
-                    name: section.name.clone().into(),
-                    fields,
-                });
-            }
-        }
+                        Section {
+                            name: section.name.clone().into(),
+                            fields,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
-        let page = Self {
+        Self {
             name: component.metadata().name.clone().into(),
             icon,
             component,
             sections,
             values,
-        };
-        page
+        }
     }
 
     fn on_input(&mut self, id: SharedString, value: SharedString) {
@@ -92,7 +101,7 @@ impl Config {
         let validate_task = cx.background_spawn(async move {
             let result = component.validate_config(&config_fields).await;
             if result.is_ok() {
-                component_manager.save_config(&component.metadata().id, &config_fields);
+                component_manager.save_config_values(&component.metadata().id, &config_fields);
             }
             result
         });
@@ -117,7 +126,7 @@ impl Render for Config {
                     .when_some(f.placeholder.clone(), |input, placeholder| {
                         input.placeholder(placeholder)
                     })
-                    .value(self.values.get(f.id.as_str()).unwrap())
+                    .value(self.values.get(f.id.as_str()).cloned().unwrap_or_default())
                     .on_input(cx.listener(move |config, event: &InputEvent, _, _| {
                         config.on_input(field_id.clone(), event.value.clone());
                     }))

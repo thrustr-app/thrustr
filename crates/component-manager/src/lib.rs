@@ -27,7 +27,11 @@ impl ComponentManager {
             .map(|c| Arc::clone(c.value()))
     }
 
-    pub fn save_config(&self, component_id: &str, fields: &[(String, String)]) {
+    pub fn get_config_values(&self, component_id: &str) -> Vec<(String, String)> {
+        self.storage.get_config_values(component_id).unwrap()
+    }
+
+    pub fn save_config_values(&self, component_id: &str, fields: &[(String, String)]) {
         self.storage
             .set_config_values(component_id, fields)
             .unwrap();
