@@ -2,13 +2,14 @@ use crate::{
     conversions::image::image_to_gpui, globals::ComponentManagerExt, navigation::NavigationExt,
 };
 use gpui::{
-    AppContext, ClickEvent, Context, FontWeight, Image, ImageSource, IntoElement, ParentElement,
-    Render, SharedString, Styled, Window, div, img, prelude::FluentBuilder, rems, svg,
+    AppContext, ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, green, img, prelude::FluentBuilder, rems, svg,
 };
-use ports::component::{Component, Field as ConfigField};
+use ports::component::{Component, Field as ConfigField, Status};
 use std::{collections::HashMap, sync::Arc};
 use theme_manager::ThemeExt;
-use ui::{Button, Card, InputEvent, WithSize, WithVariant, input};
+use ui::{Alert, Button, Card, InputEvent, WithSize, WithVariant, input};
 
 struct Field {
     id: SharedString,
@@ -27,6 +28,7 @@ pub struct Config {
     component: Arc<dyn Component>,
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
+    error: Option<SharedString>,
 }
 
 impl Config {
@@ -74,12 +76,19 @@ impl Config {
             })
             .unwrap_or_default();
 
+        let error = if let Status::Error(e) = component.status() {
+            Some(e.to_string().into())
+        } else {
+            None
+        };
+
         Self {
             name: component.metadata().name.clone().into(),
             icon,
             component,
             sections,
             values,
+            error,
         }
     }
 
@@ -106,8 +115,12 @@ impl Config {
             result
         });
 
-        cx.spawn(async move |_, _| {
-            let _ = validate_task.await;
+        cx.spawn(async move |config, cx| {
+            let result = validate_task.await;
+            let _ = config.update(cx, |config, cx| {
+                config.error = result.err().map(|e| e.to_string().into());
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -133,6 +146,7 @@ impl Render for Config {
             });
 
             Card::new(s.name.clone())
+                .flex_shrink_0()
                 .title(s.name.clone())
                 .child(div().flex().flex_col().gap(rems(1.5)).children(fields))
         });
@@ -176,14 +190,27 @@ impl Render for Config {
                             .child(self.name.clone()),
                     ),
             )
-            .children(sections)
             .child(
-                Button::new("submit")
-                    .size_lg()
-                    .child("Save")
-                    .circular()
-                    .max_w(rems(10.))
-                    .on_click(cx.listener(Self::on_submit)),
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_grow()
+                    .h_0()
+                    .gap(rems(2.))
+                    .id("config-form")
+                    .overflow_y_scroll()
+                    .when_some(self.error.clone(), |div, error| {
+                        div.child(Alert::new().title("Error").description(error))
+                    })
+                    .children(sections)
+                    .child(
+                        Button::new("submit")
+                            .size_lg()
+                            .child("Save")
+                            .circular()
+                            .max_w(rems(10.))
+                            .on_click(cx.listener(Self::on_submit)),
+                    ),
             )
     }
 }

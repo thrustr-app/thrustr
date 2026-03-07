@@ -1,7 +1,7 @@
 use crate::capabilities::Storefront;
 use async_trait::async_trait;
 use semver::Version;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 mod config;
 
@@ -68,6 +68,18 @@ pub enum Error {
     Configuration(String),
     Runtime(String),
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Initialization(msg) => write!(f, "Initialization error: {msg}"),
+            Error::Configuration(msg) => write!(f, "Configuration error: {msg}"),
+            Error::Runtime(msg) => write!(f, "Runtime error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[derive(Debug, Clone)]
 pub enum Status {

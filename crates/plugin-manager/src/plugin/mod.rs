@@ -154,7 +154,14 @@ impl Component for Plugin {
                 .call_init(&mut store)
                 .await
                 .map_err(|e| ComponentError::Runtime(format!("Wasm call failed: {e}")))?
-                .map_err(|e: PluginError| ComponentError::Initialization(format!("{e:?}"))),
+                .map_err(|e: PluginError| {
+                    let msg = match e {
+                        PluginError::NotAutorized(msg) => msg,
+                        PluginError::Configuration(msg) => msg,
+                        PluginError::Other(msg) => msg,
+                    };
+                    ComponentError::Initialization(msg)
+                }),
             Err(e) => Err(ComponentError::Runtime(format!("{e:?}"))),
         };
 
@@ -173,14 +180,20 @@ impl Component for Plugin {
                 .call_validate_config(&mut store, fields)
                 .await
                 .map_err(|e| ComponentError::Runtime(format!("Wasm call failed: {e}")))?
-                .map_err(|e: PluginError| ComponentError::Configuration(format!("{e:?}"))),
+                .map_err(|e: PluginError| {
+                    let msg = match e {
+                        PluginError::NotAutorized(msg) => msg,
+                        PluginError::Configuration(msg) => msg,
+                        PluginError::Other(msg) => msg,
+                    };
+                    ComponentError::Configuration(msg)
+                }),
             Err(e) => Err(ComponentError::Runtime(format!("{e:?}"))),
         };
 
-        self.set_status(match &result {
-            Ok(_) => Status::Active,
-            Err(e) => Status::Error(e.clone()),
-        });
+        if result.is_ok() {
+            self.set_status(Status::Active);
+        }
 
         result
     }
