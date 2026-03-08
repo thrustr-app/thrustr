@@ -176,8 +176,8 @@ impl RenderOnce for Input {
         let mut input = self
             .base
             .border_1()
-            .rounded(rems(0.5))
-            .bg(theme.colors.card_foreground)
+            .rounded(theme.radius.sm)
+            .bg(theme.colors.card_surface)
             .p(rems(0.5))
             .when(!self.disabled, |this| {
                 this.key_context(CONTEXT)
@@ -223,11 +223,7 @@ impl RenderOnce for Input {
                     .on_mouse_move(window.listener_for(&state, InputState::on_mouse_move))
             })
             .on_scroll_wheel(window.listener_for(&state, InputState::on_scroll_wheel))
-            .focus(|input| {
-                input
-                    .border_1()
-                    .border_color(theme.colors.foreground_primary)
-            })
+            .focus(|input| input.border_1().border_color(theme.colors.primary))
             .child(state.clone());
 
         input.style().refine(&self.style);

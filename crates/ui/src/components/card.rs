@@ -71,7 +71,7 @@ impl RenderOnce for Card {
             .bg(theme.colors.card_background)
             .overflow_hidden()
             .p(rems(1.5))
-            .rounded(rems(1.5))
+            .rounded(theme.radius.lg)
             .flex()
             .gap(rems(1.5))
             .flex_col()

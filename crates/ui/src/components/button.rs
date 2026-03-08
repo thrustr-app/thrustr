@@ -13,7 +13,6 @@ pub struct Button {
     style: StyleRefinement,
     variant: Variant,
     size: Size,
-    circular: bool,
     children: SmallVec<[AnyElement; 1]>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     auto_focus: bool,
@@ -28,18 +27,12 @@ impl Button {
             style: StyleRefinement::default(),
             variant: Variant::Accent,
             size: Size::Medium,
-            circular: false,
             children: SmallVec::new(),
             on_click: None,
             auto_focus: false,
             tab_index: 0,
             tab_stop: true,
         }
-    }
-
-    pub fn circular(mut self) -> Self {
-        self.circular = true;
-        self
     }
 
     pub fn on_click(
@@ -117,8 +110,7 @@ impl RenderOnce for Button {
         let mut button = div()
             .id(self.id)
             .track_focus(&focus_handle)
-            .rounded(rems(0.5))
-            .when(self.circular, |button| button.rounded_full())
+            .rounded(theme.radius.full)
             .when(self.size == Size::Medium, |button| {
                 button
                     .h(rems(2.25))
@@ -146,13 +138,13 @@ impl RenderOnce for Button {
                 button = button
                     .bg(theme.colors.accent)
                     .text_color(theme.colors.background)
-                    .focus(|input| input.border_color(theme.colors.foreground_primary));
+                    .focus(|input| input.border_color(theme.colors.primary));
             }
             Variant::Ghost => {
                 button = button
                     .bg(transparent_black())
                     .border_color(theme.colors.border)
-                    .focus(|input| input.border_color(theme.colors.foreground_primary));
+                    .focus(|input| input.border_color(theme.colors.primary));
             }
         }
 

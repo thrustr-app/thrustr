@@ -47,24 +47,22 @@ impl RenderOnce for SettingsPageButton {
             .w_full()
             .flex()
             .items_center()
-            .rounded_full()
+            .rounded(theme.radius.full)
             .gap(rems(0.75))
             .bg(transparent_black())
-            .hover(|style| style.bg(theme.colors.highlight))
+            .hover(|style| style.bg(theme.colors.surface))
             .when(is_active, |style| {
                 style
-                    .bg(theme.colors.highlight)
-                    .text_color(theme.colors.foreground_primary)
+                    .bg(theme.colors.surface)
+                    .text_color(theme.colors.primary)
             })
             .child(
                 svg()
                     .flex_shrink_0()
                     .path(self.page.icon_path())
-                    .text_color(theme.colors.foreground_secondary)
+                    .text_color(theme.colors.secondary)
                     .size(rems(1.5))
-                    .when(is_active, |svg| {
-                        svg.text_color(theme.colors.foreground_primary)
-                    }),
+                    .when(is_active, |svg| svg.text_color(theme.colors.primary)),
             )
             .child(div().child(self.page.label()))
     }
@@ -101,7 +99,7 @@ impl Render for Settings {
                     .pr(rems(1.5))
                     .border_r_1()
                     .border_color(theme.colors.border)
-                    .text_color(theme.colors.foreground_secondary)
+                    .text_color(theme.colors.secondary)
                     .child(SettingsPageButton::new(SettingsPage::Storefronts(None)))
                     .child(SettingsPageButton::new(SettingsPage::Plugins(None)))
                     .child(SettingsPageButton::new(SettingsPage::Appearance)),

@@ -162,16 +162,15 @@ impl Render for Config {
                     .flex()
                     .gap(rems(1.5))
                     .items_center()
-                    .text_color(theme.colors.foreground_primary)
+                    .text_color(theme.colors.primary)
                     .child(
                         Button::new("back-button")
                             .variant_ghost()
-                            .circular()
                             .child(
                                 svg()
                                     .path("icons/arrow-left.svg")
                                     .size_full()
-                                    .text_color(theme.colors.foreground_primary),
+                                    .text_color(theme.colors.primary),
                             )
                             .on_click(|_, _, cx| {
                                 cx.navigate_back();
@@ -207,7 +206,6 @@ impl Render for Config {
                         Button::new("submit")
                             .size_lg()
                             .child("Save")
-                            .circular()
                             .max_w(rems(10.))
                             .on_click(cx.listener(Self::on_submit)),
                     ),

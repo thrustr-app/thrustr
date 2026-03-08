@@ -19,3 +19,25 @@ macro_rules! define_theme_colors {
         }
     };
 }
+
+macro_rules! define_theme_radius{
+    ($($field:ident),* $(,)?) => {
+        #[derive(Debug, Clone, Deserialize)]
+        pub struct ThemeRadius {
+            $(pub $field: AbsoluteLength),*
+        }
+
+        #[derive(Debug, Deserialize)]
+        pub struct PartialThemeRadius {
+            $(pub $field: Option<AbsoluteLength>),*
+        }
+
+        impl PartialThemeRadius{
+            pub fn merge(self, other: &ThemeRadius) -> ThemeRadius {
+                ThemeRadius {
+                    $($field: self.$field.unwrap_or(other.$field)),*
+                }
+            }
+        }
+    };
+}

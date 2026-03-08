@@ -34,7 +34,7 @@ impl RenderOnce for Topbar {
                     .child(self.title)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(rems(1.5))
-                    .text_color(theme.colors.foreground_primary),
+                    .text_color(theme.colors.primary),
             )
     }
 }

@@ -1,31 +1,33 @@
-use gpui::Hsla;
+use gpui::{AbsoluteLength, Hsla};
 use serde::Deserialize;
 
 define_theme_colors!(
     background,
-    foreground_primary,
-    foreground_secondary,
-    highlight,
+    primary,
+    secondary,
+    surface,
     accent,
     border,
+    error,
+    warning,
     sidebar_background,
-    sidebar_foreground_primary,
-    sidebar_foreground_secondary,
-    sidebar_highlight,
-    logo,
+    sidebar_primary,
+    sidebar_secondary,
+    sidebar_surface,
+    sidebar_logo,
     card_background,
-    card_foreground,
+    card_surface,
     card_primary,
     card_secondary,
-    error,
-    error_background,
-    warning,
 );
+
+define_theme_radius!(sm, lg, full);
 
 #[derive(Debug, Deserialize)]
 pub struct Theme {
     pub manifest: ThemeManifest,
     pub colors: ThemeColors,
+    pub radius: ThemeRadius,
 }
 
 impl Theme {
@@ -47,6 +49,7 @@ pub struct ThemeManifest {
 pub struct PartialTheme {
     pub manifest: ThemeManifest,
     pub colors: Option<PartialThemeColors>,
+    pub radius: Option<PartialThemeRadius>,
 }
 
 impl PartialTheme {
@@ -58,6 +61,11 @@ impl PartialTheme {
                 .take()
                 .map(|c| c.merge(&other.colors))
                 .unwrap_or_else(|| other.colors.clone()),
+            radius: self
+                .radius
+                .take()
+                .map(|r| r.merge(&other.radius))
+                .unwrap_or_else(|| other.radius.clone()),
         }
     }
 }

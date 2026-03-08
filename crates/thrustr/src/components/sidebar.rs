@@ -38,21 +38,19 @@ impl RenderOnce for SidebarIconButton {
             .flex()
             .items_center()
             .justify_center()
-            .rounded_full()
+            .rounded(theme.radius.full)
             .bg(transparent_black())
-            .hover(|div| div.bg(theme.colors.sidebar_highlight))
-            .when(is_active, |div| div.bg(theme.colors.sidebar_highlight))
+            .hover(|div| div.bg(theme.colors.sidebar_surface))
+            .when(is_active, |div| div.bg(theme.colors.sidebar_surface))
             .child(
                 svg()
                     .group(label)
                     .path(self.page.icon_path())
-                    .text_color(theme.colors.sidebar_foreground_secondary)
+                    .text_color(theme.colors.sidebar_secondary)
                     .size(rems(1.5))
-                    .group_hover(label, |div| {
-                        div.text_color(theme.colors.sidebar_foreground_primary)
-                    })
+                    .group_hover(label, |div| div.text_color(theme.colors.sidebar_primary))
                     .when(is_active, |svg| {
-                        svg.text_color(theme.colors.sidebar_foreground_primary)
+                        svg.text_color(theme.colors.sidebar_primary)
                     }),
             )
     }
@@ -103,7 +101,7 @@ impl RenderOnce for Sidebar {
             .child(
                 svg()
                     .path("icons/logo.svg")
-                    .text_color(theme.colors.logo)
+                    .text_color(theme.colors.sidebar_logo)
                     .mt(rems(1.5))
                     .size(rems(3.)),
             )

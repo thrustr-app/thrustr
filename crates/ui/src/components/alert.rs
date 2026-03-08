@@ -45,7 +45,7 @@ impl RenderOnce for Alert {
             .flex()
             .w_full()
             .p(rems(1.))
-            .rounded(rems(1.5))
+            .rounded(theme.radius.lg)
             .border_2()
             .border_color(theme.colors.error)
             .gap(rems(1.))
