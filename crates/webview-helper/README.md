@@ -1,0 +1,3 @@
+# Webview Helper
+
+This application is a workaround to launch authentication webviews from the main app, without blocking the main thread and compatible with with all platforms. Ideally, this should be integrated into the main app in the future.
