@@ -1,9 +1,9 @@
-use crate::exports::thrustr::plugin::base::Error as PluginError;
+use crate::exports::thrustr::plugin::base::{AuthFlow as PluginAuthFlow, Error as PluginError};
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use ports::capabilities::{Capability, Storefront};
 use ports::component::{
-    Component, Config, Error as ComponentError, Image, Metadata, Origin, Status,
+    AuthFlow, Component, Config, Error as ComponentError, Image, Metadata, Origin, Status,
 };
 use ports::storage::ComponentStorage;
 use std::sync::{Arc, Mutex};
@@ -173,11 +173,11 @@ impl Component for Plugin {
         result
     }
 
-    async fn get_auth_url(&self) -> Result<Option<String>, ComponentError> {
+    async fn get_login_flow(&self) -> Result<Option<AuthFlow>, ComponentError> {
         let result = match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
-                .call_get_auth_url(&mut store)
+                .call_get_login_flow(&mut store)
                 .await
                 .map_err(|e| ComponentError::Runtime(format!("Wasm call failed: {e}")))?
                 .map_err(|e: PluginError| {
@@ -190,9 +190,37 @@ impl Component for Plugin {
                 }),
             Err(e) => Err(ComponentError::Runtime(format!("{e:?}"))),
         };
+
         if let Err(e) = &result {
             self.set_status(Status::Error(e.clone()));
         }
+
+        result.map(|o| o.map(Into::into))
+    }
+
+    async fn authenticate(&self, url: String, body: String) -> Result<(), ComponentError> {
+        let result = match self.instantiate_storefront().await {
+            Ok((instance, mut store)) => instance
+                .thrustr_plugin_base()
+                .call_authenticate(&mut store, &url, &body)
+                .await
+                .map_err(|e| ComponentError::Runtime(format!("Wasm call failed: {e}")))?
+                .map_err(|e: PluginError| {
+                    let msg = match e {
+                        PluginError::NotAutorized(msg) => msg,
+                        PluginError::Configuration(msg) => msg,
+                        PluginError::Other(msg) => msg,
+                    };
+                    ComponentError::Runtime(msg)
+                }),
+            Err(e) => Err(ComponentError::Runtime(format!("{e:?}"))),
+        };
+
+        self.set_status(match &result {
+            Ok(_) => Status::Active,
+            Err(e) => Status::Error(e.clone()),
+        });
+
         result
     }
 
@@ -225,5 +253,14 @@ impl Component for Plugin {
 impl Capability for Plugin {
     fn component(&self) -> &dyn Component {
         self as &dyn Component
+    }
+}
+
+impl From<PluginAuthFlow> for AuthFlow {
+    fn from(value: PluginAuthFlow) -> Self {
+        AuthFlow {
+            url: value.url,
+            target: value.target,
+        }
     }
 }

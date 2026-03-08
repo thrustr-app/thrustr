@@ -1,4 +1,4 @@
-use thrustr_plugin::{Plugin, PluginError, Storefront, register_storefront};
+use thrustr_plugin::{AuthFlow, Plugin, PluginError, Storefront, register_storefront};
 use wasip2::{clocks::monotonic_clock, io::poll};
 
 pub struct LegacyGames;
@@ -10,8 +10,12 @@ impl Plugin for LegacyGames {
         Ok(())
     }
 
-    fn get_auth_url() -> Result<Option<String>, PluginError> {
+    fn get_login_flow() -> Result<Option<AuthFlow>, PluginError> {
         Ok(None)
+    }
+
+    fn authenticate(_url: String, _body: String) -> Result<(), PluginError> {
+        Ok(())
     }
 
     fn validate_config(_fields: Vec<(String, String)>) -> Result<(), PluginError> {

@@ -1,0 +1,12 @@
+[package]
+name = "webview-helper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+muda = "0.17"
+tao = "0.34"
+wry = "0.54"
+
+[package.metadata.bundle]
+identifier = "com.thrustr.thrustr"

@@ -1,7 +1,8 @@
 use crate::api::{endpoints::auth_url, models::AuthResponse};
 use serde_json::Value;
 use thrustr_plugin::{
-    Plugin, PluginError, Storefront, config::Config, kv_store::KvStore, register_storefront,
+    AuthFlow, Plugin, PluginError, Storefront, config::Config, kv_store::KvStore,
+    register_storefront,
 };
 use wasip2::{clocks::monotonic_clock, io::poll};
 
@@ -34,15 +35,22 @@ impl Plugin for EpicGames {
         Ok(())
     }
 
-    fn get_auth_url() -> Result<Option<String>, PluginError> {
-        Ok(Some(auth_url()))
+    fn get_login_flow() -> Result<Option<AuthFlow>, PluginError> {
+        Ok(Some(AuthFlow {
+            url: auth_url(),
+            target: "https://www.epicgames.com/id/api/redirect?".into(),
+        }))
+    }
+
+    fn authenticate(url: String, body: String) -> Result<(), PluginError> {
+        println!("got url: {:?}", url);
+        println!("got body: {:?}", body);
+        Ok(())
     }
 
     fn validate_config(fields: Vec<(String, String)>) -> Result<(), PluginError> {
         let old_username = Config::get("username")?;
-        println!("Old username: {old_username}");
         let old_password = Config::get("password")?;
-        println!("Old password: {old_password}");
 
         let username = fields
             .iter()
@@ -52,9 +60,6 @@ impl Plugin for EpicGames {
             .iter()
             .find(|(id, _)| id == "password")
             .map(|(_, v)| v.as_str());
-
-        println!("Username: {:?}", username);
-        println!("Password: {:?}", password);
 
         Ok(())
     }

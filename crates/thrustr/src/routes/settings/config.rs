@@ -1,12 +1,18 @@
 use crate::{
-    conversions::image::image_to_gpui, globals::ComponentManagerExt, navigation::NavigationExt,
+    conversions::image::image_to_gpui,
+    globals::ComponentManagerExt,
+    navigation::NavigationExt,
+    webview::{WebviewError, open_auth_webview},
 };
 use gpui::{
     AppContext, ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
-    div, green, img, prelude::FluentBuilder, rems, svg,
+    div, img, prelude::FluentBuilder, rems, svg,
 };
-use ports::component::{Component, Field as ConfigField, Status};
+use ports::component::{
+    AuthFlow, Component, Error as ComponentError, Field as ConfigField, Status,
+};
+use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme_manager::ThemeExt;
 use ui::{Alert, Button, Card, InputEvent, WithSize, WithVariant, input};
@@ -29,7 +35,7 @@ pub struct Config {
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
     error: Option<SharedString>,
-    auth_url: Option<SharedString>,
+    login_flow: Option<AuthFlow>,
 }
 
 impl Config {
@@ -90,20 +96,20 @@ impl Config {
             sections,
             values,
             error,
-            auth_url: None,
+            login_flow: None,
         };
 
-        page.get_auth_url(cx);
+        page.get_login_flow(cx);
         page
     }
 
-    fn get_auth_url(&self, cx: &mut Context<Self>) {
+    fn get_login_flow(&self, cx: &mut Context<Self>) {
         let component = self.component.clone();
-        let auth_url_task = cx.background_spawn(async move { component.get_auth_url().await });
+        let auth_url_task = cx.background_spawn(async move { component.get_login_flow().await });
         cx.spawn(async move |config, cx| {
             let result = auth_url_task.await.unwrap();
             let _ = config.update(cx, |config, cx| {
-                config.auth_url = result.map(Into::into);
+                config.login_flow = result;
                 cx.notify();
             });
         })
@@ -143,8 +149,22 @@ impl Config {
         .detach();
     }
 
-    fn on_auth(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(auth_url) = &self.auth_url {}
+    fn on_auth(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(auth_url) = self.login_flow.clone() {
+            let component = self.component.clone();
+            cx.background_spawn(async move {
+                let result =
+                    unblock(move || open_auth_webview(&auth_url.url, &auth_url.target)).await;
+                match result {
+                    Ok((url, body)) => component.authenticate(url, body).await,
+                    Err(WebviewError::UserCancelled) => Err(ComponentError::Authentication(
+                        "Authentication cancelled by user".into(),
+                    )),
+                    Err(WebviewError::Internal(e)) => Err(ComponentError::Authentication(e.into())),
+                }
+            })
+            .detach();
+        }
     }
 }
 
@@ -172,6 +192,8 @@ impl Render for Config {
                 .title(s.name.clone())
                 .child(div().flex().flex_col().gap(rems(1.5)).children(fields))
         });
+
+        let login_flow_exists = self.login_flow.is_some();
 
         div()
             .flex_grow()
@@ -230,13 +252,14 @@ impl Render for Config {
                                         .on_click(cx.listener(Self::on_submit)),
                                 )
                             })
-                            .when_some(self.auth_url.clone(), |div, auth_url| {
+                            .when(login_flow_exists, |div| {
                                 div.child(
                                     Button::new("auth")
                                         .variant_accent()
                                         .size_lg()
                                         .child("Authenticate")
-                                        .w(rems(10.)),
+                                        .w(rems(10.))
+                                        .on_click(cx.listener(Self::on_auth)),
                                 )
                             }),
                     ),

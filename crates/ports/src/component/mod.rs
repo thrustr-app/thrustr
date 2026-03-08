@@ -66,6 +66,7 @@ impl Origin {
 pub enum Error {
     Initialization(String),
     Configuration(String),
+    Authentication(String),
     Runtime(String),
 }
 
@@ -74,6 +75,7 @@ impl fmt::Display for Error {
         match self {
             Error::Initialization(msg) => write!(f, "Initialization error: {msg}"),
             Error::Configuration(msg) => write!(f, "Configuration error: {msg}"),
+            Error::Authentication(msg) => write!(f, "Authentication error: {msg}"),
             Error::Runtime(msg) => write!(f, "Runtime error: {msg}"),
         }
     }
@@ -117,6 +119,12 @@ pub struct Metadata {
     pub authors: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AuthFlow {
+    pub url: String,
+    pub target: String,
+}
+
 /// A component is a unit of functionality provided by the core application or by a plugin.
 /// A component may expose one or more capabilities.
 #[async_trait]
@@ -133,6 +141,7 @@ pub trait Component: Send + Sync {
     }
 
     async fn init(&self) -> Result<(), Error>;
-    async fn get_auth_url(&self) -> Result<Option<String>, Error>;
+    async fn get_login_flow(&self) -> Result<Option<AuthFlow>, Error>;
+    async fn authenticate(&self, url: String, body: String) -> Result<(), Error>;
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), Error>;
 }

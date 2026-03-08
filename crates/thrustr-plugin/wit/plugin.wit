@@ -3,8 +3,14 @@ package thrustr:plugin@0.1.0;
 interface base {
     use types.{error};
 
+    record auth-flow {
+        url: string,
+        target: string,
+    }
+
     init: func() -> result<_, error>;
-    get-auth-url: func() -> result<option<string>, error>;
+    get-login-flow: func() -> result<option<auth-flow>, error>;
+    authenticate: func(url: string, body: string) -> result<_, error>;
     validate-config: func(fields: list<tuple<string, string>>) -> result<_, error>;
 }
 

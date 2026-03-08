@@ -9,8 +9,7 @@ pub mod wit {
     });
 }
 
-pub use wit::exports::thrustr::plugin::base::Error as PluginError;
-pub use wit::exports::thrustr::plugin::base::Guest as Plugin;
+pub use wit::exports::thrustr::plugin::base::{AuthFlow, Error as PluginError, Guest as Plugin};
 
 pub use wit::exports::thrustr::plugin::storefront::Guest as Storefront;
 
@@ -30,8 +29,12 @@ macro_rules! register_storefront {
                 <$plugin_type as $crate::Plugin>::init()
             }
 
-            fn get_auth_url() -> Result<Option<String>, $crate::PluginError> {
-                <$plugin_type as $crate::Plugin>::get_auth_url()
+            fn get_login_flow() -> Result<Option<$crate::AuthFlow>, $crate::PluginError> {
+                <$plugin_type as $crate::Plugin>::get_login_flow()
+            }
+
+            fn authenticate(url: String, body: String) -> Result<(), $crate::PluginError> {
+                <$plugin_type as $crate::Plugin>::authenticate(url, body)
             }
 
             fn validate_config(fields: Vec<(String, String)>) -> Result<(), $crate::PluginError> {

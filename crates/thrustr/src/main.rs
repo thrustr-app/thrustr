@@ -14,6 +14,7 @@ mod conversions;
 mod globals;
 mod navigation;
 mod routes;
+mod webview;
 
 fn main() {
     let db_path = paths::db_path();
