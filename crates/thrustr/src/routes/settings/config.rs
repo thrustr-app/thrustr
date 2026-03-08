@@ -29,6 +29,7 @@ pub struct Config {
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
     error: Option<SharedString>,
+    auth_url: Option<SharedString>,
 }
 
 impl Config {
@@ -82,14 +83,31 @@ impl Config {
             None
         };
 
-        Self {
+        let page = Self {
             name: component.metadata().name.clone().into(),
             icon,
             component,
             sections,
             values,
             error,
-        }
+            auth_url: None,
+        };
+
+        page.get_auth_url(cx);
+        page
+    }
+
+    fn get_auth_url(&self, cx: &mut Context<Self>) {
+        let component = self.component.clone();
+        let auth_url_task = cx.background_spawn(async move { component.get_auth_url().await });
+        cx.spawn(async move |config, cx| {
+            let result = auth_url_task.await.unwrap();
+            let _ = config.update(cx, |config, cx| {
+                config.auth_url = result.map(Into::into);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn on_input(&mut self, id: SharedString, value: SharedString) {
@@ -123,6 +141,10 @@ impl Config {
             });
         })
         .detach();
+    }
+
+    fn on_auth(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(auth_url) = &self.auth_url {}
     }
 }
 
@@ -160,33 +182,63 @@ impl Render for Config {
             .child(
                 div()
                     .flex()
-                    .gap(rems(1.5))
+                    .justify_between()
                     .items_center()
-                    .text_color(theme.colors.primary)
                     .child(
-                        Button::new("back-button")
-                            .variant_ghost()
+                        div()
+                            .flex()
+                            .gap(rems(1.5))
+                            .items_center()
+                            .text_color(theme.colors.primary)
                             .child(
-                                svg()
-                                    .path("icons/arrow-left.svg")
-                                    .size_full()
-                                    .text_color(theme.colors.primary),
+                                Button::new("back-button")
+                                    .variant_ghost()
+                                    .child(
+                                        svg()
+                                            .path("icons/arrow-left.svg")
+                                            .size_full()
+                                            .text_color(theme.colors.primary),
+                                    )
+                                    .on_click(|_, _, cx| {
+                                        cx.navigate_back();
+                                    }),
                             )
-                            .on_click(|_, _, cx| {
-                                cx.navigate_back();
-                            }),
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(rems(0.5))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_size(rems(1.5))
+                                    .when_some(self.icon.clone(), |div, icon| {
+                                        div.child(img(ImageSource::Image(icon)).size(rems(2.)))
+                                    })
+                                    .child(self.name.clone()),
+                            ),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(rems(0.5))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(rems(1.5))
-                            .when_some(self.icon.clone(), |div, icon| {
-                                div.child(img(ImageSource::Image(icon)).size(rems(2.)))
+                            .gap(rems(1.))
+                            .when(sections.len() > 0, |div| {
+                                div.child(
+                                    Button::new("submit")
+                                        .size_lg()
+                                        .child("Save")
+                                        .w(rems(10.))
+                                        .on_click(cx.listener(Self::on_submit)),
+                                )
                             })
-                            .child(self.name.clone()),
+                            .when_some(self.auth_url.clone(), |div, auth_url| {
+                                div.child(
+                                    Button::new("auth")
+                                        .variant_accent()
+                                        .size_lg()
+                                        .child("Authenticate")
+                                        .w(rems(10.)),
+                                )
+                            }),
                     ),
             )
             .child(
@@ -201,14 +253,7 @@ impl Render for Config {
                     .when_some(self.error.clone(), |div, error| {
                         div.child(Alert::new().title("Error").description(error))
                     })
-                    .children(sections)
-                    .child(
-                        Button::new("submit")
-                            .size_lg()
-                            .child("Save")
-                            .max_w(rems(10.))
-                            .on_click(cx.listener(Self::on_submit)),
-                    ),
+                    .children(sections),
             )
     }
 }

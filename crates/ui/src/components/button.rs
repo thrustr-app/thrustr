@@ -25,7 +25,7 @@ impl Button {
         Self {
             id: (id.into(), "button").into(),
             style: StyleRefinement::default(),
-            variant: Variant::Accent,
+            variant: Variant::Primary,
             size: Size::Medium,
             children: SmallVec::new(),
             on_click: None,
@@ -134,6 +134,12 @@ impl RenderOnce for Button {
             .children(self.children);
 
         match self.variant {
+            Variant::Primary => {
+                button = button
+                    .bg(theme.colors.primary)
+                    .text_color(theme.colors.background)
+                    .focus(|input| input.border_color(theme.colors.primary));
+            }
             Variant::Accent => {
                 button = button
                     .bg(theme.colors.accent)

@@ -148,7 +148,7 @@ impl Component for Plugin {
 
         self.set_status(Status::Initializing);
 
-        let result: Result<(), ComponentError> = match self.instantiate_storefront().await {
+        let result = match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_init(&mut store)
@@ -173,8 +173,31 @@ impl Component for Plugin {
         result
     }
 
+    async fn get_auth_url(&self) -> Result<Option<String>, ComponentError> {
+        let result = match self.instantiate_storefront().await {
+            Ok((instance, mut store)) => instance
+                .thrustr_plugin_base()
+                .call_get_auth_url(&mut store)
+                .await
+                .map_err(|e| ComponentError::Runtime(format!("Wasm call failed: {e}")))?
+                .map_err(|e: PluginError| {
+                    let msg = match e {
+                        PluginError::NotAutorized(msg) => msg,
+                        PluginError::Configuration(msg) => msg,
+                        PluginError::Other(msg) => msg,
+                    };
+                    ComponentError::Runtime(msg)
+                }),
+            Err(e) => Err(ComponentError::Runtime(format!("{e:?}"))),
+        };
+        if let Err(e) = &result {
+            self.set_status(Status::Error(e.clone()));
+        }
+        result
+    }
+
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), ComponentError> {
-        let result: Result<(), ComponentError> = match self.instantiate_storefront().await {
+        let result = match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_validate_config(&mut store, fields)

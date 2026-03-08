@@ -18,12 +18,17 @@ pub trait WithSize: Sized {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
+    Primary,
     Accent,
     Ghost,
 }
 
 pub trait WithVariant: Sized {
     fn variant(self, variant: Variant) -> Self;
+
+    fn variant_primary(self) -> Self {
+        self.variant(Variant::Primary)
+    }
 
     fn variant_accent(self) -> Self {
         self.variant(Variant::Accent)

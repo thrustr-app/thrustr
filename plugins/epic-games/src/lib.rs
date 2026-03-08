@@ -1,4 +1,4 @@
-use crate::api::models::AuthResponse;
+use crate::api::{endpoints::auth_url, models::AuthResponse};
 use serde_json::Value;
 use thrustr_plugin::{
     Plugin, PluginError, Storefront, config::Config, kv_store::KvStore, register_storefront,
@@ -33,6 +33,11 @@ impl Plugin for EpicGames {
 
         Ok(())
     }
+
+    fn get_auth_url() -> Result<Option<String>, PluginError> {
+        Ok(Some(auth_url()))
+    }
+
     fn validate_config(fields: Vec<(String, String)>) -> Result<(), PluginError> {
         let old_username = Config::get("username")?;
         println!("Old username: {old_username}");

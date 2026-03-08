@@ -4,6 +4,7 @@ interface base {
     use types.{error};
 
     init: func() -> result<_, error>;
+    get-auth-url: func() -> result<option<string>, error>;
     validate-config: func(fields: list<tuple<string, string>>) -> result<_, error>;
 }
 

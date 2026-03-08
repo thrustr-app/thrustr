@@ -1,4 +1,4 @@
-mod endpoints;
+pub mod endpoints;
 pub mod models;
 
 const USER_AGENT: &str =

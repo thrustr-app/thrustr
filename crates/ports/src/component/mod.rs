@@ -133,5 +133,6 @@ pub trait Component: Send + Sync {
     }
 
     async fn init(&self) -> Result<(), Error>;
+    async fn get_auth_url(&self) -> Result<Option<String>, Error>;
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), Error>;
 }

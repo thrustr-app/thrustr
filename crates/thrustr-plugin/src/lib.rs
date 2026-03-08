@@ -30,6 +30,10 @@ macro_rules! register_storefront {
                 <$plugin_type as $crate::Plugin>::init()
             }
 
+            fn get_auth_url() -> Result<Option<String>, $crate::PluginError> {
+                <$plugin_type as $crate::Plugin>::get_auth_url()
+            }
+
             fn validate_config(fields: Vec<(String, String)>) -> Result<(), $crate::PluginError> {
                 <$plugin_type as $crate::Plugin>::validate_config(fields)
             }

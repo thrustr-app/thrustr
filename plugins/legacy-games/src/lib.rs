@@ -10,6 +10,10 @@ impl Plugin for LegacyGames {
         Ok(())
     }
 
+    fn get_auth_url() -> Result<Option<String>, PluginError> {
+        Ok(None)
+    }
+
     fn validate_config(_fields: Vec<(String, String)>) -> Result<(), PluginError> {
         Ok(())
     }
