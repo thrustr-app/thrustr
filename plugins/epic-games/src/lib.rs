@@ -42,9 +42,21 @@ impl Plugin for EpicGames {
         }))
     }
 
-    fn authenticate(url: String, body: String) -> Result<(), PluginError> {
+    fn get_logout_flow() -> Result<Option<AuthFlow>, PluginError> {
+        Ok(Some(AuthFlow {
+            url: "https://www.epicgames.com/id/logout?productName=epic-games&redirectUrl=https://www.epicgames.com/id/login".into(),
+            target: "https://www.epicgames.com/id/login".into(),
+        }))
+    }
+
+    fn login(url: String, body: String) -> Result<(), PluginError> {
         println!("got url: {:?}", url);
         println!("got body: {:?}", body);
+        Ok(())
+    }
+
+    fn logout(url: String, body: String) -> Result<(), PluginError> {
+        // delete tokens and such.
         Ok(())
     }
 

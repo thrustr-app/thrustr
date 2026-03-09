@@ -160,7 +160,7 @@ impl Config {
                 let result =
                     unblock(move || open_auth_webview(&auth_url.url, &auth_url.target)).await;
                 match result {
-                    Ok((url, body)) => component.authenticate(url, body).await,
+                    Ok((url, body)) => component.login(url, body).await,
                     Err(WebviewError::UserCancelled) => Err(ComponentError::Authentication(
                         "Authentication cancelled by user".into(),
                     )),

@@ -64,19 +64,17 @@ impl Origin {
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Initialization(String),
     Configuration(String),
     Authentication(String),
-    Runtime(String),
+    Other(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Initialization(msg) => write!(f, "Initialization error: {msg}"),
             Error::Configuration(msg) => write!(f, "Configuration error: {msg}"),
             Error::Authentication(msg) => write!(f, "Authentication error: {msg}"),
-            Error::Runtime(msg) => write!(f, "Runtime error: {msg}"),
+            Error::Other(msg) => write!(f, "Error: {msg}"),
         }
     }
 }
@@ -142,6 +140,8 @@ pub trait Component: Send + Sync {
 
     async fn init(&self) -> Result<(), Error>;
     async fn get_login_flow(&self) -> Result<Option<AuthFlow>, Error>;
-    async fn authenticate(&self, url: String, body: String) -> Result<(), Error>;
+    async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
+    async fn login(&self, url: String, body: String) -> Result<(), Error>;
+    async fn logout(&self, url: String, body: String) -> Result<(), Error>;
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), Error>;
 }

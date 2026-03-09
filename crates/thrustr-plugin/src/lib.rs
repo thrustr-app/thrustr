@@ -33,8 +33,16 @@ macro_rules! register_storefront {
                 <$plugin_type as $crate::Plugin>::get_login_flow()
             }
 
-            fn authenticate(url: String, body: String) -> Result<(), $crate::PluginError> {
-                <$plugin_type as $crate::Plugin>::authenticate(url, body)
+            fn get_logout_flow() -> Result<Option<$crate::AuthFlow>, $crate::PluginError> {
+                <$plugin_type as $crate::Plugin>::get_logout_flow()
+            }
+
+            fn login(url: String, body: String) -> Result<(), $crate::PluginError> {
+                <$plugin_type as $crate::Plugin>::login(url, body)
+            }
+
+            fn logout(url: String, body: String) -> Result<(), $crate::PluginError> {
+                <$plugin_type as $crate::Plugin>::logout(url, body)
             }
 
             fn validate_config(fields: Vec<(String, String)>) -> Result<(), $crate::PluginError> {

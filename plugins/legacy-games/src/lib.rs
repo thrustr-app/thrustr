@@ -14,7 +14,15 @@ impl Plugin for LegacyGames {
         Ok(None)
     }
 
-    fn authenticate(_url: String, _body: String) -> Result<(), PluginError> {
+    fn get_logout_flow() -> Result<Option<AuthFlow>, PluginError> {
+        Ok(None)
+    }
+
+    fn login(_url: String, _body: String) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn logout(_url: String, _body: String) -> Result<(), PluginError> {
         Ok(())
     }
 

@@ -1,13 +1,12 @@
-use std::{f32::consts::PI, time::Duration};
-
 use crate::{Size, Variant, WithSize, WithVariant};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, InteractiveElement,
     IntoElement, ParentElement, Refineable, RenderOnce, StatefulInteractiveElement,
-    StyleRefinement, Styled, Transformation, Window, blue, div, green, percentage,
-    prelude::FluentBuilder, radians, rems, svg, transparent_black,
+    StyleRefinement, Styled, Transformation, Window, div, percentage, prelude::FluentBuilder, rems,
+    svg, transparent_black,
 };
 use smallvec::SmallVec;
+use std::time::Duration;
 use theme_manager::ThemeExt;
 
 #[derive(IntoElement)]

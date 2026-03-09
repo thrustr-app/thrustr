@@ -10,7 +10,9 @@ interface base {
 
     init: func() -> result<_, error>;
     get-login-flow: func() -> result<option<auth-flow>, error>;
-    authenticate: func(url: string, body: string) -> result<_, error>;
+    get-logout-flow: func() -> result<option<auth-flow>, error>;
+    login: func(url: string, body: string) -> result<_, error>;
+    logout: func(url: string, body: string) -> result<_, error>;
     validate-config: func(fields: list<tuple<string, string>>) -> result<_, error>;
 }
 
