@@ -84,8 +84,10 @@ impl std::error::Error for Error {}
 #[derive(Debug, Clone)]
 pub enum Status {
     Inactive,
-    Active,
     Initializing,
+    Active,
+    InitError(Error),
+    Unauthenticated,
     Error(Error),
 }
 
@@ -102,8 +104,24 @@ impl Status {
         matches!(self, Self::Initializing)
     }
 
+    pub fn is_init_error(&self) -> bool {
+        matches!(self, Self::InitError(_))
+    }
+
     pub fn is_error(&self) -> bool {
         matches!(self, Self::Error(_))
+    }
+
+    pub fn is_any_error(&self) -> bool {
+        matches!(self, Self::InitError(_) | Self::Error(_))
+    }
+
+    pub fn can_init(&self) -> bool {
+        matches!(self, Self::Inactive | Self::InitError(_))
+    }
+
+    pub fn needs_login(&self) -> bool {
+        matches!(self, Self::Unauthenticated)
     }
 }
 
@@ -129,6 +147,7 @@ pub struct AuthFlow {
 pub trait Component: Send + Sync {
     fn metadata(&self) -> &Metadata;
     fn status(&self) -> Status;
+    fn set_status(&self, status: Status);
     fn config(&self) -> Option<&Config> {
         None
     }

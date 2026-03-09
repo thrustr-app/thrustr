@@ -137,7 +137,6 @@ impl PluginManager {
         self.component_manager.register(plugin);
 
         event::emit("plugin");
-
         Ok(())
     }
 }

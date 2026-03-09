@@ -3,7 +3,7 @@ package thrustr:plugin@0.1.0;
 interface types {
     variant error {
         configuration(string),
-        not-autorized(string),
+        not-authorized(string),
         other(string),
     }
 }

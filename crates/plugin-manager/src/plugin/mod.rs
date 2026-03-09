@@ -106,11 +106,6 @@ impl Plugin {
 
         Ok((instance, store))
     }
-
-    fn set_status(&self, status: Status) {
-        *self.status.lock().unwrap() = status;
-        event::emit("component");
-    }
 }
 
 #[async_trait]
@@ -121,6 +116,10 @@ impl Component for Plugin {
 
     fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
+    }
+
+    fn set_status(&self, status: Status) {
+        *self.status.lock().unwrap() = status;
     }
 
     fn config(&self) -> Option<&Config> {
@@ -134,19 +133,7 @@ impl Component for Plugin {
     }
 
     async fn init(&self) -> Result<(), ComponentError> {
-        {
-            let mut lock = self.status.lock().unwrap();
-            match *lock {
-                Status::Inactive => *lock = Status::Initializing,
-                _ => {
-                    return Err(ComponentError::Other(
-                        "Plugin is already initializing or active".into(),
-                    ));
-                }
-            }
-        }
-
-        let result = match self.instantiate_storefront().await {
+        match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_init(&mut store)
@@ -154,14 +141,7 @@ impl Component for Plugin {
                 .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
                 .map_err(Into::into),
             Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        };
-
-        self.set_status(match &result {
-            Ok(_) => Status::Active,
-            Err(e) => Status::Error(e.clone()),
-        });
-
-        result
+        }
     }
 
     async fn get_login_flow(&self) -> Result<Option<AuthFlow>, ComponentError> {
@@ -174,10 +154,6 @@ impl Component for Plugin {
                 .map_err(Into::into),
             Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
         };
-
-        if let Err(e) = &result {
-            self.set_status(Status::Error(e.clone()));
-        }
 
         result.map(|o| o.map(Into::into))
     }
@@ -193,16 +169,11 @@ impl Component for Plugin {
             Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
         };
 
-        self.set_status(match &result {
-            Ok(_) => Status::Active,
-            Err(e) => Status::Error(e.clone()),
-        });
-
         result.map(|o| o.map(Into::into))
     }
 
     async fn login(&self, url: String, body: String) -> Result<(), ComponentError> {
-        let result = match self.instantiate_storefront().await {
+        match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_login(&mut store, &url, &body)
@@ -210,18 +181,11 @@ impl Component for Plugin {
                 .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
                 .map_err(Into::into),
             Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        };
-
-        self.set_status(match &result {
-            Ok(_) => Status::Active,
-            Err(e) => Status::Error(e.clone()),
-        });
-
-        result
+        }
     }
 
     async fn logout(&self, url: String, body: String) -> Result<(), ComponentError> {
-        let result = match self.instantiate_storefront().await {
+        match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_logout(&mut store, &url, &body)
@@ -229,18 +193,11 @@ impl Component for Plugin {
                 .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
                 .map_err(Into::into),
             Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        };
-
-        self.set_status(match &result {
-            Ok(_) => Status::Active,
-            Err(e) => Status::Error(e.clone()),
-        });
-
-        result
+        }
     }
 
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), ComponentError> {
-        let result = match self.instantiate_storefront().await {
+        match self.instantiate_storefront().await {
             Ok((instance, mut store)) => instance
                 .thrustr_plugin_base()
                 .call_validate_config(&mut store, fields)
@@ -248,19 +205,13 @@ impl Component for Plugin {
                 .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
                 .map_err(Into::into),
             Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        };
-
-        if let Err(e) = &result {
-            self.set_status(Status::Error(e.clone()));
         }
-
-        result
     }
 }
 
 impl Capability for Plugin {
-    fn component(&self) -> &dyn Component {
-        self as &dyn Component
+    fn component(self: Arc<Self>) -> Arc<dyn Component> {
+        self as Arc<dyn Component>
     }
 }
 
@@ -276,7 +227,7 @@ impl From<PluginAuthFlow> for AuthFlow {
 impl From<PluginError> for ComponentError {
     fn from(value: PluginError) -> Self {
         match value {
-            PluginError::NotAutorized(msg) => ComponentError::Authentication(msg),
+            PluginError::NotAuthorized(msg) => ComponentError::Authentication(msg),
             PluginError::Configuration(msg) => ComponentError::Configuration(msg),
             PluginError::Other(msg) => ComponentError::Other(msg),
         }

@@ -4,14 +4,13 @@ use crate::{
     navigation::NavigationExt,
     webview::{WebviewError, open_auth_webview},
 };
+use component_manager::ComponentHandle;
 use gpui::{
     AppContext, ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
     div, img, prelude::FluentBuilder, rems, svg,
 };
-use ports::component::{
-    AuthFlow, Component, Error as ComponentError, Field as ConfigField, Status,
-};
+use ports::component::{AuthFlow, Field as ConfigField, Status};
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme_manager::ThemeExt;
@@ -31,7 +30,7 @@ struct Section {
 pub struct Config {
     name: SharedString,
     icon: Option<Arc<Image>>,
-    component: Arc<dyn Component>,
+    component: ComponentHandle,
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
     error: Option<SharedString>,
@@ -41,13 +40,12 @@ pub struct Config {
 
 impl Config {
     pub fn new(cx: &mut Context<Self>, component_id: &str) -> Self {
-        let component_manager = cx.component_manager();
-        let component = component_manager.component(component_id).unwrap();
+        let component = cx.component(component_id).unwrap();
         let metadata = component.metadata();
         let icon = metadata.icon.clone().map(image_to_gpui);
 
-        let values: HashMap<SharedString, SharedString> = component_manager
-            .get_config_values(&metadata.id)
+        let values: HashMap<SharedString, SharedString> = component
+            .get_config_values()
             .into_iter()
             .map(|(k, v)| (k.into(), v.into()))
             .collect();
@@ -84,10 +82,9 @@ impl Config {
             })
             .unwrap_or_default();
 
-        let error = if let Status::Error(e) = component.status() {
-            Some(e.to_string().into())
-        } else {
-            None
+        let error = match component.status() {
+            Status::InitError(e) | Status::Error(e) => Some(e.to_string().into()),
+            _ => None,
         };
 
         let page = Self {
@@ -107,9 +104,9 @@ impl Config {
 
     fn get_login_flow(&self, cx: &mut Context<Self>) {
         let component = self.component.clone();
-        let auth_url_task = cx.background_spawn(async move { component.get_login_flow().await });
+        let login_flow_task = cx.background_spawn(async move { component.get_login_flow().await });
         cx.spawn(async move |config, cx| {
-            let result = auth_url_task.await.unwrap();
+            let result = login_flow_task.await.unwrap();
             let _ = config.update(cx, |config, cx| {
                 config.login_flow = result;
                 cx.notify();
@@ -130,14 +127,9 @@ impl Config {
                 .collect::<Vec<_>>(),
         );
 
-        let component_manager = cx.component_manager();
-        let id = self.component.metadata().id.to_owned();
-
-        let validate_task = cx.background_spawn(async move {
-            component_manager
-                .save_config_values(&id, &config_fields)
-                .await
-        });
+        let component = self.component.clone();
+        let validate_task =
+            cx.background_spawn(async move { component.save_config(&config_fields).await });
 
         cx.spawn(async move |config, cx| {
             let result = validate_task.await;
@@ -149,22 +141,22 @@ impl Config {
         .detach();
     }
 
-    fn on_auth(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_login(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         if self.authenticating {
             return;
         }
         self.authenticating = true;
-        if let Some(auth_url) = self.login_flow.clone() {
+        if let Some(login_flow) = self.login_flow.clone() {
             let component = self.component.clone();
             let task = cx.background_spawn(async move {
                 let result =
-                    unblock(move || open_auth_webview(&auth_url.url, &auth_url.target)).await;
+                    unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
                 match result {
                     Ok((url, body)) => component.login(url, body).await,
-                    Err(WebviewError::UserCancelled) => Err(ComponentError::Authentication(
-                        "Authentication cancelled by user".into(),
-                    )),
-                    Err(WebviewError::Internal(e)) => Err(ComponentError::Authentication(e.into())),
+                    Err(WebviewError::UserCancelled) => {
+                        Err("Authentication cancelled by user".into())
+                    }
+                    Err(WebviewError::Internal(e)) => Err(e.into()),
                 }
             });
 
@@ -268,13 +260,13 @@ impl Render for Config {
                             })
                             .when(login_flow_exists, |div| {
                                 div.child(
-                                    Button::new("auth")
+                                    Button::new("login")
                                         .when(self.authenticating, |btn| btn.loading())
                                         .variant_accent()
                                         .size_lg()
-                                        .child("Authenticate")
+                                        .child("Login")
                                         .w(rems(10.))
-                                        .on_click(cx.listener(Self::on_auth)),
+                                        .on_click(cx.listener(Self::on_login)),
                                 )
                             }),
                     ),

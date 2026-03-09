@@ -55,7 +55,7 @@ impl Storefronts {
                 }
 
                 Storefront {
-                    id: component.metadata().id.to_owned().into(),
+                    id: component.id().to_owned().into(),
                     name: component.metadata().name.to_owned().into(),
                     status: component.status(),
                     icon: component.metadata().icon.clone().map(image_to_gpui),
@@ -86,6 +86,11 @@ impl Render for Storefronts {
                         .text_color(theme.colors.warning)
                         .child("INITIALIZING");
                 }
+                Status::Unauthenticated => {
+                    status = status
+                        .text_color(theme.colors.warning)
+                        .child("UNAUTHENTICATED");
+                }
                 Status::Active => {
                     status = status.text_color(theme.colors.accent).child("ACTIVE");
                 }
@@ -94,7 +99,7 @@ impl Render for Storefronts {
                         .text_color(theme.colors.card_secondary)
                         .child("INACTIVE");
                 }
-                Status::Error(_) => {
+                Status::Error(_) | Status::InitError(_) => {
                     status = status.text_color(theme.colors.error).child("ERROR");
                 }
             }

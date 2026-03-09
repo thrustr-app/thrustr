@@ -1,6 +1,10 @@
 use dashmap::DashMap;
-use ports::{capabilities::Storefront, component::Component, storage::ComponentStorage};
+use ports::{component::Component, storage::ComponentStorage};
 use std::sync::Arc;
+
+mod handles;
+
+pub use handles::*;
 
 #[derive(Clone)]
 pub struct ComponentManager {
@@ -21,58 +25,42 @@ impl ComponentManager {
             .insert(component.metadata().id.to_owned(), component);
     }
 
-    pub fn component(&self, component_id: &str) -> Option<Arc<dyn Component>> {
+    pub fn component(&self, id: &str) -> Option<ComponentHandle> {
         self.components
-            .get(component_id)
-            .map(|c| Arc::clone(c.value()))
+            .get(id)
+            .map(|c| ComponentHandle::new(Arc::clone(c.value()), Arc::clone(&self.storage)))
     }
 
-    pub fn plugins(&self) -> Vec<Arc<dyn Component>> {
+    pub fn components(&self) -> Vec<ComponentHandle> {
         self.components
             .iter()
-            .filter(|c| c.value().metadata().origin.is_plugin())
-            .map(|c| Arc::clone(c.value()))
+            .map(|c| ComponentHandle::new(Arc::clone(c.value()), Arc::clone(&self.storage)))
             .collect()
     }
 
-    pub fn storefronts(&self) -> Vec<Arc<dyn Storefront>> {
+    pub fn plugins(&self) -> Vec<ComponentHandle> {
+        self.components
+            .iter()
+            .filter(|c| c.value().metadata().origin.is_plugin())
+            .map(|c| ComponentHandle::new(Arc::clone(c.value()), Arc::clone(&self.storage)))
+            .collect()
+    }
+
+    pub fn storefronts(&self) -> Vec<StorefrontHandle> {
         self.components
             .iter()
             .filter_map(|c| {
-                let component = Arc::clone(c.value());
-                component.storefront()
+                Arc::clone(c.value())
+                    .storefront()
+                    .map(|s| StorefrontHandle::new(s, Arc::clone(&self.storage)))
             })
             .collect()
     }
 
-    pub fn storefront(&self, id: &str) -> Option<Arc<dyn Storefront>> {
+    pub fn storefront(&self, id: &str) -> Option<StorefrontHandle> {
         self.components
             .get(id)
             .and_then(|c| Arc::clone(c.value()).storefront())
-    }
-
-    pub fn get_config_values(&self, component_id: &str) -> Vec<(String, String)> {
-        self.storage.get_config_values(component_id).unwrap()
-    }
-
-    pub async fn save_config_values(
-        &self,
-        component_id: &str,
-        fields: &[(String, String)],
-    ) -> Result<(), String> {
-        let component = self
-            .component(component_id)
-            .ok_or_else(|| format!("Component with ID '{}' not found", component_id))?;
-
-        component
-            .validate_config(fields)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        self.storage
-            .set_config_values(component_id, fields)
-            .map_err(|e| e.to_string())?;
-
-        Ok(())
+            .map(|s| StorefrontHandle::new(s, Arc::clone(&self.storage)))
     }
 }
