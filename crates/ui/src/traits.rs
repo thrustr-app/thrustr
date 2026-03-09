@@ -19,7 +19,10 @@ pub trait WithSize: Sized {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
     Primary,
+    Secondary,
     Accent,
+    Warning,
+    Destructive,
     Ghost,
 }
 
@@ -30,8 +33,20 @@ pub trait WithVariant: Sized {
         self.variant(Variant::Primary)
     }
 
+    fn variant_secondary(self) -> Self {
+        self.variant(Variant::Secondary)
+    }
+
     fn variant_accent(self) -> Self {
         self.variant(Variant::Accent)
+    }
+
+    fn variant_warning(self) -> Self {
+        self.variant(Variant::Warning)
+    }
+
+    fn variant_destructive(self) -> Self {
+        self.variant(Variant::Destructive)
     }
 
     fn variant_ghost(self) -> Self {

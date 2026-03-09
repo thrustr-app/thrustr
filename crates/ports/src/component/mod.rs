@@ -120,8 +120,32 @@ impl Status {
         matches!(self, Self::Inactive | Self::InitError(_))
     }
 
-    pub fn needs_login(&self) -> bool {
-        matches!(self, Self::Unauthenticated)
+    pub fn can_login(&self) -> bool {
+        matches!(
+            self,
+            Self::Unauthenticated
+                | Self::Error(Error::Authentication(_))
+                | Self::InitError(Error::Authentication(_))
+        )
+    }
+
+    pub fn can_logout(&self) -> bool {
+        matches!(self, Self::Active)
+            || matches!(
+                self,
+                Self::Error(e) | Self::InitError(e)
+                if !matches!(e, Error::Authentication(_))
+            )
+    }
+
+    pub fn can_configure(&self) -> bool {
+        matches!(
+            self,
+            Self::Active
+                | Self::Unauthenticated
+                | Self::Error(Error::Configuration(_))
+                | Self::InitError(Error::Configuration(_))
+        )
     }
 }
 

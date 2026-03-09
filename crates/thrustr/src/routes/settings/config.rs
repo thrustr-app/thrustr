@@ -1,20 +1,21 @@
 use crate::{
     conversions::image::image_to_gpui,
-    globals::ComponentManagerExt,
+    globals::{ComponentManagerExt, EventListenerExt},
     navigation::NavigationExt,
     webview::{WebviewError, open_auth_webview},
 };
 use component_manager::ComponentHandle;
 use gpui::{
     AppContext, ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
-    div, img, prelude::FluentBuilder, rems, svg,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task,
+    Window, div, img, prelude::FluentBuilder, rems, svg,
 };
+use gpui_tokio::Tokio;
 use ports::component::{AuthFlow, Field as ConfigField, Status};
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme_manager::ThemeExt;
-use ui::{Alert, Button, Card, InputEvent, WithSize, WithVariant, input};
+use ui::{Alert, Button, Card, InputEvent, Label, WithSize, WithVariant, input};
 
 struct Field {
     id: SharedString,
@@ -36,6 +37,8 @@ pub struct Config {
     error: Option<SharedString>,
     login_flow: Option<AuthFlow>,
     authenticating: bool,
+    status: Status,
+    _tasks: Vec<Task<()>>,
 }
 
 impl Config {
@@ -87,26 +90,35 @@ impl Config {
             _ => None,
         };
 
+        let _tasks = vec![cx.listen("component", Self::refresh_status)];
+
         let page = Self {
             name: component.metadata().name.clone().into(),
             icon,
+            status: component.status(),
             component,
             sections,
             values,
             error,
             login_flow: None,
             authenticating: false,
+            _tasks,
         };
 
         page.get_login_flow(cx);
         page
     }
 
+    fn refresh_status(&mut self, cx: &mut Context<Self>) {
+        self.status = self.component.status();
+        cx.notify();
+    }
+
     fn get_login_flow(&self, cx: &mut Context<Self>) {
         let component = self.component.clone();
-        let login_flow_task = cx.background_spawn(async move { component.get_login_flow().await });
+        let login_flow_task = Tokio::spawn(cx, async move { component.get_login_flow().await });
         cx.spawn(async move |config, cx| {
-            let result = login_flow_task.await.unwrap();
+            let result = login_flow_task.await.unwrap().unwrap();
             let _ = config.update(cx, |config, cx| {
                 config.login_flow = result;
                 cx.notify();
@@ -119,7 +131,7 @@ impl Config {
         self.values.insert(id.clone(), value.clone());
     }
 
-    fn on_submit(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         let config_fields = Arc::new(
             self.values
                 .iter()
@@ -128,11 +140,13 @@ impl Config {
         );
 
         let component = self.component.clone();
-        let validate_task =
-            cx.background_spawn(async move { component.save_config(&config_fields).await });
+        let validate_task = Tokio::spawn(
+            cx,
+            async move { component.save_config(&config_fields).await },
+        );
 
         cx.spawn(async move |config, cx| {
-            let result = validate_task.await;
+            let result = validate_task.await.unwrap();
             let _ = config.update(cx, |config, cx| {
                 config.error = result.err().map(|e| e.to_string().into());
                 cx.notify();
@@ -148,7 +162,7 @@ impl Config {
         self.authenticating = true;
         if let Some(login_flow) = self.login_flow.clone() {
             let component = self.component.clone();
-            let task = cx.background_spawn(async move {
+            let task = Tokio::spawn(cx, async move {
                 let result =
                     unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
                 match result {
@@ -161,7 +175,7 @@ impl Config {
             });
 
             cx.spawn(async move |config, cx| {
-                let result = task.await;
+                let result = task.await.unwrap();
                 let _ = config.update(cx, |config, cx| {
                     config.authenticating = false;
                     config.error = result.err().map(|e| e.to_string().into());
@@ -170,6 +184,40 @@ impl Config {
             })
             .detach();
         }
+        cx.notify();
+    }
+
+    fn on_logout(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.authenticating {
+            return;
+        }
+        self.authenticating = true;
+        let component = self.component.clone();
+        let task = cx.background_spawn(async move {
+            let logout_flow = component.get_logout_flow().await?;
+            let result = if let Some(logout_flow) = logout_flow {
+                unblock(move || open_auth_webview(&logout_flow.url, &logout_flow.target)).await
+            } else {
+                Ok(("".to_string(), "".to_string()))
+            };
+
+            match result {
+                Ok((url, body)) => component.logout(url, body).await,
+                Err(WebviewError::UserCancelled) => Err("Logout cancelled by user".into()),
+                Err(WebviewError::Internal(e)) => Err(e.into()),
+            }
+        });
+
+        cx.spawn(async move |config, cx| {
+            let result = task.await;
+            let _ = config.update(cx, |config, cx| {
+                config.authenticating = false;
+                config.error = result.err().map(|e| e.to_string().into());
+                cx.notify();
+            });
+        })
+        .detach();
+
         cx.notify();
     }
 }
@@ -182,6 +230,7 @@ impl Render for Config {
             let fields = s.fields.iter().map(|f| {
                 let field_id = f.id.clone();
                 input(f.id.clone())
+                    .when(!self.status.can_configure(), |btn| btn.disabled())
                     .label(f.label.clone())
                     .max_w(rems(20.))
                     .when_some(f.placeholder.clone(), |input, placeholder| {
@@ -198,6 +247,14 @@ impl Render for Config {
                 .title(s.name.clone())
                 .child(div().flex().flex_col().gap(rems(1.5)).children(fields))
         });
+
+        let status_label = match self.status {
+            Status::Initializing => Label::new("INITIALIZING").variant_warning(),
+            Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
+            Status::Active => Label::new("ACTIVE").variant_accent(),
+            Status::Inactive => Label::new("INACTIVE"),
+            Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_destructive(),
+        };
 
         let login_flow_exists = self.login_flow.is_some();
 
@@ -241,7 +298,8 @@ impl Render for Config {
                                     .when_some(self.icon.clone(), |div, icon| {
                                         div.child(img(ImageSource::Image(icon)).size(rems(2.)))
                                     })
-                                    .child(self.name.clone()),
+                                    .child(self.name.clone())
+                                    .child(status_label),
                             ),
                     )
                     .child(
@@ -251,22 +309,34 @@ impl Render for Config {
                             .gap(rems(1.))
                             .when(sections.len() > 0, |div| {
                                 div.child(
-                                    Button::new("submit")
+                                    Button::new("save")
+                                        .when(!self.status.can_configure(), |btn| btn.disabled())
                                         .size_lg()
                                         .child("Save")
                                         .w(rems(10.))
-                                        .on_click(cx.listener(Self::on_submit)),
+                                        .on_click(cx.listener(Self::on_save)),
                                 )
                             })
-                            .when(login_flow_exists, |div| {
+                            .when(login_flow_exists && self.status.can_login(), |div| {
                                 div.child(
                                     Button::new("login")
                                         .when(self.authenticating, |btn| btn.loading())
                                         .variant_accent()
                                         .size_lg()
-                                        .child("Login")
+                                        .child("Log In")
                                         .w(rems(10.))
                                         .on_click(cx.listener(Self::on_login)),
+                                )
+                            })
+                            .when(login_flow_exists && self.status.can_logout(), |div| {
+                                div.child(
+                                    Button::new("logout")
+                                        .when(self.authenticating, |btn| btn.loading())
+                                        .variant_ghost()
+                                        .size_lg()
+                                        .child("Log Out")
+                                        .w(rems(10.))
+                                        .on_click(cx.listener(Self::on_logout)),
                                 )
                             }),
                     ),

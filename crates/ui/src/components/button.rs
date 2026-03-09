@@ -66,7 +66,6 @@ impl Button {
 
     pub fn loading(mut self) -> Self {
         self.loading = true;
-        self.disabled = true;
         self
     }
 
@@ -126,13 +125,14 @@ impl RenderOnce for Button {
 
         let mut button = div()
             .id(self.id)
+            .rounded(theme.radius.full)
             .when(!self.disabled && !self.loading, |button| {
                 button
                     .track_focus(&focus_handle)
                     .cursor_pointer()
                     .when_some(self.on_click, |button, on_click| button.on_click(on_click))
             })
-            .rounded(theme.radius.full)
+            .when(self.disabled, |button| button.opacity(0.6))
             .when(self.size == Size::Medium, |button| {
                 button
                     .h(rems(2.25))
@@ -159,6 +159,9 @@ impl RenderOnce for Button {
                             .path("icons/loader.svg")
                             .size(rems(1.25))
                             .text_color(theme.colors.background)
+                            .when(self.variant == Variant::Ghost, |svg| {
+                                svg.text_color(theme.colors.primary)
+                            })
                             .with_animation(
                                 "loading",
                                 Animation::new(Duration::from_millis(850)).repeat(),
@@ -178,7 +181,7 @@ impl RenderOnce for Button {
                 button = button
                     .bg(theme.colors.primary)
                     .text_color(theme.colors.background)
-                    .focus(|input| input.border_color(theme.colors.primary));
+                    .focus(|input| input.border_color(theme.colors.primary))
             }
             Variant::Accent => {
                 button = button
@@ -189,9 +192,11 @@ impl RenderOnce for Button {
             Variant::Ghost => {
                 button = button
                     .bg(transparent_black())
+                    .text_color(theme.colors.primary)
                     .border_color(theme.colors.border)
                     .focus(|input| input.border_color(theme.colors.primary));
             }
+            _ => {}
         }
 
         button.style().refine(&self.style);

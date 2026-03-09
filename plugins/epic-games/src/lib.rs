@@ -1,10 +1,8 @@
 use crate::api::{endpoints::auth_url, models::AuthResponse};
-use serde_json::Value;
 use thrustr_plugin::{
     AuthFlow, Plugin, PluginError, Storefront, config::Config, kv_store::KvStore,
     register_storefront,
 };
-use wasip2::{clocks::monotonic_clock, io::poll};
 
 mod api;
 
@@ -12,8 +10,12 @@ pub struct EpicGames;
 
 impl Plugin for EpicGames {
     fn init() -> Result<(), PluginError> {
-        let pollable = monotonic_clock::subscribe_duration(10_000_000_000);
-        poll::poll(&[&pollable]);
+        let username = Config::get("username")?;
+        if username.is_empty() {
+            return Err(PluginError::Configuration(
+                "Username cannot be empty".into(),
+            ));
+        }
 
         let some_config = Config::get("username")?;
         println!("Username: {some_config}");
@@ -61,17 +63,15 @@ impl Plugin for EpicGames {
     }
 
     fn validate_config(fields: Vec<(String, String)>) -> Result<(), PluginError> {
-        let old_username = Config::get("username")?;
-        let old_password = Config::get("password")?;
-
         let username = fields
             .iter()
             .find(|(id, _)| id == "username")
             .map(|(_, v)| v.as_str());
-        let password = fields
-            .iter()
-            .find(|(id, _)| id == "password")
-            .map(|(_, v)| v.as_str());
+        if username.is_none() || username.unwrap().is_empty() {
+            return Err(PluginError::Configuration(
+                "Username cannot be empty".into(),
+            ));
+        }
 
         Ok(())
     }

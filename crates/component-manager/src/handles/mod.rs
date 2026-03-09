@@ -61,6 +61,9 @@ impl ComponentHandle {
                 Status::Unauthenticated => Status::Active,
                 _ => Status::Inactive,
             });
+            if self.component.status().can_init() {
+                return self.init().await;
+            }
         }
         result.map_err(|e| e.to_string())
     }
@@ -99,10 +102,16 @@ impl ComponentHandle {
     }
 
     pub async fn save_config(&self, fields: &[(String, String)]) -> Result<(), String> {
-        self.validate_config(fields).await?;
+        self.validate_config(fields).await.unwrap();
         self.storage
             .set_config_values(self.id(), fields)
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+
+        if self.component.status().can_init() {
+            return self.init().await;
+        }
+
+        Ok(())
     }
 
     fn set_status(&self, status: Status) {

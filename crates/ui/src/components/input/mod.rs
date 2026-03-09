@@ -126,6 +126,11 @@ impl Input {
         self.tab_index = tab_index;
         self
     }
+
+    pub fn disabled(mut self) -> Self {
+        self.disabled = true;
+        self
+    }
 }
 
 impl Styled for Input {
@@ -224,6 +229,7 @@ impl RenderOnce for Input {
             })
             .on_scroll_wheel(window.listener_for(&state, InputState::on_scroll_wheel))
             .focus(|input| input.border_1().border_color(theme.colors.primary))
+            .when(self.disabled, |button| button.opacity(0.6))
             .child(state.clone());
 
         input.style().refine(&self.style);
