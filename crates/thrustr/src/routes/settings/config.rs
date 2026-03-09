@@ -36,6 +36,7 @@ pub struct Config {
     values: HashMap<SharedString, SharedString>,
     error: Option<SharedString>,
     login_flow: Option<AuthFlow>,
+    authenticating: bool,
 }
 
 impl Config {
@@ -97,6 +98,7 @@ impl Config {
             values,
             error,
             login_flow: None,
+            authenticating: false,
         };
 
         page.get_login_flow(cx);
@@ -128,15 +130,13 @@ impl Config {
                 .collect::<Vec<_>>(),
         );
 
-        let component = self.component.clone();
         let component_manager = cx.component_manager();
+        let id = self.component.metadata().id.to_owned();
 
         let validate_task = cx.background_spawn(async move {
-            let result = component.validate_config(&config_fields).await;
-            if result.is_ok() {
-                component_manager.save_config_values(&component.metadata().id, &config_fields);
-            }
-            result
+            component_manager
+                .save_config_values(&id, &config_fields)
+                .await
         });
 
         cx.spawn(async move |config, cx| {
@@ -150,9 +150,13 @@ impl Config {
     }
 
     fn on_auth(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.authenticating {
+            return;
+        }
+        self.authenticating = true;
         if let Some(auth_url) = self.login_flow.clone() {
             let component = self.component.clone();
-            cx.background_spawn(async move {
+            let task = cx.background_spawn(async move {
                 let result =
                     unblock(move || open_auth_webview(&auth_url.url, &auth_url.target)).await;
                 match result {
@@ -162,9 +166,19 @@ impl Config {
                     )),
                     Err(WebviewError::Internal(e)) => Err(ComponentError::Authentication(e.into())),
                 }
+            });
+
+            cx.spawn(async move |config, cx| {
+                let result = task.await;
+                let _ = config.update(cx, |config, cx| {
+                    config.authenticating = false;
+                    config.error = result.err().map(|e| e.to_string().into());
+                    cx.notify();
+                });
             })
             .detach();
         }
+        cx.notify();
     }
 }
 
@@ -255,6 +269,7 @@ impl Render for Config {
                             .when(login_flow_exists, |div| {
                                 div.child(
                                     Button::new("auth")
+                                        .when(self.authenticating, |btn| btn.loading())
                                         .variant_accent()
                                         .size_lg()
                                         .child("Authenticate")
@@ -270,7 +285,7 @@ impl Render for Config {
                     .flex_col()
                     .flex_grow()
                     .h_0()
-                    .gap(rems(2.))
+                    .gap(rems(1.5))
                     .id("config-form")
                     .overflow_y_scroll()
                     .when_some(self.error.clone(), |div, error| {

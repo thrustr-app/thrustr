@@ -27,16 +27,6 @@ impl ComponentManager {
             .map(|c| Arc::clone(c.value()))
     }
 
-    pub fn get_config_values(&self, component_id: &str) -> Vec<(String, String)> {
-        self.storage.get_config_values(component_id).unwrap()
-    }
-
-    pub fn save_config_values(&self, component_id: &str, fields: &[(String, String)]) {
-        self.storage
-            .set_config_values(component_id, fields)
-            .unwrap();
-    }
-
     pub fn plugins(&self) -> Vec<Arc<dyn Component>> {
         self.components
             .iter()
@@ -59,5 +49,30 @@ impl ComponentManager {
         self.components
             .get(id)
             .and_then(|c| Arc::clone(c.value()).storefront())
+    }
+
+    pub fn get_config_values(&self, component_id: &str) -> Vec<(String, String)> {
+        self.storage.get_config_values(component_id).unwrap()
+    }
+
+    pub async fn save_config_values(
+        &self,
+        component_id: &str,
+        fields: &[(String, String)],
+    ) -> Result<(), String> {
+        let component = self
+            .component(component_id)
+            .ok_or_else(|| format!("Component with ID '{}' not found", component_id))?;
+
+        component
+            .validate_config(fields)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.storage
+            .set_config_values(component_id, fields)
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
     }
 }

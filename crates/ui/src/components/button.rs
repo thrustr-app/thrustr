@@ -1,8 +1,11 @@
+use std::{f32::consts::PI, time::Duration};
+
 use crate::{Size, Variant, WithSize, WithVariant};
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
-    Refineable, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
-    prelude::FluentBuilder, rems, transparent_black,
+    Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, InteractiveElement,
+    IntoElement, ParentElement, Refineable, RenderOnce, StatefulInteractiveElement,
+    StyleRefinement, Styled, Transformation, Window, blue, div, green, percentage,
+    prelude::FluentBuilder, radians, rems, svg, transparent_black,
 };
 use smallvec::SmallVec;
 use theme_manager::ThemeExt;
@@ -18,6 +21,8 @@ pub struct Button {
     auto_focus: bool,
     tab_index: isize,
     tab_stop: bool,
+    loading: bool,
+    disabled: bool,
 }
 
 impl Button {
@@ -32,6 +37,8 @@ impl Button {
             auto_focus: false,
             tab_index: 0,
             tab_stop: true,
+            loading: false,
+            disabled: false,
         }
     }
 
@@ -55,6 +62,17 @@ impl Button {
 
     pub fn auto_focus(mut self, auto_focus: bool) -> Self {
         self.auto_focus = auto_focus;
+        self
+    }
+
+    pub fn loading(mut self) -> Self {
+        self.loading = true;
+        self.disabled = true;
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.disabled = true;
         self
     }
 }
@@ -109,7 +127,12 @@ impl RenderOnce for Button {
 
         let mut button = div()
             .id(self.id)
-            .track_focus(&focus_handle)
+            .when(!self.disabled && !self.loading, |button| {
+                button
+                    .track_focus(&focus_handle)
+                    .cursor_pointer()
+                    .when_some(self.on_click, |button, on_click| button.on_click(on_click))
+            })
             .rounded(theme.radius.full)
             .when(self.size == Size::Medium, |button| {
                 button
@@ -129,9 +152,27 @@ impl RenderOnce for Button {
             .flex()
             .items_center()
             .justify_center()
-            .cursor_pointer()
-            .when_some(self.on_click, |button, on_click| button.on_click(on_click))
-            .children(self.children);
+            .when_else(
+                self.loading,
+                |button| {
+                    button.child(
+                        svg()
+                            .path("icons/loader.svg")
+                            .size(rems(1.25))
+                            .text_color(theme.colors.background)
+                            .with_animation(
+                                "loading",
+                                Animation::new(Duration::from_millis(850)).repeat(),
+                                |loader, delta| {
+                                    loader.with_transformation(Transformation::rotate(percentage(
+                                        delta,
+                                    )))
+                                },
+                            ),
+                    )
+                },
+                |button| button.children(self.children),
+            );
 
         match self.variant {
             Variant::Primary => {
