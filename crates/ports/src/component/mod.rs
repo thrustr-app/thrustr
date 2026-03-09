@@ -64,16 +64,16 @@ impl Origin {
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Configuration(String),
-    Authentication(String),
+    Auth(String),
+    Config(String),
     Other(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Configuration(msg) => write!(f, "Configuration error: {msg}"),
-            Error::Authentication(msg) => write!(f, "Authentication error: {msg}"),
+            Error::Config(msg) => write!(f, "Configuration error: {msg}"),
+            Error::Auth(msg) => write!(f, "Authentication error: {msg}"),
             Error::Other(msg) => write!(f, "Error: {msg}"),
         }
     }
@@ -123,9 +123,7 @@ impl Status {
     pub fn can_login(&self) -> bool {
         matches!(
             self,
-            Self::Unauthenticated
-                | Self::Error(Error::Authentication(_))
-                | Self::InitError(Error::Authentication(_))
+            Self::Unauthenticated | Self::Error(Error::Auth(_)) | Self::InitError(Error::Auth(_))
         )
     }
 
@@ -134,7 +132,7 @@ impl Status {
             || matches!(
                 self,
                 Self::Error(e) | Self::InitError(e)
-                if !matches!(e, Error::Authentication(_))
+                if !matches!(e, Error::Auth(_))
             )
     }
 
@@ -143,8 +141,8 @@ impl Status {
             self,
             Self::Active
                 | Self::Unauthenticated
-                | Self::Error(Error::Configuration(_))
-                | Self::InitError(Error::Configuration(_))
+                | Self::Error(Error::Config(_))
+                | Self::InitError(Error::Config(_))
         )
     }
 }

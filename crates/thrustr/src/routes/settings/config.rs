@@ -328,6 +328,7 @@ impl Render for Config {
                                         .on_click(cx.listener(Self::on_login)),
                                 )
                             })
+                            // There must be a login flow for a logout flow to exists, but a logout flow might not be required.
                             .when(login_flow_exists && self.status.can_logout(), |div| {
                                 div.child(
                                     Button::new("logout")

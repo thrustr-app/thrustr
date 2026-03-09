@@ -42,7 +42,7 @@ impl ComponentHandle {
 
     pub async fn init(&self) -> Result<(), String> {
         if !self.component.status().can_init() {
-            return Err("Component must be Inactive or in InitError state to initialize".into());
+            return Err("Cannot initialize from current state".into());
         }
         self.set_status(Status::Initializing);
         let result = self.component.init().await;
@@ -54,6 +54,9 @@ impl ComponentHandle {
     }
 
     pub async fn login(&self, url: String, body: String) -> Result<(), String> {
+        if !self.component.status().can_login() {
+            return Err("Cannot login from current state".into());
+        }
         let prior = self.component.status();
         let result = self.component.login(url, body).await;
         if result.is_ok() {
@@ -69,6 +72,9 @@ impl ComponentHandle {
     }
 
     pub async fn logout(&self, url: String, body: String) -> Result<(), String> {
+        if !self.component.status().can_logout() {
+            return Err("Cannot logout from current state".into());
+        }
         let result = self.component.logout(url, body).await;
         if result.is_ok() {
             self.set_status(Status::Unauthenticated);
@@ -102,7 +108,10 @@ impl ComponentHandle {
     }
 
     pub async fn save_config(&self, fields: &[(String, String)]) -> Result<(), String> {
-        self.validate_config(fields).await.unwrap();
+        if !self.component.status().can_configure() {
+            return Err("Cannot configure from current state".into());
+        }
+        self.validate_config(fields).await?;
         self.storage
             .set_config_values(self.id(), fields)
             .map_err(|e| e.to_string())?;
