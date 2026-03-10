@@ -5,11 +5,13 @@ use std::sync::Arc;
 mod component;
 mod event;
 mod plugin;
+mod task;
 mod theme;
 
 pub use component::ComponentManagerExt;
 pub use event::EventListenerExt;
 pub use plugin::PluginManagerExt;
+pub use task::*;
 
 pub fn init(cx: &mut App, storage: Arc<dyn ComponentStorage>) {
     theme::init(cx);

@@ -1,17 +1,16 @@
 use crate::{
     conversions::image::image_to_gpui,
-    globals::{ComponentManagerExt, EventListenerExt},
+    globals::{ComponentManagerExt, EventListenerExt, SpawnTaskExt},
     navigation::NavigationExt,
     webview::{WebviewError, open_auth_webview},
 };
 use component_manager::ComponentHandle;
 use gpui::{
-    AppContext, ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task,
-    Window, div, img, prelude::FluentBuilder, rems, svg,
+    ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window, div,
+    img, prelude::FluentBuilder, rems, svg,
 };
-use gpui_tokio::Tokio;
-use ports::component::{AuthFlow, Field as ConfigField, Status};
+use ports::component::{AuthFlow, Field as ConfigField, Section as ConfigSection, Status};
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme_manager::ThemeExt;
@@ -55,34 +54,7 @@ impl Config {
 
         let sections = component
             .config()
-            .map(|config| {
-                config
-                    .sections
-                    .iter()
-                    .map(|section| {
-                        let fields = section
-                            .fields
-                            .iter()
-                            .map(|field| match field {
-                                ConfigField::Text {
-                                    id,
-                                    label,
-                                    placeholder,
-                                } => Field {
-                                    id: id.clone().into(),
-                                    label: label.clone().into(),
-                                    placeholder: placeholder.clone().map(Into::into),
-                                },
-                            })
-                            .collect();
-
-                        Section {
-                            name: section.name.clone().into(),
-                            fields,
-                        }
-                    })
-                    .collect()
-            })
+            .map(|c| c.sections.iter().map(Into::into).collect())
             .unwrap_or_default();
 
         let error = match component.status() {
@@ -92,7 +64,7 @@ impl Config {
 
         let _tasks = vec![cx.listen("component", Self::refresh_status)];
 
-        let page = Self {
+        let mut page = Self {
             name: component.metadata().name.clone().into(),
             icon,
             status: component.status(),
@@ -114,17 +86,15 @@ impl Config {
         cx.notify();
     }
 
-    fn get_login_flow(&self, cx: &mut Context<Self>) {
+    fn get_login_flow(&mut self, cx: &mut Context<Self>) {
         let component = self.component.clone();
-        let login_flow_task = Tokio::spawn(cx, async move { component.get_login_flow().await });
-        cx.spawn(async move |config, cx| {
-            let result = login_flow_task.await.unwrap().unwrap();
-            let _ = config.update(cx, |config, cx| {
-                config.login_flow = result;
+        cx.spawn_and_update_tokio(
+            async move { component.get_login_flow().await },
+            |config, result, cx| {
+                config.login_flow = result.unwrap();
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+        );
     }
 
     fn on_input(&mut self, id: SharedString, value: SharedString) {
@@ -132,7 +102,7 @@ impl Config {
     }
 
     fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let config_fields = Arc::new(
+        let fields = Arc::new(
             self.values
                 .iter()
                 .map(|(id, value)| (id.to_string(), value.to_string()))
@@ -140,49 +110,41 @@ impl Config {
         );
 
         let component = self.component.clone();
-        let validate_task = Tokio::spawn(
-            cx,
-            async move { component.save_config(&config_fields).await },
-        );
 
-        cx.spawn(async move |config, cx| {
-            let result = validate_task.await.unwrap();
-            let _ = config.update(cx, |config, cx| {
+        cx.spawn_and_update_tokio(
+            async move { component.save_config(&fields).await },
+            |config, result, cx| {
                 config.error = result.err().map(|e| e.to_string().into());
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+        );
     }
 
     fn on_login(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
         if self.authenticating {
             return;
         }
-        self.authenticating = true;
         if let Some(login_flow) = self.login_flow.clone() {
+            self.authenticating = true;
             let component = self.component.clone();
-            let task = Tokio::spawn(cx, async move {
-                let result =
-                    unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
-                match result {
-                    Ok((url, body)) => component.login(url, body).await,
-                    Err(WebviewError::UserCancelled) => {
-                        Err("Authentication cancelled by user".into())
-                    }
-                    Err(WebviewError::Internal(e)) => Err(e.into()),
-                }
-            });
 
-            cx.spawn(async move |config, cx| {
-                let result = task.await.unwrap();
-                let _ = config.update(cx, |config, cx| {
+            cx.spawn_and_update_tokio(
+                async move {
+                    let result =
+                        unblock(move || open_auth_webview(&login_flow.url, &login_flow.target))
+                            .await;
+                    match result {
+                        Ok((url, body)) => component.login(url, body).await,
+                        Err(WebviewError::UserCancelled) => Err("Login cancelled by user".into()),
+                        Err(WebviewError::Internal(e)) => Err(e.into()),
+                    }
+                },
+                |config, result, cx| {
                     config.authenticating = false;
                     config.error = result.err().map(|e| e.to_string().into());
                     cx.notify();
-                });
-            })
-            .detach();
+                },
+            );
         }
         cx.notify();
     }
@@ -193,30 +155,28 @@ impl Config {
         }
         self.authenticating = true;
         let component = self.component.clone();
-        let task = cx.background_spawn(async move {
-            let logout_flow = component.get_logout_flow().await?;
-            let result = if let Some(logout_flow) = logout_flow {
-                unblock(move || open_auth_webview(&logout_flow.url, &logout_flow.target)).await
-            } else {
-                Ok(("".to_string(), "".to_string()))
-            };
 
-            match result {
-                Ok((url, body)) => component.logout(url, body).await,
-                Err(WebviewError::UserCancelled) => Err("Logout cancelled by user".into()),
-                Err(WebviewError::Internal(e)) => Err(e.into()),
-            }
-        });
+        cx.spawn_and_update_tokio(
+            async move {
+                let logout_flow = component.get_logout_flow().await?;
+                let result = if let Some(logout_flow) = logout_flow {
+                    unblock(move || open_auth_webview(&logout_flow.url, &logout_flow.target)).await
+                } else {
+                    Ok(("".to_string(), "".to_string()))
+                };
 
-        cx.spawn(async move |config, cx| {
-            let result = task.await;
-            let _ = config.update(cx, |config, cx| {
+                match result {
+                    Ok((url, body)) => component.logout(url, body).await,
+                    Err(WebviewError::UserCancelled) => Err("Logout cancelled by user".into()),
+                    Err(WebviewError::Internal(e)) => Err(e.into()),
+                }
+            },
+            |config, result, cx| {
                 config.authenticating = false;
                 config.error = result.err().map(|e| e.to_string().into());
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+        );
 
         cx.notify();
     }
@@ -356,5 +316,30 @@ impl Render for Config {
                     })
                     .children(sections),
             )
+    }
+}
+
+impl From<&ConfigSection> for Section {
+    fn from(section: &ConfigSection) -> Self {
+        Section {
+            name: section.name.to_string().into(),
+            fields: section.fields.iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<&ConfigField> for Field {
+    fn from(field: &ConfigField) -> Self {
+        match field {
+            ConfigField::Text {
+                id,
+                label,
+                placeholder,
+            } => Field {
+                id: id.into(),
+                label: label.into(),
+                placeholder: placeholder.clone().map(Into::into),
+            },
+        }
     }
 }
