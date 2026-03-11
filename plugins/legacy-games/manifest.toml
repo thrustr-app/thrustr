@@ -10,9 +10,11 @@ type = "text"
 id = "username"
 label = "Username"
 placeholder = "johndoe"
+required = true
 
 [[auth.field]]
 type = "text"
 id = "password"
 label = "Password"
 placeholder = "1234"
+required = true

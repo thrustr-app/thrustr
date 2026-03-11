@@ -21,6 +21,7 @@ struct Field {
     id: SharedString,
     label: SharedString,
     placeholder: Option<SharedString>,
+    required: bool,
 }
 
 struct Section {
@@ -174,6 +175,17 @@ impl Config {
 
         window.open_dialog(cx, move |dialog, _, _| {
             let login_form = login_form.clone();
+            let required_ids: Vec<SharedString> = login_form
+                .fields
+                .iter()
+                .filter_map(|f| match f {
+                    ConfigField::Text {
+                        id, required: true, ..
+                    } => Some(id.into()),
+                    _ => None,
+                })
+                .collect();
+
             let form_values = form_values.clone();
             let component = component.clone();
             let entity = entity.clone();
@@ -183,6 +195,7 @@ impl Config {
                     id,
                     label,
                     placeholder,
+                    ..
                 } => {
                     let id: SharedString = id.into();
                     let label: SharedString = label.into();
@@ -207,10 +220,20 @@ impl Config {
             });
 
             let form_values_for_ok = form_values.clone();
+            let form_values_for_disabled = form_values.clone();
             let entity_for_cancel = entity.clone();
             dialog
                 .title("Log In")
                 .ok_text("Log In")
+                .when(
+                    {
+                        let values = form_values_for_disabled.borrow();
+                        required_ids
+                            .iter()
+                            .any(|id| values.get(id).map_or(true, |v| v.is_empty()))
+                    },
+                    |dialog| dialog.disabled(),
+                )
                 .on_ok(move |_, _, cx| {
                     let fields = form_values_for_ok
                         .borrow()
@@ -260,12 +283,12 @@ impl Config {
             async move {
                 if let Some(flow) = component.get_logout_flow().await? {
                     match unblock(move || open_auth_webview(&flow.url, &flow.target)).await {
-                        Ok(_) => component.logout().await?,
+                        Ok(_) => {}
                         Err(WebviewError::UserCancelled) => return Ok(()),
                         Err(WebviewError::Internal(e)) => return Err(e),
                     }
                 }
-                Ok(())
+                component.logout().await
             },
             |this, result, cx| {
                 this.authenticating = false;
@@ -431,10 +454,12 @@ impl From<&ConfigField> for Field {
                 id,
                 label,
                 placeholder,
+                required,
             } => Field {
                 id: id.into(),
                 label: label.into(),
                 placeholder: placeholder.clone().map(Into::into),
+                required: *required,
             },
         }
     }

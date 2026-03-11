@@ -29,6 +29,7 @@ pub struct Dialog {
     ok_text: SharedString,
     overlay: bool,
     overlay_closable: bool,
+    disabled: bool,
     pub(crate) focus_handle: FocusHandle,
     pub(crate) layer_ix: usize,
     pub(crate) overlay_visible: bool,
@@ -45,6 +46,7 @@ impl Dialog {
             ok_text: "Ok".into(),
             overlay: true,
             overlay_closable: true,
+            disabled: false,
             focus_handle: cx.focus_handle(),
             layer_ix: 0,
             overlay_visible: false,
@@ -90,6 +92,11 @@ impl Dialog {
 
     pub fn ok_text(mut self, text: impl Into<SharedString>) -> Self {
         self.ok_text = text.into();
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.disabled = true;
         self
     }
 
@@ -182,6 +189,7 @@ impl RenderOnce for Dialog {
                                         .max_w(rems(10.))
                                         .variant_accent()
                                         .child(self.ok_text)
+                                        .when(self.disabled, Button::disabled)
                                         .on_click({
                                             move |event, window, cx| {
                                                 on_ok_handler(event, window, cx);

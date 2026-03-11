@@ -7,6 +7,8 @@ pub enum Field {
         id: String,
         label: String,
         placeholder: Option<String>,
+        #[serde(default)]
+        required: bool,
     },
 }
 

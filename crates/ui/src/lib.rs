@@ -1,9 +1,8 @@
-use std::rc::Rc;
-
 use gpui::{
     AnyView, App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyBinding, ParentElement, Render, Styled, Window, actions, div,
 };
+use std::rc::Rc;
 
 mod components;
 mod traits;
