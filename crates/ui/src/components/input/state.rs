@@ -191,7 +191,7 @@ impl InputState {
         // TODO - for some reason cx.notify() doesn't trigger a re-render here
         cx.spawn(async |this, cx| {
             if let Some(this) = this.upgrade() {
-                this.update(cx, |_, cx| cx.notify()).ok();
+                this.update(cx, |_, cx| cx.notify())
             }
         })
         .detach();

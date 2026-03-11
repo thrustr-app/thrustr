@@ -19,6 +19,7 @@ ui.workspace = true
 # External
 anyhow.workspace = true
 gpui.workspace = true
+gpui_platform.workspace = true
 serde_json.workspace = true
 smallvec = "1"
 smol.workspace = true

@@ -160,7 +160,7 @@ impl RenderOnce for Input {
             .use_keyed_state(self.id.clone(), cx, |window, cx| {
                 let state = cx.new(|cx| InputState::new(window, cx));
                 if self.auto_focus {
-                    state.focus_handle(cx).focus(window);
+                    state.focus_handle(cx).focus(window, cx);
                 }
                 state
             })
@@ -253,8 +253,8 @@ impl RenderOnce for Input {
                 container.child(
                     div()
                         .id(self.id)
-                        .on_click(move |_, window, _| {
-                            focus_handle.focus(window);
+                        .on_click(move |_, window, cx| {
+                            focus_handle.focus(window, cx);
                         })
                         .child(label)
                         .mb(rems(0.5))

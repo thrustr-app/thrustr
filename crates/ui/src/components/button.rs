@@ -104,10 +104,10 @@ impl WithVariant for Button {
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let mut focus_handle = window
-            .use_keyed_state(self.id.clone(), cx, |window, app| {
-                let focus_handle = app.focus_handle();
+            .use_keyed_state(self.id.clone(), cx, |window, cx| {
+                let focus_handle = cx.focus_handle();
                 if self.auto_focus {
-                    focus_handle.focus(window);
+                    focus_handle.focus(window, cx);
                 }
                 focus_handle
             })

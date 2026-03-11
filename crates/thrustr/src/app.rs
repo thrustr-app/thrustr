@@ -5,7 +5,6 @@ use crate::{
     globals::PluginManagerExt,
 };
 use config::paths;
-use gpui::prelude::FluentBuilder;
 use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 use gpui_tokio::Tokio;
 use theme_manager::ThemeExt;
@@ -79,8 +78,6 @@ impl Render for App {
                         .child(self.active_view.clone()),
                 ),
             )
-            .when_some(UiProvider::render_dialogs(window, cx), |div, layer| {
-                div.child(layer)
-            })
+            .children(UiProvider::render_dialogs(window, cx))
     }
 }

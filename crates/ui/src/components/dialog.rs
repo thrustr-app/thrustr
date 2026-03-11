@@ -36,7 +36,7 @@ pub struct Dialog {
 }
 
 impl Dialog {
-    pub fn new(_window: &mut Window, cx: &mut App) -> Self {
+    pub fn new(cx: &mut App) -> Self {
         Self {
             header: None,
             content: div().flex().flex_col(),
@@ -117,12 +117,13 @@ impl RenderOnce for Dialog {
         let on_ok_handler = self.on_ok_handler.clone();
 
         let viewport = window.viewport_size();
-        let theme = cx.theme();
 
         if !self.focus_handle.contains_focused(window, cx) {
-            self.focus_handle.focus(window);
-            window.focus_next();
+            self.focus_handle.focus(window, cx);
+            window.focus_next(cx);
         }
+
+        let theme = cx.theme();
 
         anchored().child(
             div()
@@ -175,7 +176,7 @@ impl RenderOnce for Dialog {
                                 window.close_dialog(cx);
                             }
                         })
-                        .when_some(self.header, |card, header| card.child(header))
+                        .children(self.header)
                         .child(self.content)
                         .child(
                             div()

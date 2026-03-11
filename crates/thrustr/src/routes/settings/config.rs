@@ -21,7 +21,6 @@ struct Field {
     id: SharedString,
     label: SharedString,
     placeholder: Option<SharedString>,
-    required: bool,
 }
 
 struct Section {
@@ -454,12 +453,11 @@ impl From<&ConfigField> for Field {
                 id,
                 label,
                 placeholder,
-                required,
+                ..
             } => Field {
                 id: id.into(),
                 label: label.into(),
                 placeholder: placeholder.clone().map(Into::into),
-                required: *required,
             },
         }
     }

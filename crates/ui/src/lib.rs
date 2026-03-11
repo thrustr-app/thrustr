@@ -12,7 +12,6 @@ pub use traits::*;
 
 actions!(global, [Tab, TabPrev]);
 
-#[allow(clippy::type_complexity)]
 #[derive(Clone)]
 pub(crate) struct ActiveDialog {
     focus_handle: FocusHandle,
@@ -60,9 +59,9 @@ impl UiProvider {
             .read(cx)
     }
 
-    fn focus_back(&mut self, window: &mut Window, _: &mut App) {
+    fn focus_back(&mut self, window: &mut Window, cx: &mut App) {
         if let Some(handle) = self.previous_focus_handle.clone() {
-            window.focus(&handle);
+            window.focus(&handle, cx);
         }
     }
 
@@ -81,7 +80,7 @@ impl UiProvider {
             .iter()
             .enumerate()
             .map(|(i, active_dialog)| {
-                let mut dialog = Dialog::new(window, cx);
+                let mut dialog = Dialog::new(cx);
 
                 dialog = (active_dialog.builder)(dialog, window, cx);
                 dialog.focus_handle = active_dialog.focus_handle.clone();
@@ -104,12 +103,12 @@ impl UiProvider {
         Some(div().children(dialogs))
     }
 
-    fn on_tab(&mut self, _: &Tab, window: &mut Window, _: &mut Context<Self>) {
-        window.focus_next();
+    fn on_tab(&mut self, _: &Tab, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus_next(cx);
     }
 
-    fn on_tab_prev(&mut self, _: &TabPrev, window: &mut Window, _: &mut Context<Self>) {
-        window.focus_prev();
+    fn on_tab_prev(&mut self, _: &TabPrev, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus_prev(cx);
     }
 }
 
@@ -150,7 +149,7 @@ impl PortalContext for Window {
             }
 
             let focus_handle = cx.focus_handle();
-            focus_handle.focus(window);
+            focus_handle.focus(window, cx);
 
             root.active_dialogs.push(ActiveDialog {
                 focus_handle,
@@ -165,7 +164,7 @@ impl PortalContext for Window {
             root.active_dialogs.pop();
 
             if let Some(top_dialog) = root.active_dialogs.last() {
-                top_dialog.focus_handle.focus(window);
+                top_dialog.focus_handle.focus(window, cx);
             } else {
                 root.focus_back(window, cx);
             }

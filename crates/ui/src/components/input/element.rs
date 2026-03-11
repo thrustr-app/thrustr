@@ -132,7 +132,7 @@ impl Element for TextElement {
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
-        app: &mut App,
+        cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let style = Style {
             size: Size {
@@ -141,7 +141,7 @@ impl Element for TextElement {
             },
             ..Style::default()
         };
-        (window.request_layout(style, [], app), ())
+        (window.request_layout(style, [], cx), ())
     }
     fn prepaint(
         &mut self,
@@ -150,9 +150,9 @@ impl Element for TextElement {
         bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
         window: &mut Window,
-        app: &mut App,
+        cx: &mut App,
     ) -> Self::PrepaintState {
-        let state = self.state.read(app);
+        let state = self.state.read(cx);
         let style = window.text_style();
 
         let (display_text, text_color) = self.prepare_display_text(&state, style.color);
@@ -179,12 +179,12 @@ impl Element for TextElement {
             .shape_line(display_text, font_size, &runs, None);
 
         if state.should_auto_scroll {
-            self.state.update(app, |state, _| {
+            self.state.update(cx, |state, _| {
                 state.auto_scroll_to_cursor(&line, bounds);
             });
         }
 
-        let state = self.state.read(app);
+        let state = self.state.read(cx);
         let scroll_offset = state.scroll_handle.offset();
         let cursor_pos = line.x_for_index(state.display_cursor_offset());
 
@@ -235,14 +235,14 @@ impl Element for TextElement {
         _request_layout: &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
         window: &mut Window,
-        app: &mut App,
+        cx: &mut App,
     ) {
-        let state = self.state.read(app);
+        let state = self.state.read(cx);
         let focus_handle = state.focus_handle.clone();
         window.handle_input(
             &focus_handle,
             ElementInputHandler::new(bounds, self.state.clone()),
-            app,
+            cx,
         );
 
         if let Some(selection) = prepaint.selection.take() {
@@ -253,16 +253,23 @@ impl Element for TextElement {
         let scroll_offset = state.scroll_handle.offset();
         let text_origin = point(bounds.origin.x - scroll_offset.x, bounds.origin.y);
 
-        line.paint(text_origin, window.line_height(), window, app)
-            .unwrap();
+        line.paint(
+            text_origin,
+            window.line_height(),
+            TextAlign::Left,
+            None,
+            window,
+            cx,
+        )
+        .unwrap();
 
-        if focus_handle.is_focused(window) && self.state.read(app).cursor_visible(window, app) {
+        if focus_handle.is_focused(window) && self.state.read(cx).cursor_visible(window, cx) {
             if let Some(cursor) = prepaint.cursor.take() {
                 window.paint_quad(cursor);
             }
         }
 
-        self.state.update(app, |state, _cx| {
+        self.state.update(cx, |state, _cx| {
             state.last_layout = Some(line);
             state.last_bounds = Some(bounds);
         });

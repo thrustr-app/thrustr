@@ -2,7 +2,7 @@
  * https://github.com/longbridge/gpui-component/blob/main/crates/ui/src/input/blink_cursor.rs
  */
 
-use gpui::{Context, Timer};
+use gpui::Context;
 use std::time::Duration;
 
 static INTERVAL: Duration = Duration::from_millis(500);
@@ -53,9 +53,9 @@ impl Cursor {
 
         let epoch = self.next_epoch();
         cx.spawn(async move |this, cx| {
-            Timer::after(INTERVAL).await;
+            cx.background_executor().timer(INTERVAL).await;
             if let Some(this) = this.upgrade() {
-                this.update(cx, |this, cx| this.blink(epoch, cx)).ok();
+                this.update(cx, |this, cx| this.blink(epoch, cx));
             }
         })
         .detach();
@@ -75,7 +75,7 @@ impl Cursor {
         let resume_epoch = self.next_epoch();
 
         cx.spawn(async move |this, cx| {
-            Timer::after(PAUSE_DELAY).await;
+            cx.background_executor().timer(PAUSE_DELAY).await;
 
             if let Some(this) = this.upgrade() {
                 this.update(cx, |this, cx| {
@@ -83,8 +83,7 @@ impl Cursor {
                         this.paused = false;
                         this.blink(resume_epoch, cx);
                     }
-                })
-                .ok();
+                });
             }
         })
         .detach();
