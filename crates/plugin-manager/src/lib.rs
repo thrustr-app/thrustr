@@ -42,7 +42,6 @@ impl PluginManager {
         component_manager: Arc<ComponentManager>,
     ) -> Self {
         let mut config = Config::new();
-        config.async_support(true);
 
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
