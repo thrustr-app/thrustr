@@ -5,9 +5,11 @@ use crate::{
     globals::PluginManagerExt,
 };
 use config::paths;
+use gpui::prelude::FluentBuilder;
 use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 use gpui_tokio::Tokio;
 use theme_manager::ThemeExt;
+use ui::UiProvider;
 
 pub struct App {
     current_page: Page,
@@ -62,18 +64,23 @@ impl App {
 }
 
 impl Render for App {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-
-        div().size_full().bg(theme.colors.background).child(
-            div().flex().size_full().child(Sidebar::new()).child(
-                div()
-                    .flex_grow()
-                    .flex()
-                    .flex_col()
-                    .child(Topbar::new(self.current_page.label()))
-                    .child(self.active_view.clone()),
-            ),
-        )
+        div()
+            .size_full()
+            .bg(theme.colors.background)
+            .child(
+                div().flex().size_full().child(Sidebar::new()).child(
+                    div()
+                        .flex_grow()
+                        .flex()
+                        .flex_col()
+                        .child(Topbar::new(self.current_page.label()))
+                        .child(self.active_view.clone()),
+                ),
+            )
+            .when_some(UiProvider::render_dialogs(window, cx), |div, layer| {
+                div.child(layer)
+            })
     }
 }

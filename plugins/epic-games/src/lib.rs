@@ -51,13 +51,17 @@ impl Plugin for EpicGames {
         }))
     }
 
-    fn login(url: String, body: String) -> Result<(), PluginError> {
+    fn login(
+        url: Option<String>,
+        body: Option<String>,
+        fields: Option<Vec<(String, String)>>,
+    ) -> Result<(), PluginError> {
         println!("got url: {:?}", url);
         println!("got body: {:?}", body);
         Ok(())
     }
 
-    fn logout(url: String, body: String) -> Result<(), PluginError> {
+    fn logout() -> Result<(), PluginError> {
         // delete tokens and such.
         Ok(())
     }

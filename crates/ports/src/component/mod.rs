@@ -1,6 +1,7 @@
 use crate::capabilities::Storefront;
 use async_trait::async_trait;
 use semver::Version;
+use serde::Deserialize;
 use std::{fmt, sync::Arc};
 
 mod config;
@@ -157,6 +158,18 @@ pub struct Metadata {
     pub authors: Vec<String>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct LoginForm {
+    #[serde(rename = "field")]
+    pub fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone)]
+pub enum LoginMethod {
+    Flow(AuthFlow),
+    Form(LoginForm),
+}
+
 #[derive(Debug, Clone)]
 pub struct AuthFlow {
     pub url: String,
@@ -180,9 +193,14 @@ pub trait Component: Send + Sync {
     }
 
     async fn init(&self) -> Result<(), Error>;
-    async fn get_login_flow(&self) -> Result<Option<AuthFlow>, Error>;
+    async fn get_login_method(&self) -> Result<Option<LoginMethod>, Error>;
     async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
-    async fn login(&self, url: String, body: String) -> Result<(), Error>;
-    async fn logout(&self, url: String, body: String) -> Result<(), Error>;
+    async fn login(
+        &self,
+        url: Option<String>,
+        body: Option<String>,
+        fields: Option<Vec<(String, String)>>,
+    ) -> Result<(), Error>;
+    async fn logout(&self) -> Result<(), Error>;
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), Error>;
 }

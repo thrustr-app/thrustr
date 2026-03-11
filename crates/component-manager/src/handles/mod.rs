@@ -1,6 +1,6 @@
 use ports::{
     capabilities::Storefront,
-    component::{AuthFlow, Component, Config, Metadata, Status},
+    component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status},
     storage::ComponentStorage,
 };
 use std::sync::Arc;
@@ -53,12 +53,17 @@ impl ComponentHandle {
         result.map_err(|e| e.to_string())
     }
 
-    pub async fn login(&self, url: String, body: String) -> Result<(), String> {
+    pub async fn login(
+        &self,
+        url: Option<String>,
+        body: Option<String>,
+        fields: Option<Vec<(String, String)>>,
+    ) -> Result<(), String> {
         if !self.component.status().can_login() {
             return Err("Cannot login from current state".into());
         }
         let prior = self.component.status();
-        let result = self.component.login(url, body).await;
+        let result = self.component.login(url, body, fields).await;
         if result.is_ok() {
             self.set_status(match prior {
                 Status::Unauthenticated => Status::Active,
@@ -71,20 +76,20 @@ impl ComponentHandle {
         result.map_err(|e| e.to_string())
     }
 
-    pub async fn logout(&self, url: String, body: String) -> Result<(), String> {
+    pub async fn logout(&self) -> Result<(), String> {
         if !self.component.status().can_logout() {
             return Err("Cannot logout from current state".into());
         }
-        let result = self.component.logout(url, body).await;
+        let result = self.component.logout().await;
         if result.is_ok() {
             self.set_status(Status::Unauthenticated);
         }
         result.map_err(|e| e.to_string())
     }
 
-    pub async fn get_login_flow(&self) -> Result<Option<AuthFlow>, String> {
+    pub async fn get_login_method(&self) -> Result<Option<LoginMethod>, String> {
         self.component
-            .get_login_flow()
+            .get_login_method()
             .await
             .map_err(|e| e.to_string())
     }

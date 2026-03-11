@@ -16,7 +16,7 @@ mod state;
 mod tests;
 mod text_ops;
 
-pub(crate) use actions::init;
+pub(super) use actions::init;
 pub use events::*;
 use theme_manager::ThemeExt;
 
@@ -47,6 +47,7 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         max_length: None,
         tab_index: 0,
         tab_stop: true,
+        auto_focus: false,
     }
 }
 
@@ -68,6 +69,7 @@ pub struct Input {
     max_length: Option<usize>,
     tab_index: isize,
     tab_stop: bool,
+    auto_focus: bool,
 }
 
 impl Input {
@@ -102,8 +104,8 @@ impl Input {
         self
     }
 
-    pub fn masked(mut self, masked: bool) -> Self {
-        self.masked = masked;
+    pub fn masked(mut self) -> Self {
+        self.masked = true;
         self
     }
 
@@ -131,6 +133,11 @@ impl Input {
         self.disabled = true;
         self
     }
+
+    pub fn auto_focus(mut self) -> Self {
+        self.auto_focus = true;
+        self
+    }
 }
 
 impl Styled for Input {
@@ -151,7 +158,11 @@ impl RenderOnce for Input {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = window
             .use_keyed_state(self.id.clone(), cx, |window, cx| {
-                cx.new(|cx| InputState::new(window, cx))
+                let state = cx.new(|cx| InputState::new(window, cx));
+                if self.auto_focus {
+                    state.focus_handle(cx).focus(window);
+                }
+                state
             })
             .read(cx)
             .clone();
@@ -242,7 +253,9 @@ impl RenderOnce for Input {
                 container.child(
                     div()
                         .id(self.id)
-                        .track_focus(&focus_handle)
+                        .on_click(move |_, window, _| {
+                            focus_handle.focus(window);
+                        })
                         .child(label)
                         .mb(rems(0.5))
                         .text_color(theme.colors.card_primary),

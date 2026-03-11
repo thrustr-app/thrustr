@@ -1,4 +1,4 @@
-use ports::component::Config;
+use ports::component::{Config, LoginForm};
 use semver::Version;
 use serde::Deserialize;
 
@@ -15,5 +15,6 @@ pub struct PluginInfo {
 #[derive(Deserialize, Debug)]
 pub struct PluginManifest {
     pub plugin: PluginInfo,
+    pub auth: Option<LoginForm>,
     pub config: Option<Config>,
 }

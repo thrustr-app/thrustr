@@ -14,6 +14,7 @@ accent = "#8BF0FE"
 border = "#323232"
 error = "#CD3F3F"
 warning = "#FDF85F"
+overlay = "#00000066"
 
 sidebar_background = "#0A0A0A"
 sidebar_primary = "#FFFFFF"

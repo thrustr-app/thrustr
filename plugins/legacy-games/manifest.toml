@@ -4,3 +4,15 @@ name = "Legacy Games"
 version = "0.0.1"
 authors = ["Jorge Pardo"]
 description = "Plugin to interact with Legacy Games."
+
+[[auth.field]]
+type = "text"
+id = "username"
+label = "Username"
+placeholder = "johndoe"
+
+[[auth.field]]
+type = "text"
+id = "password"
+label = "Password"
+placeholder = "1234"

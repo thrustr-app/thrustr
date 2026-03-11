@@ -75,7 +75,6 @@ impl RenderOnce for Card {
             .flex()
             .gap(rems(1.5))
             .flex_col()
-            .mt_0()
             .text_color(theme.colors.card_primary)
             .when_some(self.header, |card, header| card.child(header))
             .when_some(self.on_click, |card, on_click| {

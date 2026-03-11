@@ -15,11 +15,16 @@ impl Plugin for LegacyGames {
         Ok(None)
     }
 
-    fn login(_url: String, _body: String) -> Result<(), PluginError> {
+    fn login(
+        _url: Option<String>,
+        _body: Option<String>,
+        fields: Option<Vec<(String, String)>>,
+    ) -> Result<(), PluginError> {
+        println!("{:?}", fields);
         Ok(())
     }
 
-    fn logout(_url: String, _body: String) -> Result<(), PluginError> {
+    fn logout() -> Result<(), PluginError> {
         Ok(())
     }
 

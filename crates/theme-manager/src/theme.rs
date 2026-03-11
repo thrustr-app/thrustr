@@ -10,6 +10,7 @@ define_theme_colors!(
     border,
     error,
     warning,
+    overlay,
     sidebar_background,
     sidebar_primary,
     sidebar_secondary,

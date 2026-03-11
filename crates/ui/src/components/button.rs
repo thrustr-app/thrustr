@@ -181,7 +181,7 @@ impl RenderOnce for Button {
                 button = button
                     .bg(theme.colors.primary)
                     .text_color(theme.colors.background)
-                    .focus(|input| input.border_color(theme.colors.primary))
+                    .focus(|input| input.border_color(theme.colors.accent))
             }
             Variant::Accent => {
                 button = button

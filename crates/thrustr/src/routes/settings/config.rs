@@ -10,11 +10,12 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window, div,
     img, prelude::FluentBuilder, rems, svg,
 };
-use ports::component::{AuthFlow, Field as ConfigField, Section as ConfigSection, Status};
+use gpui_tokio::Tokio;
+use ports::component::{Field as ConfigField, LoginMethod, Section as ConfigSection, Status};
 use smol::unblock;
-use std::{collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use theme_manager::ThemeExt;
-use ui::{Alert, Button, Card, InputEvent, Label, WithSize, WithVariant, input};
+use ui::{Alert, Button, Card, InputEvent, Label, PortalContext, WithSize, WithVariant, input};
 
 struct Field {
     id: SharedString,
@@ -34,7 +35,7 @@ pub struct Config {
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
     error: Option<SharedString>,
-    login_flow: Option<AuthFlow>,
+    login_method: Option<LoginMethod>,
     authenticating: bool,
     status: Status,
     _tasks: Vec<Task<()>>,
@@ -57,9 +58,10 @@ impl Config {
             .map(|c| c.sections.iter().map(Into::into).collect())
             .unwrap_or_default();
 
-        let error = match component.status() {
-            Status::InitError(e) | Status::Error(e) => Some(e.to_string().into()),
-            _ => None,
+        let error = if let Status::InitError(e) | Status::Error(e) = component.status() {
+            Some(e.to_string().into())
+        } else {
+            None
         };
 
         let _tasks = vec![cx.listen("component", Self::refresh_status)];
@@ -72,12 +74,12 @@ impl Config {
             sections,
             values,
             error,
-            login_flow: None,
+            login_method: None,
             authenticating: false,
             _tasks,
         };
 
-        page.get_login_flow(cx);
+        page.get_login_method(cx);
         page
     }
 
@@ -86,28 +88,29 @@ impl Config {
         cx.notify();
     }
 
-    fn get_login_flow(&mut self, cx: &mut Context<Self>) {
+    fn get_login_method(&mut self, cx: &mut Context<Self>) {
         let component = self.component.clone();
         cx.spawn_and_update_tokio(
-            async move { component.get_login_flow().await },
+            async move { component.get_login_method().await },
             |config, result, cx| {
-                config.login_flow = result.unwrap();
+                config.login_method = match result {
+                    Ok(method) => method,
+                    Err(err) => {
+                        config.error = Some(err.into());
+                        None
+                    }
+                };
                 cx.notify();
             },
         );
     }
 
-    fn on_input(&mut self, id: SharedString, value: SharedString) {
-        self.values.insert(id.clone(), value.clone());
-    }
-
     fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let fields = Arc::new(
-            self.values
-                .iter()
-                .map(|(id, value)| (id.to_string(), value.to_string()))
-                .collect::<Vec<_>>(),
-        );
+        let fields = self
+            .values
+            .iter()
+            .map(|(id, value)| (id.to_string(), value.to_string()))
+            .collect::<Vec<_>>();
 
         let component = self.component.clone();
 
@@ -120,55 +123,36 @@ impl Config {
         );
     }
 
-    fn on_login(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_login(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.authenticating {
             return;
         }
-        if let Some(login_flow) = self.login_flow.clone() {
-            self.authenticating = true;
-            let component = self.component.clone();
+        let Some(login_method) = self.login_method.as_ref() else {
+            return;
+        };
 
-            cx.spawn_and_update_tokio(
-                async move {
-                    let result =
-                        unblock(move || open_auth_webview(&login_flow.url, &login_flow.target))
-                            .await;
-                    match result {
-                        Ok((url, body)) => component.login(url, body).await,
-                        Err(WebviewError::UserCancelled) => Err("Login cancelled by user".into()),
-                        Err(WebviewError::Internal(e)) => Err(e.into()),
-                    }
-                },
-                |config, result, cx| {
-                    config.authenticating = false;
-                    config.error = result.err().map(|e| e.to_string().into());
-                    cx.notify();
-                },
-            );
+        self.authenticating = true;
+        match login_method {
+            LoginMethod::Flow(_) => self.handle_login_flow(cx),
+            LoginMethod::Form(_) => self.handle_login_form(window, cx),
         }
         cx.notify();
     }
 
-    fn on_logout(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.authenticating {
+    fn handle_login_flow(&mut self, cx: &mut Context<Self>) {
+        let Some(LoginMethod::Flow(login_flow)) = self.login_method.clone() else {
             return;
-        }
-        self.authenticating = true;
+        };
         let component = self.component.clone();
 
         cx.spawn_and_update_tokio(
             async move {
-                let logout_flow = component.get_logout_flow().await?;
-                let result = if let Some(logout_flow) = logout_flow {
-                    unblock(move || open_auth_webview(&logout_flow.url, &logout_flow.target)).await
-                } else {
-                    Ok(("".to_string(), "".to_string()))
-                };
-
+                let result =
+                    unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
                 match result {
-                    Ok((url, body)) => component.logout(url, body).await,
-                    Err(WebviewError::UserCancelled) => Err("Logout cancelled by user".into()),
-                    Err(WebviewError::Internal(e)) => Err(e.into()),
+                    Ok((url, body)) => component.login(Some(url), Some(body), None).await,
+                    Err(WebviewError::UserCancelled) => Ok(()),
+                    Err(WebviewError::Internal(e)) => Err(e),
                 }
             },
             |config, result, cx| {
@@ -177,15 +161,210 @@ impl Config {
                 cx.notify();
             },
         );
+    }
 
+    fn handle_login_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(LoginMethod::Form(login_form)) = self.login_method.clone() else {
+            return;
+        };
+
+        let component = self.component.clone();
+        let entity = cx.entity().downgrade();
+        let form_values = Rc::new(RefCell::new(HashMap::<SharedString, SharedString>::new()));
+
+        window.open_dialog(cx, move |dialog, _, _| {
+            let login_form = login_form.clone();
+            let form_values = form_values.clone();
+            let component = component.clone();
+            let entity = entity.clone();
+
+            let fields = login_form.fields.into_iter().map(|f| match f {
+                ConfigField::Text {
+                    id,
+                    label,
+                    placeholder,
+                } => {
+                    let id: SharedString = id.into();
+                    let label: SharedString = label.into();
+                    let placeholder: Option<SharedString> = placeholder.map(Into::into);
+                    let form_values = form_values.clone();
+                    let id_clone = id.clone();
+                    let current_value = form_values.borrow().get(&id).cloned().unwrap_or_default();
+
+                    input(id)
+                        .label(label)
+                        .w(rems(20.))
+                        .when_some(placeholder, |input, placeholder| {
+                            input.placeholder(placeholder)
+                        })
+                        .value(current_value)
+                        .on_input(move |event: &InputEvent, _, _| {
+                            form_values
+                                .borrow_mut()
+                                .insert(id_clone.clone(), event.value.clone());
+                        })
+                }
+            });
+
+            let form_values_for_ok = form_values.clone();
+            let entity_for_cancel = entity.clone();
+            dialog
+                .title("Log In")
+                .ok_text("Log In")
+                .on_ok(move |_, _, cx| {
+                    let fields = form_values_for_ok
+                        .borrow()
+                        .iter()
+                        .map(|(id, value)| (id.to_string(), value.to_string()))
+                        .collect::<Vec<_>>();
+                    let component = component.clone();
+
+                    let task = Tokio::spawn(cx, async move {
+                        component.login(None, None, Some(fields)).await
+                    });
+
+                    let entity = entity.clone();
+
+                    cx.spawn(async move |cx| {
+                        let result = task.await;
+                        if let Some(entity) = entity.upgrade() {
+                            let _ = entity.update(cx, |config, cx| {
+                                config.authenticating = false;
+                                config.error = result.err().map(|e| e.to_string().into());
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .detach();
+                })
+                .on_cancel(move |_, _, cx| {
+                    if let Some(entity) = entity_for_cancel.upgrade() {
+                        let _ = entity.update(cx, |config, cx| {
+                            config.authenticating = false;
+                            cx.notify();
+                        });
+                    }
+                })
+                .child(div().flex().flex_col().gap(rems(1.5)).children(fields))
+        });
+    }
+
+    fn on_logout(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.authenticating {
+            return;
+        }
+        self.authenticating = true;
+
+        let component = self.component.clone();
+        cx.spawn_and_update_tokio(
+            async move {
+                if let Some(flow) = component.get_logout_flow().await? {
+                    match unblock(move || open_auth_webview(&flow.url, &flow.target)).await {
+                        Ok(_) => component.logout().await?,
+                        Err(WebviewError::UserCancelled) => return Ok(()),
+                        Err(WebviewError::Internal(e)) => return Err(e),
+                    }
+                }
+                Ok(())
+            },
+            |this, result, cx| {
+                this.authenticating = false;
+                this.error = result.err().map(|e| e.to_string().into());
+                cx.notify();
+            },
+        );
         cx.notify();
     }
-}
 
-impl Render for Config {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let has_login = self.login_method.is_some();
 
+        let status_label = match self.status {
+            Status::Initializing => Label::new("INITIALIZING").variant_warning(),
+            Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
+            Status::Active => Label::new("ACTIVE").variant_accent(),
+            Status::Inactive => Label::new("INACTIVE"),
+            Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_destructive(),
+        };
+
+        div()
+            .flex()
+            .justify_between()
+            .items_center()
+            .child(
+                div()
+                    .flex()
+                    .gap(rems(1.5))
+                    .items_center()
+                    .text_color(theme.colors.primary)
+                    .child(
+                        Button::new("back-button")
+                            .variant_ghost()
+                            .child(
+                                svg()
+                                    .path("icons/arrow-left.svg")
+                                    .size_full()
+                                    .text_color(theme.colors.primary),
+                            )
+                            .on_click(|_, _, cx| cx.navigate_back()),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(rems(0.5))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_size(rems(1.5))
+                            .when_some(self.icon.clone(), |div, icon| {
+                                div.child(img(ImageSource::Image(icon)).size(rems(2.)))
+                            })
+                            .child(self.name.clone())
+                            .child(status_label),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(rems(1.))
+                    .when(!self.sections.is_empty(), |div| {
+                        div.child(
+                            Button::new("save")
+                                .when(!self.status.can_configure(), |btn| btn.disabled())
+                                .size_lg()
+                                .child("Save")
+                                .w(rems(10.))
+                                .on_click(cx.listener(Self::on_save)),
+                        )
+                    })
+                    .when(has_login && self.status.can_login(), |div| {
+                        div.child(
+                            Button::new("login")
+                                .when(self.authenticating, |btn| btn.loading())
+                                .variant_accent()
+                                .size_lg()
+                                .child("Log In")
+                                .w(rems(10.))
+                                .on_click(cx.listener(Self::on_login)),
+                        )
+                    })
+                    // There must be a login method for a logout flow to exist, but a logout flow might not be required.
+                    .when(has_login && self.status.can_logout(), |div| {
+                        div.child(
+                            Button::new("logout")
+                                .when(self.authenticating, |btn| btn.loading())
+                                .variant_ghost()
+                                .size_lg()
+                                .child("Log Out")
+                                .w(rems(10.))
+                                .on_click(cx.listener(Self::on_logout)),
+                        )
+                    }),
+            )
+    }
+
+    fn render_body(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let sections = self.sections.iter().map(|s| {
             let fields = s.fields.iter().map(|f| {
                 let field_id = f.id.clone();
@@ -198,7 +377,7 @@ impl Render for Config {
                     })
                     .value(self.values.get(f.id.as_str()).cloned().unwrap_or_default())
                     .on_input(cx.listener(move |config, event: &InputEvent, _, _| {
-                        config.on_input(field_id.clone(), event.value.clone());
+                        config.values.insert(field_id.clone(), event.value.clone());
                     }))
             });
 
@@ -208,114 +387,31 @@ impl Render for Config {
                 .child(div().flex().flex_col().gap(rems(1.5)).children(fields))
         });
 
-        let status_label = match self.status {
-            Status::Initializing => Label::new("INITIALIZING").variant_warning(),
-            Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
-            Status::Active => Label::new("ACTIVE").variant_accent(),
-            Status::Inactive => Label::new("INACTIVE"),
-            Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_destructive(),
-        };
+        div()
+            .flex()
+            .flex_col()
+            .flex_grow()
+            .h_0()
+            .gap(rems(1.5))
+            .id("config-form")
+            .overflow_y_scroll()
+            .when_some(self.error.clone(), |div, error| {
+                div.child(Alert::new().title("Error").description(error))
+            })
+            .children(sections)
+    }
+}
 
-        let login_flow_exists = self.login_flow.is_some();
-
+impl Render for Config {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex_grow()
             .pl(rems(1.5))
             .flex()
             .flex_col()
             .gap(rems(2.))
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .child(
-                        div()
-                            .flex()
-                            .gap(rems(1.5))
-                            .items_center()
-                            .text_color(theme.colors.primary)
-                            .child(
-                                Button::new("back-button")
-                                    .variant_ghost()
-                                    .child(
-                                        svg()
-                                            .path("icons/arrow-left.svg")
-                                            .size_full()
-                                            .text_color(theme.colors.primary),
-                                    )
-                                    .on_click(|_, _, cx| {
-                                        cx.navigate_back();
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(rems(0.5))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_size(rems(1.5))
-                                    .when_some(self.icon.clone(), |div, icon| {
-                                        div.child(img(ImageSource::Image(icon)).size(rems(2.)))
-                                    })
-                                    .child(self.name.clone())
-                                    .child(status_label),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(rems(1.))
-                            .when(sections.len() > 0, |div| {
-                                div.child(
-                                    Button::new("save")
-                                        .when(!self.status.can_configure(), |btn| btn.disabled())
-                                        .size_lg()
-                                        .child("Save")
-                                        .w(rems(10.))
-                                        .on_click(cx.listener(Self::on_save)),
-                                )
-                            })
-                            .when(login_flow_exists && self.status.can_login(), |div| {
-                                div.child(
-                                    Button::new("login")
-                                        .when(self.authenticating, |btn| btn.loading())
-                                        .variant_accent()
-                                        .size_lg()
-                                        .child("Log In")
-                                        .w(rems(10.))
-                                        .on_click(cx.listener(Self::on_login)),
-                                )
-                            })
-                            // There must be a login flow for a logout flow to exists, but a logout flow might not be required.
-                            .when(login_flow_exists && self.status.can_logout(), |div| {
-                                div.child(
-                                    Button::new("logout")
-                                        .when(self.authenticating, |btn| btn.loading())
-                                        .variant_ghost()
-                                        .size_lg()
-                                        .child("Log Out")
-                                        .w(rems(10.))
-                                        .on_click(cx.listener(Self::on_logout)),
-                                )
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_grow()
-                    .h_0()
-                    .gap(rems(1.5))
-                    .id("config-form")
-                    .overflow_y_scroll()
-                    .when_some(self.error.clone(), |div, error| {
-                        div.child(Alert::new().title("Error").description(error))
-                    })
-                    .children(sections),
-            )
+            .child(self.render_header(cx))
+            .child(self.render_body(cx))
     }
 }
 

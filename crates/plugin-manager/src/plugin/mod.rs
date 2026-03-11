@@ -3,7 +3,8 @@ use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use ports::capabilities::{Capability, Storefront};
 use ports::component::{
-    AuthFlow, Component, Config, Error as ComponentError, Image, Metadata, Origin, Status,
+    AuthFlow, Component, Config, Error as ComponentError, Image, LoginForm, LoginMethod, Metadata,
+    Origin, Status,
 };
 use ports::storage::ComponentStorage;
 use std::sync::{Arc, Mutex};
@@ -66,6 +67,7 @@ impl PluginBuilder {
         Plugin {
             metadata,
             config: self.manifest.config,
+            login_form: self.manifest.auth,
             status: Mutex::new(Status::Inactive),
             engine: self.engine,
             storage: self.storage,
@@ -77,6 +79,7 @@ impl PluginBuilder {
 pub struct Plugin {
     metadata: Metadata,
     config: Option<Config>,
+    login_form: Option<LoginForm>,
     status: Mutex<Status>,
 
     engine: Engine,
@@ -133,79 +136,103 @@ impl Component for Plugin {
     }
 
     async fn init(&self) -> Result<(), ComponentError> {
-        match self.instantiate_storefront().await {
-            Ok((instance, mut store)) => instance
-                .thrustr_plugin_base()
-                .call_init(&mut store)
-                .await
-                .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                .map_err(Into::into),
-            Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        }
+        let (instance, mut store) = self
+            .instantiate_storefront()
+            .await
+            .map_err(|e| ComponentError::Other(format!("{e:?}")))?;
+
+        instance
+            .thrustr_plugin_base()
+            .call_init(&mut store)
+            .await
+            .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
+            .map_err(ComponentError::from)
     }
 
-    async fn get_login_flow(&self) -> Result<Option<AuthFlow>, ComponentError> {
-        let result = match self.instantiate_storefront().await {
-            Ok((instance, mut store)) => instance
-                .thrustr_plugin_base()
-                .call_get_login_flow(&mut store)
-                .await
-                .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                .map_err(Into::into),
-            Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        };
+    async fn get_login_method(&self) -> Result<Option<LoginMethod>, ComponentError> {
+        let (instance, mut store) = self
+            .instantiate_storefront()
+            .await
+            .map_err(|e| ComponentError::Other(format!("{e:?}")))?;
 
-        result.map(|o| o.map(Into::into))
+        let result = instance
+            .thrustr_plugin_base()
+            .call_get_login_flow(&mut store)
+            .await
+            .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
+            .map_err(ComponentError::from)?;
+
+        Ok(result
+            .map(|flow| LoginMethod::Flow(flow.into()))
+            .or_else(|| self.login_form.clone().map(LoginMethod::Form)))
     }
 
     async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, ComponentError> {
-        let result = match self.instantiate_storefront().await {
-            Ok((instance, mut store)) => instance
-                .thrustr_plugin_base()
-                .call_get_logout_flow(&mut store)
-                .await
-                .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                .map_err(Into::into),
-            Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        };
+        let (instance, mut store) = self
+            .instantiate_storefront()
+            .await
+            .map_err(|e| ComponentError::Other(format!("{e:?}")))?;
 
-        result.map(|o| o.map(Into::into))
+        let result = instance
+            .thrustr_plugin_base()
+            .call_get_logout_flow(&mut store)
+            .await
+            .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
+            .map_err(ComponentError::from)?;
+
+        Ok(result.map(Into::into))
     }
 
-    async fn login(&self, url: String, body: String) -> Result<(), ComponentError> {
-        match self.instantiate_storefront().await {
-            Ok((instance, mut store)) => instance
-                .thrustr_plugin_base()
-                .call_login(&mut store, &url, &body)
-                .await
-                .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                .map_err(Into::into),
-            Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        }
+    async fn login(
+        &self,
+        url: Option<String>,
+        body: Option<String>,
+        fields: Option<Vec<(String, String)>>,
+    ) -> Result<(), ComponentError> {
+        let (instance, mut store) = self
+            .instantiate_storefront()
+            .await
+            .map_err(|e| ComponentError::Other(format!("{e:?}")))?;
+
+        instance
+            .thrustr_plugin_base()
+            .call_login(
+                &mut store,
+                url.as_deref(),
+                body.as_deref(),
+                fields.as_deref(),
+            )
+            .await
+            .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
+            .map_err(ComponentError::from)
     }
 
-    async fn logout(&self, url: String, body: String) -> Result<(), ComponentError> {
-        match self.instantiate_storefront().await {
-            Ok((instance, mut store)) => instance
-                .thrustr_plugin_base()
-                .call_logout(&mut store, &url, &body)
-                .await
-                .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                .map_err(Into::into),
-            Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        }
+    async fn logout(&self) -> Result<(), ComponentError> {
+        let (instance, mut store) = self
+            .instantiate_storefront()
+            .await
+            .map_err(|e| ComponentError::Other(format!("{e:?}")))?;
+
+        instance
+            .thrustr_plugin_base()
+            .call_logout(&mut store)
+            .await
+            .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
+            .map_err(ComponentError::from)
     }
 
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), ComponentError> {
-        match self.instantiate_storefront().await {
-            Ok((instance, mut store)) => instance
-                .thrustr_plugin_base()
-                .call_validate_config(&mut store, fields)
-                .await
-                .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                .map_err(Into::into),
-            Err(e) => Err(ComponentError::Other(format!("{e:?}"))),
-        }
+        let (instance, mut store) = self
+            .instantiate_storefront()
+            .await
+            .map_err(|e| ComponentError::Other(format!("{e:?}")))?;
+
+        instance
+            .thrustr_plugin_base()
+            .call_validate_config(&mut store, fields)
+            .await
+            .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
+            .map_err(ComponentError::from)
     }
 }
 
