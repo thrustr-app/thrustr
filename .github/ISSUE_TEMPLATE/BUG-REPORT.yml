@@ -1,6 +1,6 @@
 name: "Bug Report"
 description: Create a new ticket for a bug.
-title: "[BUG] - <title>"
+title: "[BUG] <title>"
 labels:
   - bug
 body:
@@ -18,7 +18,7 @@ body:
     attributes:
       label: "Reproduction Steps"
       description: Step-by-step instructions to reproduce the bug.
-      placeholder: |
+      value: |
         1. Go to '...'
         2. Click on '...'
         3. Observe the unexpected behavior
