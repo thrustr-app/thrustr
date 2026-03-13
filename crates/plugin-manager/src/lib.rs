@@ -41,15 +41,17 @@ impl PluginManager {
         storage: Arc<dyn ComponentStorage>,
         component_manager: Arc<ComponentManager>,
     ) -> Self {
-        let mut config = Config::new();
-
+        let config = Config::new();
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
+
         wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
-        StorefrontPlugin::add_to_linker::<_, PluginState>(&mut linker, |state| state)
-            .expect("Failed to add Storefront imports to linker");
+
         wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)
             .expect("Failed to add WASI HTTP to linker");
+
+        StorefrontPlugin::add_to_linker::<_, PluginState>(&mut linker, |state| state)
+            .expect("Failed to add Storefront imports to linker");
 
         Self {
             engine,
