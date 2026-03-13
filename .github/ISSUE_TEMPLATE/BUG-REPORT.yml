@@ -1,0 +1,39 @@
+name: "Bug Report"
+description: Create a new ticket for a bug.
+title: "[BUG] - <title>"
+labels:
+  - bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: Provide a clear and concise description of the bug.
+      placeholder: Briefly describe what went wrong...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Reproduction Steps"
+      description: Step-by-step instructions to reproduce the bug.
+      value: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Observe the unexpected behavior
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Operating System(s) Affected"
+      description: Select all operating systems where this bug occurs.
+      multiple: true
+      options:
+        - Windows
+        - Linux
+        - Mac
+    validations:
+      required: true
