@@ -18,12 +18,30 @@ body:
     attributes:
       label: "Reproduction Steps"
       description: Step-by-step instructions to reproduce the bug.
-      value: |
+      placeholder: |
         1. Go to '...'
         2. Click on '...'
         3. Observe the unexpected behavior
     validations:
       required: true
+
+  - type: textarea
+    id: expected-behaviour
+    attributes:
+      label: "Expected Behaviour"
+      description: The exptected behaviour from the steps above.
+      placeholder: "The application should..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: actual-behaviour
+    attributes:
+      label: "Actual Behaviour"
+      description: The actual behaviour from the steps above.
+      placeholder: "The application did..."
+    validations:
+      required: false
 
   - type: dropdown
     id: os
