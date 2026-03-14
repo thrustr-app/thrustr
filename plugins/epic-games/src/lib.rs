@@ -1,7 +1,8 @@
+use std::collections::HashMap;
+
 use crate::api::{endpoints::auth_url, models::AuthResponse};
 use thrustr_plugin::{
-    AuthFlow, Plugin, PluginError, Storefront, config::Config, kv_store::KvStore,
-    register_storefront,
+    AuthFlow, Error, Plugin, Storefront, config::Config, kv_store::KvStore, register_storefront,
 };
 
 mod api;
@@ -9,12 +10,10 @@ mod api;
 pub struct EpicGames;
 
 impl Plugin for EpicGames {
-    fn init() -> Result<(), PluginError> {
+    fn init() -> Result<(), Error> {
         let username = Config::get("username")?;
         if username.is_empty() {
-            return Err(PluginError::Configuration(
-                "Username cannot be empty".into(),
-            ));
+            return Err(Error::Config("Username cannot be empty".into()));
         }
 
         let some_config = Config::get("username")?;
@@ -37,14 +36,14 @@ impl Plugin for EpicGames {
         Ok(())
     }
 
-    fn get_login_flow() -> Result<Option<AuthFlow>, PluginError> {
+    fn get_login_flow() -> Result<Option<AuthFlow>, Error> {
         Ok(Some(AuthFlow {
             url: auth_url(),
             target: "https://www.epicgames.com/id/api/redirect?".into(),
         }))
     }
 
-    fn get_logout_flow() -> Result<Option<AuthFlow>, PluginError> {
+    fn get_logout_flow() -> Result<Option<AuthFlow>, Error> {
         Ok(Some(AuthFlow {
             url: "https://www.epicgames.com/id/logout?productName=epic-games&redirectUrl=https://www.epicgames.com/id/login".into(),
             target: "https://www.epicgames.com/id/login".into(),
@@ -54,35 +53,25 @@ impl Plugin for EpicGames {
     fn login(
         url: Option<String>,
         body: Option<String>,
-        fields: Option<Vec<(String, String)>>,
-    ) -> Result<(), PluginError> {
+        fields: Option<HashMap<String, String>>,
+    ) -> Result<(), Error> {
         println!("got url: {:?}", url);
         println!("got body: {:?}", body);
         Ok(())
     }
 
-    fn logout() -> Result<(), PluginError> {
+    fn logout() -> Result<(), Error> {
         // delete tokens and such.
         Ok(())
     }
 
-    fn validate_config(fields: Vec<(String, String)>) -> Result<(), PluginError> {
-        let username = fields
-            .iter()
-            .find(|(id, _)| id == "username")
-            .map(|(_, v)| v.as_str());
-        if username.is_none() || username.unwrap().is_empty() {
-            return Err(PluginError::Configuration(
-                "Username cannot be empty".into(),
-            ));
-        }
-
+    fn validate_config(fields: HashMap<String, String>) -> Result<(), Error> {
         Ok(())
     }
 }
 
 impl Storefront for EpicGames {
-    fn test() -> Result<(), PluginError> {
+    fn test() -> Result<(), Error> {
         Ok(())
     }
 }

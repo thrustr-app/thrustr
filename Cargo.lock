@@ -3043,6 +3043,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-wasi-http"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e80794383f6d363e1f756c5ec9fa6ca0459824e54f9eef53b6b03491fb9d166"
+dependencies = [
+ "base64",
+ "bytes",
+ "encoding_rs",
+ "http",
+ "mime",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "url",
+ "wasip2",
+]
+
+[[package]]
 name = "gpu-allocator"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4155,6 +4174,11 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 name = "legacy-games"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "golem-wasi-http",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "thrustr-plugin",
  "wasip2",
 ]
@@ -4495,6 +4519,12 @@ dependencies = [
  "proc-macro2",
  "quote",
 ]
+
+[[package]]
+name = "mime"
+version = "0.3.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
 name = "minimal-lexical"

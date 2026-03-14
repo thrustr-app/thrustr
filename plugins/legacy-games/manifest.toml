@@ -7,14 +7,12 @@ description = "Plugin to interact with Legacy Games."
 
 [[auth.field]]
 type = "text"
-id = "username"
-label = "Username"
-placeholder = "johndoe"
+id = "email"
+label = "Email"
+placeholder = "yourmail@example.com"
 required = true
 
 [[auth.field]]
 type = "text"
 id = "password"
 label = "Password"
-placeholder = "1234"
-required = true

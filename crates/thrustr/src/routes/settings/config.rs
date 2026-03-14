@@ -252,7 +252,14 @@ impl Config {
                         if let Some(entity) = entity.upgrade() {
                             let _ = entity.update(cx, |config, cx| {
                                 config.authenticating = false;
-                                config.error = result.err().map(|e| e.to_string().into());
+
+                                let error = match result {
+                                    Ok(Ok(())) => None,
+                                    Ok(Err(e)) => Some(e.to_string()),
+                                    Err(e) => Some(e.to_string()),
+                                };
+                                config.error = error.map(Into::into);
+
                                 cx.notify();
                             });
                         }

@@ -254,8 +254,8 @@ impl From<PluginAuthFlow> for AuthFlow {
 impl From<PluginError> for ComponentError {
     fn from(value: PluginError) -> Self {
         match value {
-            PluginError::NotAuthorized(msg) => ComponentError::Auth(msg),
-            PluginError::Configuration(msg) => ComponentError::Config(msg),
+            PluginError::Auth(msg) => ComponentError::Auth(msg),
+            PluginError::Config(msg) => ComponentError::Config(msg),
             PluginError::Other(msg) => ComponentError::Other(msg),
         }
     }
