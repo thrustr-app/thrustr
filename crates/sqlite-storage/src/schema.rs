@@ -12,20 +12,12 @@ diesel::table! {
         name -> Text,
         source_id -> Text,
         lookup_id -> Text,
-    }
-}
-
-diesel::table! {
-    game_external_ids (game_id, key) {
-        game_id -> Integer,
-        key -> Text,
-        value -> Text,
+        external_ids -> Json,
     }
 }
 
 diesel::joinable!(games -> game_entries (entry_id));
-diesel::joinable!(game_external_ids -> games (game_id));
-diesel::allow_tables_to_appear_in_same_query!(game_entries, games, game_external_ids,);
+diesel::allow_tables_to_appear_in_same_query!(game_entries, games);
 
 diesel::table! {
     component_data (component_id, key) {

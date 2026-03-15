@@ -9,14 +9,8 @@ CREATE TABLE games (
   name TEXT NOT NULL,
   source_id TEXT NOT NULL,
   lookup_id TEXT NOT NULL,
+  external_ids TEXT NOT NULL DEFAULT '{}',
   UNIQUE (source_id, lookup_id)
-);
-
-CREATE TABLE game_external_ids (
-  game_id INTEGER NOT NULL REFERENCES games (id) ON DELETE CASCADE,
-  key TEXT NOT NULL,
-  value TEXT NOT NULL,
-  PRIMARY KEY (game_id, key)
 );
 
 CREATE TABLE component_data (

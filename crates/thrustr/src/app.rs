@@ -5,10 +5,7 @@ use crate::{
     globals::PluginManagerExt,
 };
 use config::paths;
-use gpui::{
-    AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div,
-    uniform_list,
-};
+use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 use gpui_tokio::Tokio;
 use theme_manager::ThemeExt;
 use ui::UiProvider;
