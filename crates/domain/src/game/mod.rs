@@ -1,6 +1,12 @@
 use smallvec::SmallVec;
 use std::collections::HashMap;
 
+mod commands;
+mod projections;
+
+pub use commands::*;
+pub use projections::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GameId(i32);
 
@@ -48,12 +54,6 @@ impl From<GameEntryId> for i32 {
 #[derive(Debug)]
 pub struct GameEntry {
     pub id: GameEntryId,
-    pub primary_game: Game,
-    pub game_ids: SmallVec<[GameId; 1]>,
-}
-
-#[derive(Debug)]
-pub struct NewGame {
-    pub name: String,
-    pub source: GameSource,
+    pub primary_game_id: GameId,
+    pub games: SmallVec<[Game; 1]>,
 }

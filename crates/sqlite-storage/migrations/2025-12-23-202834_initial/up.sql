@@ -9,7 +9,7 @@ CREATE TABLE games (
   name TEXT NOT NULL,
   source_id TEXT NOT NULL,
   lookup_id TEXT NOT NULL,
-  external_ids TEXT NOT NULL DEFAULT '{}',
+  external_ids JSON NOT NULL DEFAULT '{}',
   UNIQUE (source_id, lookup_id)
 );
 
@@ -26,3 +26,9 @@ CREATE TABLE component_config (
   value TEXT NOT NULL,
   PRIMARY KEY (component_id, field_id)
 );
+
+CREATE INDEX idx_game_entries_primary_game_id ON game_entries (primary_game_id);
+
+CREATE INDEX idx_games_name ON games (name);
+
+CREATE INDEX idx_games_entry_id ON games (entry_id);
