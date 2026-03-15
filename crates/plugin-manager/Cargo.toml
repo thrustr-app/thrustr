@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 # Local
 component-manager.workspace = true
+domain.workspace = true
 event.workspace = true
-ports.workspace = true
 
 # External
 anyhow.workspace = true

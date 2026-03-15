@@ -1,22 +1,29 @@
-use crate::api::{giveaway_login, wp_login};
+use crate::api::{get_giveaway_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::collections::HashMap;
-use thrustr_plugin::{AuthFlow, Error, Plugin, Storefront, kv_store::KvStore, register_storefront};
+use thrustr_plugin::{
+    AuthFlow, Error, Game, Plugin, Storefront, kv_store::KvStore, register_storefront,
+};
 
 mod api;
 mod error;
+mod mappers;
 
 pub struct LegacyGames;
 
 impl Plugin for LegacyGames {
     fn init() -> Result<(), Error> {
-        let email = KvStore::get_string("email")?.ok_or(Error::Auth("not logged in".into()))?;
-        let token = KvStore::get_string("token")?;
+        let email: String = KvStore::get("email")?.ok_or(Error::Auth("not logged in".into()))?;
+        let token = KvStore::get::<String>("token")?;
 
         match token {
-            Some(token) => wp_login(&token)?.into_result()?,
+            Some(token) => {
+                login(&token)?.into_result()?;
+            }
             None => giveaway_login(&email)?.into_result()?,
         }
+
+        Self::list_games()?;
 
         Ok(())
     }
@@ -34,14 +41,15 @@ impl Plugin for LegacyGames {
 
         if let Some(password) = password {
             let token = STANDARD.encode(format!("{email}:{password}"));
-            wp_login(&token)?.into_result()?;
+            let user_id = login(&token)?.into_result()?.user_id;
 
-            KvStore::set_string("token", &token)?;
+            KvStore::set("user_id", &user_id)?;
+            KvStore::set("token", &token)?;
         } else {
             giveaway_login(email)?.into_result()?;
         }
 
-        KvStore::set_string("email", email)?;
+        KvStore::set("email", email)?;
 
         Ok(())
     }
@@ -66,8 +74,12 @@ impl Plugin for LegacyGames {
 }
 
 impl Storefront for LegacyGames {
-    fn test() -> Result<(), Error> {
-        Ok(())
+    fn list_games() -> Result<Vec<Game>, Error> {
+        let email: String = KvStore::get("email")?.ok_or(Error::Auth("not logged in".into()))?;
+
+        let products = get_giveaway_products(&email)?.into_result()?;
+
+        Ok(products.into_iter().flat_map(Vec::<Game>::from).collect())
     }
 }
 

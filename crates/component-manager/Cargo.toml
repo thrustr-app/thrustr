@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 # Local
+domain.workspace = true
 event.workspace = true
-ports.workspace = true
 
 # External
 async-trait.workspace = true

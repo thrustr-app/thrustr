@@ -1,5 +1,5 @@
 use crate::ComponentHandle;
-use ports::{capabilities::Storefront, storage::ComponentStorage};
+use domain::{capabilities::Storefront, storage::ComponentStorage};
 use std::sync::Arc;
 
 #[derive(Clone)]

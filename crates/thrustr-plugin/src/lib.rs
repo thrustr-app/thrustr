@@ -11,8 +11,9 @@ pub mod wit {
     });
 }
 
-pub use wit::exports::thrustr::plugin::base::{AuthFlow, Error};
+pub use wit::exports::thrustr::plugin::base::AuthFlow;
 pub use wit::exports::thrustr::plugin::storefront::Guest as Storefront;
+pub use wit::thrustr::plugin::types::{Error, Game};
 
 pub trait Plugin {
     fn init() -> Result<(), Error>;
@@ -31,11 +32,6 @@ pub trait Plugin {
 macro_rules! register_storefront {
     ($plugin_type:ty) => {
         struct Guest;
-        impl $crate::wit::exports::thrustr::plugin::storefront::Guest for Guest {
-            fn test() -> Result<(), $crate::Error> {
-                <$plugin_type as $crate::Storefront>::test()
-            }
-        }
         impl $crate::wit::exports::thrustr::plugin::base::Guest for Guest {
             fn init() -> Result<(), $crate::Error> {
                 <$plugin_type as $crate::Plugin>::init()
@@ -62,6 +58,13 @@ macro_rules! register_storefront {
                 <$plugin_type as $crate::Plugin>::validate_config(fields)
             }
         }
+
+        impl $crate::wit::exports::thrustr::plugin::storefront::Guest for Guest {
+            fn list_games() -> Result<Vec<$crate::Game>, $crate::Error> {
+                <$plugin_type as $crate::Storefront>::list_games()
+            }
+        }
+
         $crate::wit::export!(Guest with_types_in $crate::wit);
     };
 }

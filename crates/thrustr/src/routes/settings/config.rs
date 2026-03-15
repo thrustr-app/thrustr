@@ -5,13 +5,13 @@ use crate::{
     webview::{WebviewError, open_auth_webview},
 };
 use component_manager::ComponentHandle;
+use domain::component::{Field as ConfigField, LoginMethod, Section as ConfigSection, Status};
 use gpui::{
     ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement, IntoElement,
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window, div,
     img, prelude::FluentBuilder, rems, svg,
 };
 use gpui_tokio::Tokio;
-use ports::component::{Field as ConfigField, LoginMethod, Section as ConfigSection, Status};
 use smol::unblock;
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use theme_manager::ThemeExt;
@@ -34,10 +34,11 @@ pub struct Config {
     component: ComponentHandle,
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
-    error: Option<SharedString>,
+    status: Status,
+    local_error: Option<SharedString>,
+    status_error: Option<SharedString>,
     login_method: Option<LoginMethod>,
     authenticating: bool,
-    status: Status,
     _tasks: Vec<Task<()>>,
 }
 
@@ -58,22 +59,18 @@ impl Config {
             .map(|c| c.sections.iter().map(Into::into).collect())
             .unwrap_or_default();
 
-        let error = if let Status::InitError(e) | Status::Error(e) = component.status() {
-            Some(e.to_string().into())
-        } else {
-            None
-        };
-
         let _tasks = vec![cx.listen("component", Self::refresh_status)];
 
+        let status = component.status();
         let mut page = Self {
             name: component.metadata().name.clone().into(),
             icon,
-            status: component.status(),
+            status_error: status.error_message().map(Into::into),
+            status: status,
             component,
             sections,
             values,
-            error,
+            local_error: None,
             login_method: None,
             authenticating: false,
             _tasks,
@@ -84,7 +81,9 @@ impl Config {
     }
 
     fn refresh_status(&mut self, cx: &mut Context<Self>) {
-        self.status = self.component.status();
+        let status = self.component.status();
+        self.status_error = status.error_message().map(Into::into);
+        self.status = status;
         cx.notify();
     }
 
@@ -96,7 +95,7 @@ impl Config {
                 config.login_method = match result {
                     Ok(method) => method,
                     Err(err) => {
-                        config.error = Some(err.into());
+                        config.local_error = Some(err.into());
                         None
                     }
                 };
@@ -117,7 +116,7 @@ impl Config {
         cx.spawn_and_update_tokio(
             async move { component.save_config(&fields).await },
             |config, result, cx| {
-                config.error = result.err().map(|e| e.to_string().into());
+                config.local_error = result.err().map(|e| e.to_string().into());
                 cx.notify();
             },
         );
@@ -157,7 +156,7 @@ impl Config {
             },
             |config, result, cx| {
                 config.authenticating = false;
-                config.error = result.err().map(|e| e.to_string().into());
+                config.local_error = result.err().map(|e| e.to_string().into());
                 cx.notify();
             },
         );
@@ -258,7 +257,7 @@ impl Config {
                                     Ok(Err(e)) => Some(e.to_string()),
                                     Err(e) => Some(e.to_string()),
                                 };
-                                config.error = error.map(Into::into);
+                                config.local_error = error.map(Into::into);
 
                                 cx.notify();
                             });
@@ -298,7 +297,7 @@ impl Config {
             },
             |this, result, cx| {
                 this.authenticating = false;
-                this.error = result.err().map(|e| e.to_string().into());
+                this.local_error = result.err().map(|e| e.to_string().into());
                 cx.notify();
             },
         );
@@ -424,7 +423,10 @@ impl Config {
             .gap(rems(1.5))
             .id("config-form")
             .overflow_y_scroll()
-            .when_some(self.error.clone(), |div, error| {
+            .when_some(self.local_error.clone(), |div, error| {
+                div.child(Alert::new().title("Error").description(error))
+            })
+            .when_some(self.status_error.clone(), |div, error| {
                 div.child(Alert::new().title("Error").description(error))
             })
             .children(sections)

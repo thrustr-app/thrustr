@@ -1,23 +1,23 @@
 use crate::{
     SqliteStorage,
-    models::{ComponentConfig, ComponentData, NewComponentConfig, NewComponentData},
+    models::{ComponentConfigRow, ComponentDataRow, NewComponentConfigRow, NewComponentDataRow},
 };
 use anyhow::Result;
 use diesel::{
     Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, TextExpressionMethods,
     upsert::excluded,
 };
-use ports::storage::ComponentStorage;
+use domain::storage::ComponentStorage;
 
 impl ComponentStorage for SqliteStorage {
     fn get_data(&self, component_id: &str, key: &str) -> Result<Option<Vec<u8>>> {
         use crate::schema::component_data::dsl;
 
         let mut conn = self.pool.get()?;
-        let result: Option<ComponentData> = dsl::component_data
+        let result: Option<ComponentDataRow> = dsl::component_data
             .filter(dsl::component_id.eq(component_id))
             .filter(dsl::key.eq(key))
-            .first::<ComponentData>(&mut conn)
+            .first::<ComponentDataRow>(&mut conn)
             .optional()?;
 
         Ok(result.map(|pd| pd.value))
@@ -28,7 +28,7 @@ impl ComponentStorage for SqliteStorage {
 
         let mut conn = self.pool.get()?;
         diesel::insert_into(dsl::component_data)
-            .values(NewComponentData {
+            .values(NewComponentDataRow {
                 component_id,
                 key,
                 value: &data,
@@ -78,7 +78,7 @@ impl ComponentStorage for SqliteStorage {
         let result = dsl::component_config
             .filter(dsl::component_id.eq(component_id))
             .filter(dsl::field_id.eq(field_id))
-            .first::<ComponentConfig>(&mut conn)
+            .first::<ComponentConfigRow>(&mut conn)
             .optional()?;
 
         Ok(result.map(|pd| pd.value))
@@ -98,7 +98,7 @@ impl ComponentStorage for SqliteStorage {
 
         let mut conn = self.pool.get()?;
         diesel::insert_into(dsl::component_config)
-            .values(NewComponentConfig {
+            .values(NewComponentConfigRow {
                 component_id,
                 field_id,
                 value: &value,
@@ -117,7 +117,7 @@ impl ComponentStorage for SqliteStorage {
         conn.transaction(|conn| {
             for (field_id, value) in fields {
                 diesel::insert_into(dsl::component_config)
-                    .values(NewComponentConfig {
+                    .values(NewComponentConfigRow {
                         component_id,
                         field_id,
                         value,

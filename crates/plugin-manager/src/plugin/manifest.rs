@@ -1,4 +1,4 @@
-use ports::component::{Config, LoginForm};
+use domain::component::{Config, LoginForm};
 use semver::Version;
 use serde::Deserialize;
 

@@ -6,4 +6,8 @@ interface types {
         auth(string),
         other(string),
     }
+
+    record game {
+        name: string,
+    }
 }

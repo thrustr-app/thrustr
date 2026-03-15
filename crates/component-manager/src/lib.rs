@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use ports::{component::Component, storage::ComponentStorage};
+use domain::{component::Component, storage::ComponentStorage};
 use std::sync::Arc;
 
 mod handles;

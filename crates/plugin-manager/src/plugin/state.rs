@@ -3,7 +3,7 @@ use crate::thrustr::plugin::{
     kv_store::{Error as KvStoreError, Host as KvStoreHost},
     types::Host as PluginTypes,
 };
-use ports::storage::ComponentStorage;
+use domain::storage::ComponentStorage;
 use std::sync::Arc;
 use wasmtime::component::HasData;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};

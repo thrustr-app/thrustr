@@ -1,4 +1,4 @@
-use ports::{
+use domain::{
     capabilities::Storefront,
     component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status},
     storage::ComponentStorage,

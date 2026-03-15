@@ -13,7 +13,6 @@ domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 gpui-tokio = { path = "crates/gpui-tokio" }
 plugin-manager = { path = "crates/plugin-manager" }
-ports = { path = "crates/ports" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
 thrustr-plugin = { path = "crates/thrustr-plugin" }
@@ -30,6 +29,7 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["fo
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+smallvec = "1"
 smol = "2"
 tokio = { version = "1.48", features = ["full"] }
 toml = "0.9"

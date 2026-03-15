@@ -9,5 +9,5 @@ gpui.workspace = true
 theme-manager.workspace = true
 
 # External
-smallvec = "1"
+smallvec.workspace = true
 unicode-segmentation = "1.12.0"

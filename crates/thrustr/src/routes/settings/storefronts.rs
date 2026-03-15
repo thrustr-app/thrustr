@@ -3,11 +3,11 @@ use crate::{
     globals::{ComponentManagerExt, EventListenerExt},
     navigation::{NavigationExt, SettingsPage},
 };
+use domain::component::Status;
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
 };
-use ports::component::Status;
 use std::sync::Arc;
 use theme_manager::ThemeExt;
 use ui::{Alert, Card};

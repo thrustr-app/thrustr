@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::api::{endpoints::auth_url, models::AuthResponse};
 use thrustr_plugin::{
-    AuthFlow, Error, Plugin, Storefront, config::Config, kv_store::KvStore, register_storefront,
+    AuthFlow, Error, Game, Plugin, Storefront, config::Config, kv_store::KvStore,
+    register_storefront,
 };
 
 mod api;
@@ -11,28 +12,6 @@ pub struct EpicGames;
 
 impl Plugin for EpicGames {
     fn init() -> Result<(), Error> {
-        let username = Config::get("username")?;
-        if username.is_empty() {
-            return Err(Error::Config("Username cannot be empty".into()));
-        }
-
-        let some_config = Config::get("username")?;
-        println!("Username: {some_config}");
-
-        let list = KvStore::list(None)?;
-        println!("{:?}", list);
-
-        KvStore::delete("login")?;
-
-        let list = KvStore::list(None)?;
-        println!("{:?}", list);
-
-        KvStore::set_string("login", "lololol")?;
-
-        if let Some(exists) = KvStore::get_string("login")? {
-            println!("Exists: {}", exists);
-        }
-
         Ok(())
     }
 
@@ -71,8 +50,8 @@ impl Plugin for EpicGames {
 }
 
 impl Storefront for EpicGames {
-    fn test() -> Result<(), Error> {
-        Ok(())
+    fn list_games() -> Result<Vec<Game>, Error> {
+        Ok(vec![])
     }
 }
 

@@ -146,6 +146,13 @@ impl Status {
                 | Self::InitError(Error::Config(_))
         )
     }
+
+    pub fn error_message(&self) -> Option<String> {
+        match self {
+            Self::InitError(e) | Self::Error(e) => Some(e.to_string()),
+            _ => None,
+        }
+    }
 }
 
 pub struct Metadata {

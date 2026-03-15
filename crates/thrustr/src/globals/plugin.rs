@@ -1,7 +1,7 @@
 use component_manager::ComponentManager;
+use domain::storage::ComponentStorage;
 use gpui::{App, Global};
 use plugin_manager::PluginManager;
-use ports::storage::ComponentStorage;
 use std::sync::Arc;
 
 pub struct PluginManagerGlobal(PluginManager);

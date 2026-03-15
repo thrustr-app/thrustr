@@ -1,7 +1,7 @@
 use crate::api::{
     USER_TOKEN_HEADER, endpoints,
     error::Error,
-    models::{IsExistsByEmailResponse, LoginResponse},
+    models::{IsExistsByEmailResponse, LoginResponse, ProductsResponse},
 };
 use golem_wasi_http::{
     Client,
@@ -19,11 +19,22 @@ pub fn giveaway_login(email: &str) -> Result<IsExistsByEmailResponse, Error> {
         .json()?)
 }
 
-pub fn wp_login(token: &str) -> Result<LoginResponse, Error> {
+pub fn login(token: &str) -> Result<LoginResponse, Error> {
     let user_token = format!("Basic {token}");
     Ok(Client::new()
         .get(endpoints::login())
         .header(USER_TOKEN_HEADER, user_token)
+        .header(AUTHORIZATION, "?token?")
+        .header(ACCEPT, "application/json")
+        .header(CONTENT_TYPE, "application/json")
+        .header(CACHE_CONTROL, "no-cache")
+        .send()?
+        .json()?)
+}
+
+pub fn get_giveaway_products(email: &str) -> Result<ProductsResponse, Error> {
+    Ok(Client::new()
+        .get(endpoints::get_giveaway_catalog_by_email(email))
         .header(AUTHORIZATION, "?token?")
         .header(ACCEPT, "application/json")
         .header(CONTENT_TYPE, "application/json")

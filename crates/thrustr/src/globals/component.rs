@@ -1,6 +1,6 @@
 use component_manager::{ComponentHandle, ComponentManager, StorefrontHandle};
+use domain::storage::ComponentStorage;
 use gpui::{App, Global};
-use ports::storage::ComponentStorage;
 use std::sync::Arc;
 
 pub(super) struct ComponentManagerGlobal(ComponentManager);

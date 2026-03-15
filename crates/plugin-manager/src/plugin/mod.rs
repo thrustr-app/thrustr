@@ -1,12 +1,12 @@
 use crate::exports::thrustr::plugin::base::{AuthFlow as PluginAuthFlow, Error as PluginError};
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
-use ports::capabilities::{Capability, Storefront};
-use ports::component::{
+use domain::capabilities::{Capability, Storefront};
+use domain::component::{
     AuthFlow, Component, Config, Error as ComponentError, Image, LoginForm, LoginMethod, Metadata,
     Origin, Status,
 };
-use ports::storage::ComponentStorage;
+use domain::storage::ComponentStorage;
 use std::sync::{Arc, Mutex};
 use wasmtime::{Engine, Store};
 

@@ -1,1 +1,2 @@
-mod component_storage;
+mod component;
+mod game;

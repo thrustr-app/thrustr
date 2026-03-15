@@ -7,3 +7,7 @@ pub fn is_exists_by_email(email: &str) -> String {
 pub fn login() -> String {
     format!("{BASE_URL}/users/login")
 }
+
+pub fn get_giveaway_catalog_by_email(email: &str) -> String {
+    format!("{BASE_URL}/users/getgiveawaycatalogbyemail?email={email}")
+}

@@ -1110,8 +1110,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "dashmap",
+ "domain",
  "event",
- "ports",
 ]
 
 [[package]]
@@ -2005,6 +2005,13 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "semver",
+ "serde",
+ "smallvec",
+]
 
 [[package]]
 name = "downcast-rs"
@@ -5348,9 +5355,9 @@ dependencies = [
  "async-trait",
  "component-manager",
  "dashmap",
+ "domain",
  "event",
  "futures",
- "ports",
  "semver",
  "serde",
  "serde_json",
@@ -5427,16 +5434,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a9db96d7fa8782dd8c15ce32ffe8680bbd1e978a43bf51a34d39483540495f5"
 dependencies = [
  "portable-atomic",
-]
-
-[[package]]
-name = "ports"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "semver",
- "serde",
 ]
 
 [[package]]
@@ -6742,9 +6739,10 @@ dependencies = [
  "anyhow",
  "diesel",
  "diesel_migrations",
- "ports",
+ "domain",
  "serde",
  "serde_json",
+ "smallvec",
 ]
 
 [[package]]
@@ -7264,12 +7262,12 @@ dependencies = [
  "assets",
  "component-manager",
  "config",
+ "domain",
  "event",
  "gpui",
  "gpui-tokio",
  "gpui_platform",
  "plugin-manager",
- "ports",
  "serde_json",
  "smallvec",
  "smol",
@@ -7283,6 +7281,7 @@ dependencies = [
 name = "thrustr-plugin"
 version = "0.1.0"
 dependencies = [
+ "paste",
  "serde",
  "serde_json",
  "wasi 0.14.7+wasi-0.2.4",

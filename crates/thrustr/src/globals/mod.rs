@@ -1,5 +1,5 @@
+use domain::storage::ComponentStorage;
 use gpui::App;
-use ports::storage::ComponentStorage;
 use std::sync::Arc;
 
 mod component;

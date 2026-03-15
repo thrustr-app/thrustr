@@ -1,9 +1,9 @@
 package thrustr:plugin@0.1.0;
 
 interface storefront {
-    use types.{error};
+    use types.{error, game};
 
-    test: func() -> result<_, error>;
+    list-games: func() -> result<list<game>, error>;
 }
 
 world storefront-plugin {
