@@ -1,4 +1,4 @@
-use crate::api::{get_giveaway_products, giveaway_login, login};
+use crate::api::{get_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::collections::HashMap;
 use thrustr_plugin::{
@@ -76,10 +76,15 @@ impl Plugin for LegacyGames {
 impl Storefront for LegacyGames {
     fn list_games() -> Result<Vec<Game>, Error> {
         let email: String = KvStore::get("email")?.ok_or(Error::Auth("not logged in".into()))?;
+        let token = KvStore::get::<String>("token")?;
+        let user_id = KvStore::get("user_id")?;
 
-        let products = get_giveaway_products(&email)?.into_result()?;
+        let games = get_products(&email, token.as_deref(), user_id)?
+            .into_iter()
+            .flat_map(Vec::<Game>::from)
+            .collect();
 
-        Ok(products.into_iter().flat_map(Vec::<Game>::from).collect())
+        Ok(games)
     }
 }
 

@@ -109,10 +109,15 @@ pub struct Game {
 pub struct Product {
     pub id: u64,
     pub name: String,
-    pub product_id: u64,
+    #[serde(default)]
     pub games: Vec<Game>,
     pub purchasable: bool,
     pub catalog_visibility: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Entitlement {
+    pub product_id: u64,
 }
 
 pub type IsExistsByEmailResponse = ApiResponse<IsExistsByEmailSuccess>;
@@ -144,6 +149,17 @@ pub type ProductsResponse = ApiResponse<Vec<Product>>;
 
 impl ProductsResponse {
     pub fn into_result(self) -> Result<Vec<Product>, Error> {
+        match self {
+            Self::Ok { data } => Ok(data),
+            Self::Error { data, .. } => Err(Error::Other(data.to_string())),
+        }
+    }
+}
+
+pub type EntitlementsResponse = ApiResponse<Vec<Entitlement>>;
+
+impl EntitlementsResponse {
+    pub fn into_result(self) -> Result<Vec<Entitlement>, Error> {
         match self {
             Self::Ok { data } => Ok(data),
             Self::Error { data, .. } => Err(Error::Other(data.to_string())),
