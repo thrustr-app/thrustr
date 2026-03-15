@@ -1,6 +1,7 @@
 use crate::{
     conversions::image::image_to_gpui,
-    globals::{ComponentManagerExt, EventListenerExt, SpawnTaskExt},
+    extensions::{EventListenerExt, SpawnTaskExt},
+    globals::ComponentManagerExt,
     navigation::NavigationExt,
     webview::{WebviewError, open_auth_webview},
 };

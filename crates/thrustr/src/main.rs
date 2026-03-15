@@ -11,6 +11,7 @@ use ui::UiProvider;
 mod app;
 mod components;
 mod conversions;
+mod extensions;
 mod globals;
 mod navigation;
 mod routes;

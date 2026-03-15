@@ -2,7 +2,7 @@ use crate::api::models::Product;
 use thrustr_plugin::Game;
 
 // For games with missing names.
-// Format ((product_id, game_id), name)
+// Format: ((product_id, game_id), name)
 const NAME_MAPPINGS: [((u64, &str), &str); 1] = [(
     (1838990, "6cb8117d-19da-4247-a7f7-4358c1e4a096"),
     "Lila’s Sky Ark",
