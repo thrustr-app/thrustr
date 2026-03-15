@@ -48,22 +48,23 @@ impl Storefronts {
         let mut storefronts: Vec<Storefront> = cx
             .storefronts()
             .into_iter()
-            .map(|storefront| {
-                let component = storefront.component();
-                if component.status().is_error() {
-                    self.has_errors = true;
-                }
-
-                Storefront {
-                    id: component.id().to_owned().into(),
-                    name: component.metadata().name.to_owned().into(),
-                    status: component.status(),
-                    icon: component.metadata().icon.clone().map(image_to_gpui),
-                    plugin: component
-                        .metadata()
-                        .origin
-                        .plugin_id()
-                        .map(|id| id.to_string().into()),
+            .filter_map(|storefront| match storefront.component() {
+                None => None,
+                Some(component) => {
+                    if component.status().is_error() {
+                        self.has_errors = true;
+                    }
+                    Some(Storefront {
+                        id: component.id().to_owned().into(),
+                        name: component.metadata().name.to_owned().into(),
+                        status: component.status(),
+                        icon: component.metadata().icon.clone().map(image_to_gpui),
+                        plugin: component
+                            .metadata()
+                            .origin
+                            .plugin_id()
+                            .map(|id| id.to_string().into()),
+                    })
                 }
             })
             .collect();

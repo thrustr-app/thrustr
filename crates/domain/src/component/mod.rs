@@ -1,4 +1,4 @@
-use crate::capabilities::Storefront;
+use crate::capabilities::storefront::Storefront;
 use async_trait::async_trait;
 use semver::Version;
 use serde::Deserialize;

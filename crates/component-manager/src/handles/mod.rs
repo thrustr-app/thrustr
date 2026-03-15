@@ -1,7 +1,6 @@
 use domain::{
-    capabilities::Storefront,
     component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status},
-    storage::ComponentStorage,
+    storage::{ComponentStorage, GameStorage},
 };
 use std::sync::Arc;
 
@@ -12,12 +11,21 @@ pub use storefront::StorefrontHandle;
 #[derive(Clone)]
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
-    storage: Arc<dyn ComponentStorage>,
+    component_storage: Arc<dyn ComponentStorage>,
+    game_storage: Arc<dyn GameStorage>,
 }
 
 impl ComponentHandle {
-    pub fn new(component: Arc<dyn Component>, storage: Arc<dyn ComponentStorage>) -> Self {
-        Self { component, storage }
+    pub fn new(
+        component: Arc<dyn Component>,
+        component_storage: Arc<dyn ComponentStorage>,
+        game_storage: Arc<dyn GameStorage>,
+    ) -> Self {
+        Self {
+            component,
+            component_storage,
+            game_storage,
+        }
     }
 
     pub fn id(&self) -> &str {
@@ -36,8 +44,14 @@ impl ComponentHandle {
         self.component.config()
     }
 
-    pub fn storefront(&self) -> Option<Arc<dyn Storefront>> {
-        Arc::clone(&self.component).storefront()
+    pub fn storefront(&self) -> Option<StorefrontHandle> {
+        Arc::clone(&self.component).storefront().map(|storefront| {
+            StorefrontHandle::new(
+                storefront,
+                Arc::clone(&self.component_storage),
+                Arc::clone(&self.game_storage),
+            )
+        })
     }
 
     pub async fn init(&self) -> Result<(), String> {
@@ -50,7 +64,11 @@ impl ComponentHandle {
             Ok(_) => Status::Active,
             Err(e) => Status::InitError(e.clone()),
         });
-        result.map_err(|e| e.to_string())
+        result.map_err(|e| e.to_string())?;
+
+        // TODO: temporal
+        self.storefront().unwrap().fetch_games().await.unwrap();
+        Ok(())
     }
 
     pub async fn login(
@@ -109,7 +127,7 @@ impl ComponentHandle {
     }
 
     pub fn get_config_values(&self) -> Vec<(String, String)> {
-        self.storage.get_config_values(self.id()).unwrap()
+        self.component_storage.get_config_values(self.id()).unwrap()
     }
 
     pub async fn save_config(&self, fields: &[(String, String)]) -> Result<(), String> {
@@ -117,7 +135,7 @@ impl ComponentHandle {
             return Err("Cannot configure from current state".into());
         }
         self.validate_config(fields).await?;
-        self.storage
+        self.component_storage
             .set_config_values(self.id(), fields)
             .map_err(|e| e.to_string())?;
 

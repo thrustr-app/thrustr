@@ -1,11 +1,7 @@
-use crate::capabilities::Capability;
+use crate::{NewGame, capabilities::Capability, component::Error};
 use async_trait::async_trait;
 
-#[derive(Debug, Clone)]
-pub enum StorefrontError {
-    NotAutorized(String),
-    Other(String),
-}
-
 #[async_trait]
-pub trait Storefront: Capability {}
+pub trait Storefront: Capability {
+    async fn list_games(&self) -> Result<Vec<NewGame>, Error>;
+}

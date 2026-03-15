@@ -1,13 +1,14 @@
 use crate::exports::thrustr::plugin::base::{AuthFlow as PluginAuthFlow, Error as PluginError};
 use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
-use domain::capabilities::{Capability, Storefront};
+use domain::capabilities::Capability;
+use domain::capabilities::storefront::Storefront;
 use domain::component::{
     AuthFlow, Component, Config, Error as ComponentError, Image, LoginForm, LoginMethod, Metadata,
     Origin, Status,
 };
 use domain::storage::ComponentStorage;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use wasmtime::{Engine, Store};
 
 mod manifest;
@@ -237,8 +238,9 @@ impl Component for Plugin {
 }
 
 impl Capability for Plugin {
-    fn component(self: Arc<Self>) -> Arc<dyn Component> {
-        self as Arc<dyn Component>
+    fn component(self: Arc<Self>) -> Weak<dyn Component> {
+        let arc: Arc<dyn Component> = self;
+        Arc::downgrade(&arc)
     }
 }
 

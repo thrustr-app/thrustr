@@ -1,46 +1,22 @@
 use crate::SqliteStorage;
 use crate::models::{GameEntryRow, GameRow, NewGameEntryRow, NewGameRow};
 use anyhow::Result;
-use diesel::{Connection, ExpressionMethods, JoinOnDsl, QueryDsl, RunQueryDsl, SelectableHelper};
+use diesel::{
+    Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, RunQueryDsl,
+    SelectableHelper, SqliteConnection,
+};
 use domain::storage::GameStorage;
-use domain::{Game, GameEntry, GameEntryId, GameId, GameListEntry, NewGame};
-use smallvec::SmallVec;
+use domain::{GameEntryId, GameId, GameListEntry, NewGame};
 
 impl GameStorage for SqliteStorage {
-    fn insert(&self, new_game: &NewGame) -> Result<GameEntry> {
-        use crate::schema::game_entries::dsl as entry_dsl;
-        use crate::schema::games::dsl as game_dsl;
-
+    fn insert(&self, new_game: &NewGame) -> Result<()> {
         let mut conn = self.pool.get()?;
+        conn.transaction(|conn| self.insert_within(conn, new_game))
+    }
 
-        conn.transaction(|conn| {
-            let entry_row: GameEntryRow = diesel::insert_into(entry_dsl::game_entries)
-                .values(NewGameEntryRow { primary_game_id: 0 })
-                .get_result(conn)?;
-
-            let game_row: GameRow = diesel::insert_into(game_dsl::games)
-                .values(NewGameRow {
-                    entry_id: entry_row.id,
-                    name: &new_game.name,
-                    source_id: &new_game.source.source_id,
-                    lookup_id: &new_game.source.lookup_id,
-                    external_ids: serde_json::to_value(&new_game.source.external_ids)?,
-                })
-                .get_result(conn)?;
-
-            diesel::update(entry_dsl::game_entries.find(entry_row.id))
-                .set(entry_dsl::primary_game_id.eq(game_row.id))
-                .execute(conn)?;
-
-            let primary_game_id = GameId::from(game_row.id);
-            let game = Game::from(game_row);
-
-            Ok(GameEntry {
-                id: GameEntryId::from(entry_row.id),
-                primary_game_id,
-                games: SmallVec::from_buf([game]),
-            })
-        })
+    fn insert_many(&self, games: &[NewGame]) -> Result<()> {
+        let mut conn = self.pool.get()?;
+        conn.transaction(|conn| games.iter().try_for_each(|g| self.insert_within(conn, g)))
     }
 
     fn count(&self) -> Result<usize> {
@@ -79,5 +55,41 @@ impl GameStorage for SqliteStorage {
             .collect();
 
         Ok(entries)
+    }
+}
+
+impl SqliteStorage {
+    fn insert_within(&self, conn: &mut SqliteConnection, new_game: &NewGame) -> Result<()> {
+        use crate::schema::game_entries::dsl as entry_dsl;
+        use crate::schema::games::dsl as game_dsl;
+
+        let game_row: Option<GameRow> = diesel::insert_or_ignore_into(game_dsl::games)
+            .values(NewGameRow {
+                entry_id: 0,
+                name: &new_game.name,
+                source_id: &new_game.source.source_id,
+                lookup_id: &new_game.source.lookup_id,
+                external_ids: serde_json::to_value(&new_game.source.external_ids)?,
+            })
+            .get_result(conn)
+            .optional()?;
+
+        let Some(game_row) = game_row else {
+            return Ok(());
+        };
+
+        let entry_row: GameEntryRow = diesel::insert_into(entry_dsl::game_entries)
+            .values(NewGameEntryRow { primary_game_id: 0 })
+            .get_result(conn)?;
+
+        diesel::update(game_dsl::games.find(game_row.id))
+            .set(game_dsl::entry_id.eq(entry_row.id))
+            .execute(conn)?;
+
+        diesel::update(entry_dsl::game_entries.find(entry_row.id))
+            .set(entry_dsl::primary_game_id.eq(game_row.id))
+            .execute(conn)?;
+
+        Ok(())
     }
 }

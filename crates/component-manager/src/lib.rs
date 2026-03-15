@@ -1,5 +1,8 @@
 use dashmap::DashMap;
-use domain::{component::Component, storage::ComponentStorage};
+use domain::{
+    component::Component,
+    storage::{ComponentStorage, GameStorage},
+};
 use std::sync::Arc;
 
 mod handles;
@@ -9,14 +12,19 @@ pub use handles::*;
 #[derive(Clone)]
 pub struct ComponentManager {
     components: Arc<DashMap<String, Arc<dyn Component>>>,
-    storage: Arc<dyn ComponentStorage>,
+    component_storage: Arc<dyn ComponentStorage>,
+    game_storage: Arc<dyn GameStorage>,
 }
 
 impl ComponentManager {
-    pub fn new(storage: Arc<dyn ComponentStorage>) -> Self {
+    pub fn new(
+        component_storage: Arc<dyn ComponentStorage>,
+        game_storage: Arc<dyn GameStorage>,
+    ) -> Self {
         Self {
             components: Arc::new(DashMap::new()),
-            storage: storage,
+            component_storage,
+            game_storage,
         }
     }
 
@@ -26,15 +34,25 @@ impl ComponentManager {
     }
 
     pub fn component(&self, id: &str) -> Option<ComponentHandle> {
-        self.components
-            .get(id)
-            .map(|c| ComponentHandle::new(Arc::clone(c.value()), Arc::clone(&self.storage)))
+        self.components.get(id).map(|c| {
+            ComponentHandle::new(
+                Arc::clone(c.value()),
+                Arc::clone(&self.component_storage),
+                Arc::clone(&self.game_storage),
+            )
+        })
     }
 
     pub fn components(&self) -> Vec<ComponentHandle> {
         self.components
             .iter()
-            .map(|c| ComponentHandle::new(Arc::clone(c.value()), Arc::clone(&self.storage)))
+            .map(|c| {
+                ComponentHandle::new(
+                    Arc::clone(c.value()),
+                    Arc::clone(&self.component_storage),
+                    Arc::clone(&self.game_storage),
+                )
+            })
             .collect()
     }
 
@@ -42,7 +60,13 @@ impl ComponentManager {
         self.components
             .iter()
             .filter(|c| c.value().metadata().origin.is_plugin())
-            .map(|c| ComponentHandle::new(Arc::clone(c.value()), Arc::clone(&self.storage)))
+            .map(|c| {
+                ComponentHandle::new(
+                    Arc::clone(c.value()),
+                    Arc::clone(&self.component_storage),
+                    Arc::clone(&self.game_storage),
+                )
+            })
             .collect()
     }
 
@@ -50,9 +74,13 @@ impl ComponentManager {
         self.components
             .iter()
             .filter_map(|c| {
-                Arc::clone(c.value())
-                    .storefront()
-                    .map(|s| StorefrontHandle::new(s, Arc::clone(&self.storage)))
+                Arc::clone(c.value()).storefront().map(|s| {
+                    StorefrontHandle::new(
+                        s,
+                        Arc::clone(&self.component_storage),
+                        Arc::clone(&self.game_storage),
+                    )
+                })
             })
             .collect()
     }
@@ -61,6 +89,12 @@ impl ComponentManager {
         self.components
             .get(id)
             .and_then(|c| Arc::clone(c.value()).storefront())
-            .map(|s| StorefrontHandle::new(s, Arc::clone(&self.storage)))
+            .map(|s| {
+                StorefrontHandle::new(
+                    s,
+                    Arc::clone(&self.component_storage),
+                    Arc::clone(&self.game_storage),
+                )
+            })
     }
 }

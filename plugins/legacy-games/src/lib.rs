@@ -7,7 +7,7 @@ use thrustr_plugin::{
 
 mod api;
 mod error;
-mod mappers;
+mod mapper;
 
 pub struct LegacyGames;
 
