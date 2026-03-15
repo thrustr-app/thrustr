@@ -8,15 +8,15 @@ pub use commands::*;
 pub use projections::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GameId(i32);
+pub struct GameId(i64);
 
-impl From<i32> for GameId {
-    fn from(value: i32) -> Self {
+impl From<i64> for GameId {
+    fn from(value: i64) -> Self {
         Self(value)
     }
 }
 
-impl From<GameId> for i32 {
+impl From<GameId> for i64 {
     fn from(value: GameId) -> Self {
         value.0
     }
@@ -37,15 +37,15 @@ pub struct GameSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GameEntryId(i32);
+pub struct GameEntryId(i64);
 
-impl From<i32> for GameEntryId {
-    fn from(value: i32) -> Self {
+impl From<i64> for GameEntryId {
+    fn from(value: i64) -> Self {
         Self(value)
     }
 }
 
-impl From<GameEntryId> for i32 {
+impl From<GameEntryId> for i64 {
     fn from(value: GameEntryId) -> Self {
         value.0
     }

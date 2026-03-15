@@ -1,14 +1,14 @@
 diesel::table! {
     game_entries (id) {
-        id -> Integer,
-        primary_game_id -> Integer,
+        id -> BigInt,
+        primary_game_id -> BigInt,
     }
 }
 
 diesel::table! {
     games (id) {
-        id -> Integer,
-        entry_id -> Integer,
+        id -> BigInt,
+        entry_id -> BigInt,
         name -> Text,
         source_id -> Text,
         lookup_id -> Text,
