@@ -4,11 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-paste = "1"
 serde.workspace = true
 serde_json.workspace = true
 wasi = "0.14"
-wit-bindgen = "0.51"
+wit-bindgen = "0.53"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
