@@ -1,4 +1,5 @@
 use thiserror::Error;
+use wstd::http;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -9,7 +10,7 @@ pub enum Error {
     InvalidCredentials,
 
     #[error("request failed: {0}")]
-    Request(#[from] golem_wasi_http::Error),
+    Request(#[from] http::Error),
 
     #[error("error: {0}")]
     Other(String),

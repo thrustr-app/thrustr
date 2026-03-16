@@ -1,52 +1,52 @@
 use crate::api::{
-    USER_TOKEN_HEADER, endpoints,
+    endpoints,
     error::Error,
     models::{
         EntitlementsResponse, IsExistsByEmailResponse, LoginResponse, Product, ProductsResponse,
     },
 };
-use golem_wasi_http::{
-    Client, RequestBuilder,
-    header::{ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
-};
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use wstd::http::{Client, Request, request::Builder};
 
-pub fn giveaway_login(email: &str) -> Result<IsExistsByEmailResponse, Error> {
-    Ok(base_request(endpoints::is_exists_by_email(email))
-        .send()?
-        .json()?)
+pub async fn giveaway_login(email: &str) -> Result<IsExistsByEmailResponse, Error> {
+    send(base_request(&endpoints::is_exists_by_email(email))).await
 }
 
-pub fn login(token: &str) -> Result<LoginResponse, Error> {
-    Ok(authenticated_request(endpoints::login(), token)
-        .send()?
-        .json()?)
+pub async fn login(token: &str) -> Result<LoginResponse, Error> {
+    send(authenticated_request(&endpoints::login(), token)).await
 }
 
-pub fn get_products(
+pub async fn get_products(
     email: &str,
     token: Option<&str>,
     user_id: Option<u64>,
 ) -> Result<Vec<Product>, Error> {
-    let mut products = get_giveaway_catalog(email)?.into_result()?;
+    let (giveaway_response, catalog, entitlements) =
+        futures::try_join!(get_giveaway_catalog(email), get_catalog(), async {
+            match token.zip(user_id) {
+                Some((token, user_id)) => get_entitlements(token, user_id).await.map(Some),
+                None => Ok(None),
+            }
+        })?;
 
-    let mut catalog: HashMap<u64, Product> =
-        get_catalog()?.into_iter().map(|p| (p.id, p)).collect();
+    let mut products: Vec<Product> = giveaway_response.into_result()?;
+    let mut catalog: HashMap<u64, Product> = catalog.into_iter().map(|p| (p.id, p)).collect();
 
     for product in &mut products {
         if let Some(catalog_product) = catalog.get(&product.id) {
             for game in &mut product.games {
                 if game.game_name.is_empty() || game.game_description.is_empty() {
-                    if let Some(catalog_game) = catalog_product
+                    if let Some(cg) = catalog_product
                         .games
                         .iter()
                         .find(|cg| cg.installer_uuid == game.installer_uuid)
                     {
                         if game.game_name.is_empty() {
-                            game.game_name = catalog_game.game_name.clone();
+                            game.game_name = cg.game_name.clone();
                         }
                         if game.game_description.is_empty() {
-                            game.game_description = catalog_game.game_description.clone();
+                            game.game_description = cg.game_description.clone();
                         }
                     }
                 }
@@ -54,11 +54,9 @@ pub fn get_products(
         }
     }
 
-    if let Some(token) = token
-        && let Some(user_id) = user_id
-    {
+    if let Some(entitlements) = entitlements {
         products.extend(
-            get_entitlements(token, user_id)?
+            entitlements
                 .into_result()?
                 .into_iter()
                 .filter_map(|d| catalog.remove(&d.product_id)),
@@ -68,35 +66,43 @@ pub fn get_products(
     Ok(products)
 }
 
-fn get_catalog() -> Result<Vec<Product>, Error> {
-    Ok(base_request(endpoints::catalog()).send()?.json()?)
+async fn get_catalog() -> Result<Vec<Product>, Error> {
+    send(base_request(&endpoints::catalog())).await
 }
 
-fn get_entitlements(token: &str, user_id: u64) -> Result<EntitlementsResponse, Error> {
-    Ok(
-        authenticated_request(endpoints::entitlements(user_id), token)
-            .send()?
-            .json()?,
-    )
+async fn get_entitlements(token: &str, user_id: u64) -> Result<EntitlementsResponse, Error> {
+    send(authenticated_request(
+        &endpoints::entitlements(user_id),
+        token,
+    ))
+    .await
 }
 
-fn get_giveaway_catalog(email: &str) -> Result<ProductsResponse, Error> {
-    Ok(
-        base_request(endpoints::get_giveaway_catalog_by_email(email))
-            .send()?
-            .json()?,
-    )
+async fn get_giveaway_catalog(email: &str) -> Result<ProductsResponse, Error> {
+    send(base_request(&endpoints::get_giveaway_catalog_by_email(
+        email,
+    )))
+    .await
 }
 
-fn base_request(url: String) -> RequestBuilder {
-    Client::new()
-        .get(url)
-        .header(AUTHORIZATION, "?token?")
-        .header(ACCEPT, "application/json")
-        .header(CONTENT_TYPE, "application/json")
-        .header(CACHE_CONTROL, "no-cache")
+async fn send<T: DeserializeOwned>(builder: Builder) -> Result<T, Error> {
+    Ok(Client::new()
+        .send(builder.body(()).unwrap())
+        .await?
+        .into_body()
+        .json()
+        .await?)
 }
 
-fn authenticated_request(url: String, token: &str) -> RequestBuilder {
-    base_request(url).header(USER_TOKEN_HEADER, format!("Basic {token}"))
+fn base_request(url: &str) -> Builder {
+    Request::builder()
+        .uri(url)
+        .header("Authorization", "?token?")
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .header("Cache-Control", "no-cache")
+}
+
+fn authenticated_request(url: &str, token: &str) -> Builder {
+    base_request(url).header("UserToken", format!("Basic {token}"))
 }
