@@ -1,40 +1,40 @@
-use component_manager::{ComponentHandle, ComponentManager, StorefrontHandle};
+use component_registry::{ComponentHandle, ComponentRegistry, StorefrontHandle};
 use domain::storage::{ComponentStorage, GameStorage};
 use gpui::{App, Global};
 use std::sync::Arc;
 
-pub(super) struct ComponentManagerGlobal(ComponentManager);
+pub(super) struct ComponentRegistryGlobal(ComponentRegistry);
 
-impl Global for ComponentManagerGlobal {}
+impl Global for ComponentRegistryGlobal {}
 
 pub(super) fn init(
     cx: &mut App,
     component_storage: Arc<dyn ComponentStorage>,
     game_storage: Arc<dyn GameStorage>,
-) -> Arc<ComponentManager> {
-    let manager = ComponentManager::new(component_storage, game_storage);
-    cx.set_global(ComponentManagerGlobal(manager.clone()));
-    Arc::new(manager)
+) -> Arc<ComponentRegistry> {
+    let registry = ComponentRegistry::new(component_storage, game_storage);
+    cx.set_global(ComponentRegistryGlobal(registry.clone()));
+    Arc::new(registry)
 }
 
-pub trait ComponentManagerExt {
-    fn component_manager(&self) -> ComponentManager;
+pub trait ComponentRegistryExt {
+    fn component_registry(&self) -> ComponentRegistry;
 
     fn component(&self, id: &str) -> Option<ComponentHandle> {
-        self.component_manager().component(id)
+        self.component_registry().component(id)
     }
 
     fn components(&self) -> Vec<ComponentHandle> {
-        self.component_manager().components()
+        self.component_registry().components()
     }
 
     fn storefronts(&self) -> Vec<StorefrontHandle> {
-        self.component_manager().storefronts()
+        self.component_registry().storefronts()
     }
 }
 
-impl ComponentManagerExt for App {
-    fn component_manager(&self) -> ComponentManager {
-        self.global::<ComponentManagerGlobal>().0.clone()
+impl ComponentRegistryExt for App {
+    fn component_registry(&self) -> ComponentRegistry {
+        self.global::<ComponentRegistryGlobal>().0.clone()
     }
 }

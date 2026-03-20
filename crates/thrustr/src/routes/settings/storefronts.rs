@@ -1,7 +1,7 @@
 use crate::{
     conversions::image::image_to_gpui,
     extensions::EventListenerExt,
-    globals::ComponentManagerExt,
+    globals::ComponentRegistryExt,
     navigation::{NavigationExt, SettingsPage},
 };
 use domain::component::Status;

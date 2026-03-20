@@ -7,7 +7,7 @@ edition = "2024"
 # Local
 assets.workspace = true
 config.workspace = true
-component-manager.workspace = true
+component-registry.workspace = true
 domain.workspace = true
 event.workspace = true
 gpui-tokio.workspace = true

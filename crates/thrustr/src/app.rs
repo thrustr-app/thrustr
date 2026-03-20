@@ -1,5 +1,5 @@
 use crate::extensions::EventListenerExt;
-use crate::globals::ComponentManagerExt;
+use crate::globals::ComponentRegistryExt;
 use crate::navigation::{NavigationExt, Navigator, Page};
 use crate::{
     components::{Sidebar, Topbar},

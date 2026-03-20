@@ -1105,7 +1105,7 @@ name = "commit_lint"
 version = "0.1.0"
 
 [[package]]
-name = "component-manager"
+name = "component-registry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -5328,7 +5328,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "component-manager",
+ "component-registry",
  "dashmap",
  "domain",
  "event",
@@ -7235,7 +7235,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assets",
- "component-manager",
+ "component-registry",
  "config",
  "domain",
  "event",

@@ -1,4 +1,4 @@
-use component_manager::ComponentManager;
+use component_registry::ComponentRegistry;
 use domain::storage::ComponentStorage;
 use gpui::{App, Global};
 use plugin_manager::PluginManager;
@@ -11,11 +11,11 @@ impl Global for PluginManagerGlobal {}
 pub fn init(
     cx: &mut App,
     storage: Arc<dyn ComponentStorage>,
-    component_manager: Arc<ComponentManager>,
+    component_registry: Arc<ComponentRegistry>,
 ) {
     cx.set_global(PluginManagerGlobal(PluginManager::new(
         storage,
-        component_manager,
+        component_registry,
     )));
 }
 

@@ -6,7 +6,7 @@ use theme_manager::ThemeManager;
 mod component;
 mod plugin;
 
-pub use component::ComponentManagerExt;
+pub use component::ComponentRegistryExt;
 pub use plugin::PluginManagerExt;
 
 pub fn init(

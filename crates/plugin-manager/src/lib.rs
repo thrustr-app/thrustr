@@ -1,6 +1,6 @@
 use crate::plugin::{PluginBuilder, PluginManifest, PluginState};
 use anyhow::Result;
-use component_manager::ComponentManager;
+use component_registry::ComponentRegistry;
 use domain::{
     component::{Image, ImageFormat},
     storage::ComponentStorage,
@@ -33,13 +33,13 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
-    component_manager: Arc<ComponentManager>,
+    component_registry: Arc<ComponentRegistry>,
 }
 
 impl PluginManager {
     pub fn new(
         storage: Arc<dyn ComponentStorage>,
-        component_manager: Arc<ComponentManager>,
+        component_registry: Arc<ComponentRegistry>,
     ) -> Self {
         let config = Config::new();
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
@@ -57,7 +57,7 @@ impl PluginManager {
             engine,
             linker: Arc::new(linker),
             storage,
-            component_manager,
+            component_registry,
         }
     }
 
@@ -135,7 +135,7 @@ impl PluginManager {
                 .build(),
         );
 
-        self.component_manager.register(plugin);
+        self.component_registry.register(plugin);
 
         event::emit("plugin");
         Ok(())

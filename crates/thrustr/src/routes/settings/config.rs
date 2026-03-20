@@ -1,11 +1,11 @@
 use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
-    globals::ComponentManagerExt,
+    globals::ComponentRegistryExt,
     navigation::NavigationExt,
     webview::{WebviewError, open_auth_webview},
 };
-use component_manager::ComponentHandle;
+use component_registry::ComponentHandle;
 use domain::component::{Field as ConfigField, LoginMethod, Section as ConfigSection, Status};
 use gpui::{
     ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement, IntoElement,
