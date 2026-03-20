@@ -4,7 +4,7 @@ use std::future::Future;
 
 /// Extension trait for common task spawning operations.
 pub trait SpawnTaskExt<T: 'static> {
-    /// Spawns a future in the background and updates the entity with the result.
+    /// Spawns a future in the background and updates the entity with the given handler.
     /// Calls `notify()` after the handler is called.
     fn spawn_and_update<F, V>(
         &mut self,
@@ -14,7 +14,7 @@ pub trait SpawnTaskExt<T: 'static> {
         F: Future<Output = V> + Send + 'static,
         V: Send + 'static;
 
-    /// Spawns a future in the background using Tokio and updates the entity with the result.
+    /// Spawns a future in the background using Tokio and updates the entity with the given handler.
     /// Calls `notify()` after the handler is called.
     fn spawn_and_update_tokio<F, V>(
         &mut self,
@@ -65,7 +65,9 @@ impl<'a, T: 'static> SpawnTaskExt<T> for Context<'a, T> {
     }
 }
 
+/// Extension trait for event listener operations.
 pub trait EventListenerExt<T: 'static> {
+    /// Listens for an event and updates the entity with the given handler.
     fn listen(
         &mut self,
         event: &'static str,
