@@ -6487,6 +6487,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "domain",
+]
+
+[[package]]
 name = "servo_arc"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7244,6 +7252,7 @@ dependencies = [
  "gpui_platform",
  "plugin-manager",
  "serde_json",
+ "services",
  "smallvec",
  "smol",
  "sqlite-storage",

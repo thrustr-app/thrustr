@@ -92,7 +92,7 @@ impl Config {
         let component = self.component.clone();
         cx.spawn_and_update_tokio(
             async move { component.get_login_method().await },
-            |config, result, cx| {
+            |config, result, _| {
                 config.login_method = match result {
                     Ok(method) => method,
                     Err(err) => {
@@ -100,7 +100,6 @@ impl Config {
                         None
                     }
                 };
-                cx.notify();
             },
         );
     }
@@ -116,9 +115,8 @@ impl Config {
 
         cx.spawn_and_update_tokio(
             async move { component.save_config(&fields).await },
-            |config, result, cx| {
+            |config, result, _| {
                 config.local_error = result.err().map(|e| e.to_string().into());
-                cx.notify();
             },
         );
     }
@@ -155,10 +153,9 @@ impl Config {
                     Err(WebviewError::Internal(e)) => Err(e),
                 }
             },
-            |config, result, cx| {
+            |config, result, _| {
                 config.authenticating = false;
                 config.local_error = result.err().map(|e| e.to_string().into());
-                cx.notify();
             },
         );
     }
@@ -296,10 +293,9 @@ impl Config {
                 }
                 component.logout().await
             },
-            |this, result, cx| {
+            |this, result, _| {
                 this.authenticating = false;
                 this.local_error = result.err().map(|e| e.to_string().into());
-                cx.notify();
             },
         );
         cx.notify();

@@ -47,7 +47,7 @@ impl Page {
     pub fn build_view(&self, cx: &mut App) -> AnyView {
         match self {
             Self::Home => cx.new(|_| routes::Home).into(),
-            Self::Library => cx.new(|_| routes::Library).into(),
+            Self::Library => cx.new(|cx| routes::Library::new(cx)).into(),
             Self::Collections => cx.new(|_| routes::Collections).into(),
             Self::Settings(sub) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
         }

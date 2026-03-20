@@ -13,6 +13,7 @@ domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 gpui-tokio = { path = "crates/gpui-tokio" }
 plugin-manager = { path = "crates/plugin-manager" }
+services = { path = "crates/services" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
 thrustr-plugin = { path = "crates/thrustr-plugin" }
