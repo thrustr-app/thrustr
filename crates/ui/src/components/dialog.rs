@@ -176,6 +176,13 @@ impl RenderOnce for Dialog {
                                 window.close_dialog(cx);
                             }
                         })
+                        .on_action({
+                            let on_ok_handler = on_ok_handler.clone();
+                            move |_: &ConfirmDialog, window, cx| {
+                                on_ok_handler(&ClickEvent::default(), window, cx);
+                                window.close_dialog(cx);
+                            }
+                        })
                         .children(self.header)
                         .child(self.content)
                         .child(

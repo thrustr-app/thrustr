@@ -6,15 +6,17 @@ use crate::{
     webview::{WebviewError, open_auth_webview},
 };
 use component_registry::ComponentHandle;
-use domain::component::{Field as ConfigField, LoginMethod, Section as ConfigSection, Status};
+use domain::component::{
+    Field as ConfigField, LoginForm, LoginMethod, Section as ConfigSection, Status,
+};
 use gpui::{
-    ClickEvent, Context, FontWeight, Image, ImageSource, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Window, div,
-    img, prelude::FluentBuilder, rems, svg,
+    AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task,
+    Window, div, img, prelude::FluentBuilder, rems, svg,
 };
 use gpui_tokio::Tokio;
 use smol::unblock;
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use theme_manager::ThemeExt;
 use ui::{Alert, Button, Card, InputEvent, Label, PortalContext, WithSize, WithVariant, input};
 
@@ -40,6 +42,7 @@ pub struct Config {
     status_error: Option<SharedString>,
     login_method: Option<LoginMethod>,
     authenticating: bool,
+    login_form_view: Option<Entity<LoginFormState>>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -74,6 +77,7 @@ impl Config {
             local_error: None,
             login_method: None,
             authenticating: false,
+            login_form_view: None,
             _tasks,
         };
 
@@ -166,97 +170,43 @@ impl Config {
         };
 
         let component = self.component.clone();
-        let entity = cx.entity().downgrade();
-        let form_values = Rc::new(RefCell::new(HashMap::<SharedString, SharedString>::new()));
+        let config_entity = cx.entity().downgrade();
 
-        window.open_dialog(cx, move |dialog, _, _| {
-            let login_form = login_form.clone();
-            let required_ids: Vec<SharedString> = login_form
-                .fields
-                .iter()
-                .filter_map(|f| match f {
-                    ConfigField::Text {
-                        id, required: true, ..
-                    } => Some(id.into()),
-                    _ => None,
-                })
-                .collect();
+        let form_entity = cx.new(|_| LoginFormState::new(&login_form));
+        self.login_form_view = Some(form_entity.clone());
 
-            let form_values = form_values.clone();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let form_entity = form_entity.clone();
+            let form_entity_child = form_entity.clone();
+            let config_entity_for_ok = config_entity.clone();
+            let config_entity_for_cancel = config_entity.clone();
             let component = component.clone();
-            let entity = entity.clone();
 
-            let fields = login_form.fields.into_iter().map(|f| match f {
-                ConfigField::Text {
-                    id,
-                    label,
-                    placeholder,
-                    ..
-                } => {
-                    let id: SharedString = id.into();
-                    let label: SharedString = label.into();
-                    let placeholder: Option<SharedString> = placeholder.map(Into::into);
-                    let form_values = form_values.clone();
-                    let id_clone = id.clone();
-                    let current_value = form_values.borrow().get(&id).cloned().unwrap_or_default();
-
-                    input(id)
-                        .label(label)
-                        .w(rems(20.))
-                        .when_some(placeholder, |input, placeholder| {
-                            input.placeholder(placeholder)
-                        })
-                        .value(current_value)
-                        .on_input(move |event: &InputEvent, _, _| {
-                            form_values
-                                .borrow_mut()
-                                .insert(id_clone.clone(), event.value.clone());
-                        })
-                }
-            });
-
-            let form_values_for_ok = form_values.clone();
-            let form_values_for_disabled = form_values.clone();
-            let entity_for_cancel = entity.clone();
+            let is_valid = form_entity.read(cx).is_valid();
             dialog
                 .title("Log In")
                 .ok_text("Log In")
-                .when(
-                    {
-                        let values = form_values_for_disabled.borrow();
-                        required_ids
-                            .iter()
-                            .any(|id| values.get(id).map_or(true, |v| v.is_empty()))
-                    },
-                    |dialog| dialog.disabled(),
-                )
+                .when(!is_valid, |dialog| dialog.disabled())
                 .on_ok(move |_, _, cx| {
-                    let fields = form_values_for_ok
-                        .borrow()
-                        .iter()
-                        .map(|(id, value)| (id.to_string(), value.to_string()))
-                        .collect::<Vec<_>>();
+                    let fields = form_entity.read(cx).login_fields();
                     let component = component.clone();
+                    let config_entity = config_entity_for_ok.clone();
 
                     let task = Tokio::spawn(cx, async move {
                         component.login(None, None, Some(fields)).await
                     });
 
-                    let entity = entity.clone();
-
                     cx.spawn(async move |cx| {
                         let result = task.await;
-                        if let Some(entity) = entity.upgrade() {
+                        if let Some(entity) = config_entity.upgrade() {
                             let _ = entity.update(cx, |config, cx| {
                                 config.authenticating = false;
-
-                                let error = match result {
+                                config.login_form_view = None;
+                                config.local_error = match result {
                                     Ok(Ok(())) => None,
-                                    Ok(Err(e)) => Some(e.to_string()),
-                                    Err(e) => Some(e.to_string()),
+                                    Ok(Err(e)) => Some(e.to_string().into()),
+                                    Err(e) => Some(e.to_string().into()),
                                 };
-                                config.local_error = error.map(Into::into);
-
                                 cx.notify();
                             });
                         }
@@ -264,14 +214,15 @@ impl Config {
                     .detach();
                 })
                 .on_cancel(move |_, _, cx| {
-                    if let Some(entity) = entity_for_cancel.upgrade() {
+                    if let Some(entity) = config_entity_for_cancel.upgrade() {
                         let _ = entity.update(cx, |config, cx| {
                             config.authenticating = false;
+                            config.login_form_view = None;
                             cx.notify();
                         });
                     }
                 })
-                .child(div().flex().flex_col().gap(rems(1.5)).children(fields))
+                .child(form_entity_child)
         });
     }
 
@@ -443,6 +394,68 @@ impl Render for Config {
     }
 }
 
+struct LoginFormState {
+    fields: Vec<Field>,
+    required_ids: Vec<SharedString>,
+    values: HashMap<SharedString, SharedString>,
+}
+
+impl LoginFormState {
+    pub fn new(login_form: &LoginForm) -> Self {
+        let required_ids = login_form
+            .fields
+            .iter()
+            .filter_map(|f| match f {
+                ConfigField::Text {
+                    id, required: true, ..
+                } => Some(SharedString::from(id.to_string())),
+                _ => None,
+            })
+            .collect();
+
+        let fields = login_form.fields.iter().map(Into::into).collect();
+
+        Self {
+            fields,
+            required_ids,
+            values: HashMap::new(),
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.required_ids
+            .iter()
+            .all(|id| self.values.get(id).map_or(false, |v| !v.is_empty()))
+    }
+
+    pub fn login_fields(&self) -> Vec<(String, String)> {
+        self.values
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+}
+
+impl Render for LoginFormState {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let fields = self.fields.iter().map(|f| {
+            let field_id = f.id.clone();
+            input(f.id.clone())
+                .label(f.label.clone())
+                .w(rems(20.))
+                .when_some(f.placeholder.clone(), |input, placeholder| {
+                    input.placeholder(placeholder)
+                })
+                .value(self.values.get(f.id.as_str()).cloned().unwrap_or_default())
+                .on_input(cx.listener(move |this, event: &InputEvent, _, _| {
+                    this.values.insert(field_id.clone(), event.value.clone());
+                }))
+        });
+
+        div().flex().flex_col().gap(rems(1.5)).children(fields)
+    }
+}
+
 impl From<&ConfigSection> for Section {
     fn from(section: &ConfigSection) -> Self {
         Section {
@@ -459,10 +472,14 @@ impl From<&ConfigField> for Field {
                 id,
                 label,
                 placeholder,
-                ..
+                required,
             } => Field {
                 id: id.into(),
-                label: label.into(),
+                label: if *required {
+                    format!("{label} *").into()
+                } else {
+                    label.into()
+                },
                 placeholder: placeholder.clone().map(Into::into),
             },
         }
