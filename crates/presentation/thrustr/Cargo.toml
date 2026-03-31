@@ -1,0 +1,25 @@
+[package]
+name = "thrustr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Local
+assets.workspace = true
+config.workspace = true
+component-registry.workspace = true
+application.workspace = true
+event.workspace = true
+persistence.workspace = true
+plugin-manager.workspace = true
+theme-manager.workspace = true
+ui.workspace = true
+
+# External
+anyhow.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
+serde_json.workspace = true
+smallvec = "1"
+smol.workspace = true
+tokio.workspace = true
