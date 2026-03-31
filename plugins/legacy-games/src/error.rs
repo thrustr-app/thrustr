@@ -1,5 +1,5 @@
 use crate::api::error::Error as ApiError;
-use thrustr_plugin::Error;
+use pdk::Error;
 
 impl From<ApiError> for Error {
     fn from(e: ApiError) -> Self {

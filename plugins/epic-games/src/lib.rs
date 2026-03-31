@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::api::{endpoints::auth_url, models::AuthResponse};
-use thrustr_plugin::{
+use pdk::{
     AuthFlow, Error, Game, Plugin, Storefront, config::Config, kv_store::KvStore,
     register_storefront,
 };

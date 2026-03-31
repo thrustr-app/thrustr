@@ -8,7 +8,7 @@ base64 = "0.22.1"
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thrustr-plugin.workspace = true
+pdk.workspace = true
 thiserror = "2"
 wstd = "0.6"
 

@@ -1,5 +1,5 @@
 use crate::api::models::Product;
-use thrustr_plugin::Game;
+use pdk::Game;
 
 impl From<Product> for Vec<Game> {
     fn from(product: Product) -> Self {

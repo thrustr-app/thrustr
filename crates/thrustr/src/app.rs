@@ -1,5 +1,6 @@
 use crate::extensions::EventListenerExt;
 use crate::globals::ComponentRegistryExt;
+use crate::gpui_tokio::Tokio;
 use crate::navigation::{NavigationExt, Navigator, Page};
 use crate::{
     components::{Sidebar, Topbar},
@@ -7,7 +8,6 @@ use crate::{
 };
 use config::paths;
 use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
-use gpui_tokio::Tokio;
 use theme_manager::ThemeExt;
 use ui::UiProvider;
 

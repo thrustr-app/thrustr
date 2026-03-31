@@ -1,9 +1,7 @@
 use crate::api::{get_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use pdk::{AuthFlow, Error, Game, Plugin, Storefront, kv_store::KvStore, register_storefront};
 use std::collections::HashMap;
-use thrustr_plugin::{
-    AuthFlow, Error, Game, Plugin, Storefront, kv_store::KvStore, register_storefront,
-};
 use wstd::runtime::block_on;
 
 mod api;

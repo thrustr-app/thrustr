@@ -2,6 +2,7 @@ use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::ComponentRegistryExt,
+    gpui_tokio::Tokio,
     navigation::NavigationExt,
     webview::{WebviewError, open_auth_webview},
 };
@@ -14,7 +15,6 @@ use gpui::{
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task,
     Window, div, img, prelude::FluentBuilder, rems, svg,
 };
-use gpui_tokio::Tokio;
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme_manager::ThemeExt;

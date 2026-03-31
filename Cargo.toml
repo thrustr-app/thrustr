@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "plugins/*", "tools/*", "xtask"]
-exclude = ["plugins/schemas"]
 default-members = ["crates/thrustr"]
 
 [workspace.dependencies]
@@ -11,12 +10,11 @@ component-registry = { path = "crates/component-registry" }
 config = { path = "crates/config" }
 domain = { path = "crates/domain" }
 event = { path = "crates/event" }
-gpui-tokio = { path = "crates/gpui-tokio" }
+pdk = { path = "crates/pdk" }
 plugin-manager = { path = "crates/plugin-manager" }
 services = { path = "crates/services" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
-thrustr-plugin = { path = "crates/thrustr-plugin" }
 ui = { path = "crates/ui" }
 
 # External

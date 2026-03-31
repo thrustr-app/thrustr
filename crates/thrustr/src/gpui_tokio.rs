@@ -7,6 +7,8 @@
 //! Modifications:
 //! - Minor changes for integration into this project.
 
+#![allow(dead_code)]
+
 use gpui::{App, AppContext, Global, ReadGlobal, Task};
 use std::future::Future;
 

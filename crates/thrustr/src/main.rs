@@ -13,6 +13,7 @@ mod components;
 mod conversions;
 mod extensions;
 mod globals;
+mod gpui_tokio;
 mod navigation;
 mod routes;
 mod webview;

@@ -22,7 +22,7 @@ use zip::ZipArchive;
 mod plugin;
 
 bindgen!({
-    path: "../thrustr-plugin/wit",
+    path: "../pdk/wit",
     world: "storefront-plugin",
     imports: { default: async },
     exports: { default: async }

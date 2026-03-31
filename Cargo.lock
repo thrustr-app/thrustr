@@ -2171,9 +2171,9 @@ dependencies = [
 name = "epic-games"
 version = "0.1.0"
 dependencies = [
+ "pdk",
  "serde",
  "serde_json",
- "thrustr-plugin",
  "url",
  "wasip2",
 ]
@@ -3160,15 +3160,6 @@ dependencies = [
  "windows 0.61.3",
  "zed-font-kit",
  "zed-scap",
-]
-
-[[package]]
-name = "gpui-tokio"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "gpui",
- "tokio",
 ]
 
 [[package]]
@@ -4164,10 +4155,10 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "futures",
+ "pdk",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "thrustr-plugin",
  "wstd",
 ]
 
@@ -5180,6 +5171,16 @@ checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest",
  "hmac",
+]
+
+[[package]]
+name = "pdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "wasi 0.14.7+wasi-0.2.4",
+ "wit-bindgen 0.53.1",
 ]
 
 [[package]]
@@ -7248,7 +7249,6 @@ dependencies = [
  "domain",
  "event",
  "gpui",
- "gpui-tokio",
  "gpui_platform",
  "plugin-manager",
  "serde_json",
@@ -7259,16 +7259,6 @@ dependencies = [
  "theme-manager",
  "tokio",
  "ui",
-]
-
-[[package]]
-name = "thrustr-plugin"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "wasi 0.14.7+wasi-0.2.4",
- "wit-bindgen 0.53.1",
 ]
 
 [[package]]
