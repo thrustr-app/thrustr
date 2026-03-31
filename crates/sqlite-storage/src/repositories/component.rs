@@ -7,7 +7,7 @@ use diesel::{
     Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, TextExpressionMethods,
     upsert::excluded,
 };
-use domain::storage::ComponentStorage;
+use domain::component::ComponentStorage;
 
 impl ComponentStorage for SqliteStorage {
     fn get_data(&self, component_id: &str, key: &str) -> Result<Option<Vec<u8>>> {

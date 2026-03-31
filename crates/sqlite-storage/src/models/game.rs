@@ -4,7 +4,7 @@ use diesel::{
     prelude::{Associations, Identifiable, Insertable, Queryable},
     sqlite::Sqlite,
 };
-use domain::{Game, GameId, GameSource};
+use domain::game::{Game, GameId, GameSource};
 use serde_json::Value;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]

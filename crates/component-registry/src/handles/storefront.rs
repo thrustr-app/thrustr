@@ -1,8 +1,7 @@
 use crate::ComponentHandle;
 use domain::{
-    capabilities::storefront::Storefront,
-    component::Status,
-    storage::{ComponentStorage, GameStorage},
+    component::{ComponentStorage, Status, capabilities::Storefront},
+    game::GameRepository,
 };
 use std::sync::Arc;
 
@@ -10,14 +9,14 @@ use std::sync::Arc;
 pub struct StorefrontHandle {
     storefront: Arc<dyn Storefront>,
     component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameStorage>,
+    game_storage: Arc<dyn GameRepository>,
 }
 
 impl StorefrontHandle {
     pub fn new(
         storefront: Arc<dyn Storefront>,
         component_storage: Arc<dyn ComponentStorage>,
-        game_storage: Arc<dyn GameStorage>,
+        game_storage: Arc<dyn GameRepository>,
     ) -> Self {
         Self {
             storefront,

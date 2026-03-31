@@ -1,4 +1,4 @@
-use crate::GameSource;
+use crate::game::GameSource;
 
 #[derive(Debug)]
 pub struct NewGame {

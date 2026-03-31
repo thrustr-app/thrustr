@@ -1,4 +1,4 @@
-use crate::{GameEntryId, GameId};
+use crate::game::{GameEntryId, GameId};
 
 #[derive(Debug)]
 pub struct GameListEntry {

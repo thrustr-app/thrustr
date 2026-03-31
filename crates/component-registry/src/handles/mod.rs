@@ -1,6 +1,7 @@
 use domain::{
+    component::ComponentStorage,
     component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status},
-    storage::{ComponentStorage, GameStorage},
+    game::GameRepository,
 };
 use std::sync::Arc;
 
@@ -12,14 +13,14 @@ pub use storefront::StorefrontHandle;
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
     component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameStorage>,
+    game_storage: Arc<dyn GameRepository>,
 }
 
 impl ComponentHandle {
     pub fn new(
         component: Arc<dyn Component>,
         component_storage: Arc<dyn ComponentStorage>,
-        game_storage: Arc<dyn GameStorage>,
+        game_storage: Arc<dyn GameRepository>,
     ) -> Self {
         Self {
             component,

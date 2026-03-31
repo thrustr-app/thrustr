@@ -1,6 +1,9 @@
 use crate::{plugin::Plugin, thrustr::plugin::types::Game};
 use async_trait::async_trait;
-use domain::{NewGame, capabilities::storefront::Storefront, component::Error};
+use domain::{
+    component::{Error, capabilities::Storefront},
+    game::{GameSource, NewGame},
+};
 
 #[async_trait]
 impl Storefront for Plugin {
@@ -21,10 +24,10 @@ impl Storefront for Plugin {
 }
 
 impl Plugin {
-    fn to_new_game(&self, game: Game) -> domain::NewGame {
-        domain::NewGame {
+    fn to_new_game(&self, game: Game) -> NewGame {
+        NewGame {
             name: game.name,
-            source: domain::GameSource {
+            source: GameSource {
                 source_id: self.metadata.id.clone(),
                 lookup_id: game.lookup_id,
                 external_ids: game.external_ids.into_iter().collect(),

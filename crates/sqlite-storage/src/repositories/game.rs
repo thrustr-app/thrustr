@@ -5,10 +5,9 @@ use diesel::{
     Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, RunQueryDsl,
     SelectableHelper, SqliteConnection,
 };
-use domain::storage::GameStorage;
-use domain::{GameEntryId, GameId, GameListEntry, NewGame};
+use domain::game::{GameEntryId, GameId, GameListEntry, GameRepository, NewGame};
 
-impl GameStorage for SqliteStorage {
+impl GameRepository for SqliteStorage {
     fn insert(&self, new_game: &NewGame) -> Result<()> {
         let mut conn = self.pool.get()?;
         conn.transaction(|conn| self.insert_within(conn, new_game))

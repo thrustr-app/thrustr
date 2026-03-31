@@ -1,14 +1,14 @@
 use anyhow::Result;
-use domain::{GameListEntry, storage::GameStorage};
+use domain::game::{GameListEntry, GameRepository};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct GameService {
-    game_storage: Arc<dyn GameStorage>,
+    game_storage: Arc<dyn GameRepository>,
 }
 
 impl GameService {
-    pub fn new(game_storage: Arc<dyn GameStorage>) -> Self {
+    pub fn new(game_storage: Arc<dyn GameRepository>) -> Self {
         Self { game_storage }
     }
 

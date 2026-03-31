@@ -1,7 +1,9 @@
 use crate::component::Component;
 use std::sync::{Arc, Weak};
 
-pub mod storefront;
+mod storefront;
+
+pub use storefront::*;
 
 /// A capability represents a specific functionality exposed by a component.
 pub trait Capability: Send + Sync {

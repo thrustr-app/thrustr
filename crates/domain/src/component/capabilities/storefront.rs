@@ -1,4 +1,7 @@
-use crate::{NewGame, capabilities::Capability, component::Error};
+use crate::{
+    component::{Capability, Error},
+    game::NewGame,
+};
 use async_trait::async_trait;
 
 #[async_trait]

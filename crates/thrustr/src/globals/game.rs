@@ -1,4 +1,4 @@
-use domain::storage::GameStorage;
+use domain::game::GameRepository;
 use gpui::{App, Global};
 use services::GameService;
 use std::sync::Arc;
@@ -7,7 +7,7 @@ pub(super) struct GameServiceGlobal(GameService);
 
 impl Global for GameServiceGlobal {}
 
-pub(super) fn init(cx: &mut App, game_storage: Arc<dyn GameStorage>) {
+pub(super) fn init(cx: &mut App, game_storage: Arc<dyn GameRepository>) {
     let service = GameService::new(game_storage);
     cx.set_global(GameServiceGlobal(service));
 }

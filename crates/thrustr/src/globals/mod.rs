@@ -1,4 +1,4 @@
-use domain::storage::{ComponentStorage, GameStorage};
+use domain::{component::ComponentStorage, game::GameRepository};
 use gpui::App;
 use std::sync::Arc;
 use theme_manager::ThemeManager;
@@ -14,7 +14,7 @@ pub use plugin::PluginManagerExt;
 pub fn init(
     cx: &mut App,
     component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameStorage>,
+    game_storage: Arc<dyn GameRepository>,
 ) {
     cx.set_global(ThemeManager::new());
 

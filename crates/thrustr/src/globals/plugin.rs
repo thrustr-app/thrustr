@@ -1,5 +1,5 @@
 use component_registry::ComponentRegistry;
-use domain::storage::ComponentStorage;
+use domain::component::ComponentStorage;
 use gpui::{App, Global};
 use plugin_manager::PluginManager;
 use std::sync::Arc;

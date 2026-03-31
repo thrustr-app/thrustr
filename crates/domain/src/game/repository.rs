@@ -1,7 +1,7 @@
-use crate::{GameListEntry, NewGame};
+use crate::game::{GameListEntry, NewGame};
 use anyhow::Result;
 
-pub trait GameStorage: Send + Sync {
+pub trait GameRepository: Send + Sync {
     fn insert(&self, game: &NewGame) -> Result<()>;
     fn insert_many(&self, games: &[NewGame]) -> Result<()>;
 
