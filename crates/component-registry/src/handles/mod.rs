@@ -1,25 +1,24 @@
-use domain::{
-    component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status},
-    storage::{ComponentStorage, GameStorage},
+use application::{
+    component::{AuthFlow, Component, ComponentStorage, Config, LoginMethod, Metadata, Status},
+    domain::game::GameRepository,
 };
 use std::sync::Arc;
+pub use storefront::StorefrontHandle;
 
 mod storefront;
-
-pub use storefront::StorefrontHandle;
 
 #[derive(Clone)]
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
     component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameStorage>,
+    game_storage: Arc<dyn GameRepository>,
 }
 
 impl ComponentHandle {
     pub fn new(
         component: Arc<dyn Component>,
         component_storage: Arc<dyn ComponentStorage>,
-        game_storage: Arc<dyn GameStorage>,
+        game_storage: Arc<dyn GameRepository>,
     ) -> Self {
         Self {
             component,

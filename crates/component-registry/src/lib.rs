@@ -1,8 +1,9 @@
-use dashmap::DashMap;
-use domain::{
-    component::Component,
-    storage::{ComponentStorage, GameStorage},
+use application::{
+    component::{Component, ComponentStorage},
+    domain::game::GameRepository,
 };
+use dashmap::DashMap;
+
 use std::sync::Arc;
 
 mod handles;
@@ -13,13 +14,13 @@ pub use handles::*;
 pub struct ComponentRegistry {
     components: Arc<DashMap<String, Arc<dyn Component>>>,
     component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameStorage>,
+    game_storage: Arc<dyn GameRepository>,
 }
 
 impl ComponentRegistry {
     pub fn new(
         component_storage: Arc<dyn ComponentStorage>,
-        game_storage: Arc<dyn GameStorage>,
+        game_storage: Arc<dyn GameRepository>,
     ) -> Self {
         Self {
             components: Arc::new(DashMap::new()),

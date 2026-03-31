@@ -1,21 +1,20 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "plugins/*", "tools/*", "xtask"]
-default-members = ["crates/thrustr"]
+members = ["crates/application","crates/component-registry", "crates/config", "crates/event", "crates/pdk", "crates/plugin-manager", "crates/infrastructure/*", "crates/presentation/*", "plugins/*", "tools/*", "xtask"]
+default-members = ["crates/presentation/thrustr"]
 
 [workspace.dependencies]
 # Local
-assets = { path = "crates/assets" }
+application = { path = "crates/application" }
+assets = { path = "crates/presentation/assets" }
 component-registry = { path = "crates/component-registry" }
 config = { path = "crates/config" }
-domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 pdk = { path = "crates/pdk" }
+persistence = { path = "crates/infrastructure/persistence" }
 plugin-manager = { path = "crates/plugin-manager" }
-services = { path = "crates/services" }
-sqlite-storage = { path = "crates/sqlite-storage" }
-theme-manager = { path = "crates/theme-manager" }
-ui = { path = "crates/ui" }
+theme-manager = { path = "crates/presentation/theme-manager" }
+ui = { path = "crates/presentation/ui" }
 
 # External
 anyhow = "1"

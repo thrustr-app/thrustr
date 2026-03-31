@@ -106,6 +106,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "application"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "semver",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
 name = "ar_archive_writer"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1108,9 +1119,9 @@ version = "0.1.0"
 name = "component-registry"
 version = "0.1.0"
 dependencies = [
+ "application",
  "async-trait",
  "dashmap",
- "domain",
  "event",
 ]
 
@@ -2000,17 +2011,6 @@ dependencies = [
  "precomputed-hash",
  "selectors",
  "tendril",
-]
-
-[[package]]
-name = "domain"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "semver",
- "serde",
- "smallvec",
 ]
 
 [[package]]
@@ -5200,6 +5200,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "persistence"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "application",
+ "diesel",
+ "diesel_migrations",
+ "serde",
+ "serde_json",
+ "smallvec",
+]
+
+[[package]]
 name = "petgraph"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5328,10 +5341,10 @@ name = "plugin-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "application",
  "async-trait",
  "component-registry",
  "dashmap",
- "domain",
  "event",
  "futures",
  "semver",
@@ -6488,14 +6501,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "services"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "domain",
-]
-
-[[package]]
 name = "servo_arc"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6714,19 +6719,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844"
 dependencies = [
  "bitflags 2.11.0",
-]
-
-[[package]]
-name = "sqlite-storage"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "diesel",
- "diesel_migrations",
- "domain",
- "serde",
- "serde_json",
- "smallvec",
 ]
 
 [[package]]
@@ -7243,19 +7235,18 @@ name = "thrustr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "application",
  "assets",
  "component-registry",
  "config",
- "domain",
  "event",
  "gpui",
  "gpui_platform",
+ "persistence",
  "plugin-manager",
  "serde_json",
- "services",
  "smallvec",
  "smol",
- "sqlite-storage",
  "theme-manager",
  "tokio",
  "ui",

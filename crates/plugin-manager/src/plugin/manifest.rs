@@ -1,4 +1,4 @@
-use domain::component::{Config, LoginForm};
+use application::component::{Config, LoginForm};
 use semver::Version;
 use serde::Deserialize;
 
