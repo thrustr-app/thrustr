@@ -35,7 +35,8 @@ fn main() {
 
             navigation::init(cx);
             gpui_tokio::init(cx);
-            globals::init(cx, storage.clone(), storage.clone(), storage);
+
+            globals::init(cx, storage);
 
             cx.activate(true);
 

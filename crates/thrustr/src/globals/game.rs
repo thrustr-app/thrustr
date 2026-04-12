@@ -6,8 +6,8 @@ pub(super) struct GameServiceGlobal(GameService);
 
 impl Global for GameServiceGlobal {}
 
-pub(super) fn init(cx: &mut App, game_storage: Arc<dyn GameQuery>) {
-    let service = GameService::new(game_storage);
+pub(super) fn init(cx: &mut App, query: Arc<dyn GameQuery>) {
+    let service = GameService::new(query);
     cx.set_global(GameServiceGlobal(service));
 }
 
