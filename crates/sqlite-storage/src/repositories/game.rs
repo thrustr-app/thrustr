@@ -5,7 +5,7 @@ use diesel::{
     Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, RunQueryDsl,
     SelectableHelper, SqliteConnection,
 };
-use domain::game::{GameEntryId, GameId, GameListEntry, GameRepository, NewGame};
+use domain::game::{GameListItem, GameRepository, NewGame};
 
 impl GameRepository for SqliteStorage {
     fn insert(&self, new_game: &NewGame) -> Result<()> {
@@ -29,7 +29,7 @@ impl GameRepository for SqliteStorage {
         Ok(count as usize)
     }
 
-    fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListEntry>> {
+    fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>> {
         use crate::schema::game_entries::dsl as entry_dsl;
         use crate::schema::games::dsl as game_dsl;
 
@@ -45,9 +45,8 @@ impl GameRepository for SqliteStorage {
 
         let entries = rows
             .into_iter()
-            .map(|(entry_row, game_row)| GameListEntry {
-                id: GameEntryId::from(entry_row.id),
-                primary_game_id: GameId::from(entry_row.primary_game_id),
+            .map(|(entry_row, game_row)| GameListItem {
+                id: entry_row.id.into(),
                 name: game_row.name,
                 source_id: game_row.source_id,
             })

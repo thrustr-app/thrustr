@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{extensions::SpawnTaskExt, globals::GameServiceExt};
-use domain::game::GameListEntry;
+use domain::game::GameListItem;
 use gpui::{
     App, Bounds, Context, IntoElement, ParentElement, Pixels, Render, RenderOnce, SharedString,
     Styled, Window, div, px, rems, uniform_list,
@@ -136,8 +136,8 @@ impl Render for Library {
     }
 }
 
-impl From<GameListEntry> for GameEntry {
-    fn from(entry: GameListEntry) -> Self {
+impl From<GameListItem> for GameEntry {
+    fn from(entry: GameListItem) -> Self {
         Self {
             name: entry.name.into(),
         }

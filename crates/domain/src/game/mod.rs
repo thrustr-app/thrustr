@@ -1,25 +1,28 @@
-use smallvec::SmallVec;
+use crate::id::Id;
+use std::collections::HashMap;
 
 mod commands;
 mod projections;
 mod repository;
-mod value_objects;
 
 pub use commands::*;
 pub use projections::*;
 pub use repository::*;
-pub use value_objects::*;
 
 #[derive(Debug)]
 pub struct Game {
-    pub id: GameId,
+    pub id: Id<Self>,
     pub name: String,
     pub source: GameSource,
 }
 
 #[derive(Debug)]
-pub struct GameEntry {
-    pub id: GameEntryId,
-    pub primary_game_id: GameId,
-    pub games: SmallVec<[Game; 1]>,
+pub struct GameSource {
+    /// The identifier for the game source (e.g. "steam", "gog").
+    pub source_id: String,
+    /// The unique identifier for the game in the source. This usually is a specific
+    /// identifier (e.g. Steam App ID) or a combination of multiple identifiers.
+    pub lookup_id: String,
+    /// Arbitrary external identifiers to be consumed by components.
+    pub external_ids: HashMap<String, String>,
 }

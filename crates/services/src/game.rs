@@ -1,5 +1,5 @@
 use anyhow::Result;
-use domain::game::{GameListEntry, GameRepository};
+use domain::game::{GameListItem, GameRepository};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -12,7 +12,7 @@ impl GameService {
         Self { game_storage }
     }
 
-    pub fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListEntry>> {
+    pub fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>> {
         self.game_storage.list(offset, limit)
     }
 }

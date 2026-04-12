@@ -1,9 +1,8 @@
-use crate::game::{GameEntryId, GameId};
+use crate::{game::Game, id::Id};
 
 #[derive(Debug)]
-pub struct GameListEntry {
-    pub id: GameEntryId,
-    pub primary_game_id: GameId,
+pub struct GameListItem {
+    pub id: Id<Game>,
     pub name: String,
     pub source_id: String,
 }

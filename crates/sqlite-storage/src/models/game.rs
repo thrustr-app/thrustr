@@ -4,7 +4,7 @@ use diesel::{
     prelude::{Associations, Identifiable, Insertable, Queryable},
     sqlite::Sqlite,
 };
-use domain::game::{Game, GameId, GameSource};
+use domain::game::{Game, GameSource};
 use serde_json::Value;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
@@ -49,7 +49,7 @@ pub struct NewGameRow<'a> {
 impl From<GameRow> for Game {
     fn from(row: GameRow) -> Self {
         Self {
-            id: GameId::from(row.id),
+            id: row.id.into(),
             name: row.name,
             source: GameSource {
                 source_id: row.source_id,

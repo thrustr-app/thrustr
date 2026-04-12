@@ -1,6 +1,5 @@
 use semver::Version;
 use serde::Deserialize;
-
 use crate::component::{Error, Field};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
