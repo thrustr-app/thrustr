@@ -1,8 +1,5 @@
-use domain::{
-    component::ComponentStorage,
-    component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status},
-    game::GameRepository,
-};
+use crate::context::RegistryContext;
+use domain::component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status};
 use std::sync::Arc;
 
 mod storefront;
@@ -12,21 +9,12 @@ pub use storefront::StorefrontHandle;
 #[derive(Clone)]
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
-    component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameRepository>,
+    context: RegistryContext,
 }
 
 impl ComponentHandle {
-    pub fn new(
-        component: Arc<dyn Component>,
-        component_storage: Arc<dyn ComponentStorage>,
-        game_storage: Arc<dyn GameRepository>,
-    ) -> Self {
-        Self {
-            component,
-            component_storage,
-            game_storage,
-        }
+    pub fn new(component: Arc<dyn Component>, context: RegistryContext) -> Self {
+        Self { component, context }
     }
 
     pub fn id(&self) -> &str {
@@ -46,13 +34,9 @@ impl ComponentHandle {
     }
 
     pub fn storefront(&self) -> Option<StorefrontHandle> {
-        Arc::clone(&self.component).storefront().map(|storefront| {
-            StorefrontHandle::new(
-                storefront,
-                Arc::clone(&self.component_storage),
-                Arc::clone(&self.game_storage),
-            )
-        })
+        Arc::clone(&self.component)
+            .storefront()
+            .map(|storefront| StorefrontHandle::new(storefront, self.context.clone()))
     }
 
     pub async fn init(&self) -> Result<(), String> {
@@ -128,7 +112,10 @@ impl ComponentHandle {
     }
 
     pub fn get_config_values(&self) -> Vec<(String, String)> {
-        self.component_storage.get_config_values(self.id()).unwrap()
+        self.context
+            .component_storage
+            .get_config_values(self.id())
+            .unwrap()
     }
 
     pub async fn save_config(&self, fields: &[(String, String)]) -> Result<(), String> {
@@ -136,7 +123,8 @@ impl ComponentHandle {
             return Err("Cannot configure from current state".into());
         }
         self.validate_config(fields).await?;
-        self.component_storage
+        self.context
+            .component_storage
             .set_config_values(self.id(), fields)
             .map_err(|e| e.to_string())?;
 

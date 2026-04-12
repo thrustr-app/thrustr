@@ -5,6 +5,7 @@ default-members = ["crates/thrustr"]
 
 [workspace.dependencies]
 # Local
+application = { path = "crates/application" }
 assets = { path = "crates/assets" }
 component-registry = { path = "crates/component-registry" }
 config = { path = "crates/config" }
@@ -12,7 +13,6 @@ domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 pdk = { path = "crates/pdk" }
 plugin-manager = { path = "crates/plugin-manager" }
-services = { path = "crates/services" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
 ui = { path = "crates/ui" }

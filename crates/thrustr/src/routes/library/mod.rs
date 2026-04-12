@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{extensions::SpawnTaskExt, globals::GameServiceExt};
-use domain::game::GameListItem;
+use application::game::GameListItem;
 use gpui::{
     App, Bounds, Context, IntoElement, ParentElement, Pixels, Render, RenderOnce, SharedString,
     Styled, Window, div, px, rems, uniform_list,

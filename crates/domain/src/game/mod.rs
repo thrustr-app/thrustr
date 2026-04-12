@@ -1,12 +1,8 @@
 use crate::id::Id;
 use std::collections::HashMap;
 
-mod commands;
-mod projections;
 mod repository;
 
-pub use commands::*;
-pub use projections::*;
 pub use repository::*;
 
 #[derive(Debug)]
@@ -25,4 +21,10 @@ pub struct GameSource {
     pub lookup_id: String,
     /// Arbitrary external identifiers to be consumed by components.
     pub external_ids: HashMap<String, String>,
+}
+
+#[derive(Debug)]
+pub struct NewGame {
+    pub name: String,
+    pub source: GameSource,
 }

@@ -1,27 +1,19 @@
 use crate::ComponentHandle;
-use domain::{
-    component::{ComponentStorage, Status, capabilities::Storefront},
-    game::GameRepository,
-};
+use crate::context::RegistryContext;
+use domain::component::{Status, capabilities::Storefront};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct StorefrontHandle {
     storefront: Arc<dyn Storefront>,
-    component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameRepository>,
+    context: RegistryContext,
 }
 
 impl StorefrontHandle {
-    pub fn new(
-        storefront: Arc<dyn Storefront>,
-        component_storage: Arc<dyn ComponentStorage>,
-        game_storage: Arc<dyn GameRepository>,
-    ) -> Self {
+    pub fn new(storefront: Arc<dyn Storefront>, context: RegistryContext) -> Self {
         Self {
             storefront,
-            component_storage,
-            game_storage,
+            context,
         }
     }
 
@@ -29,13 +21,7 @@ impl StorefrontHandle {
         Arc::clone(&self.storefront)
             .component()
             .upgrade()
-            .map(|component| {
-                ComponentHandle::new(
-                    component,
-                    Arc::clone(&self.component_storage),
-                    Arc::clone(&self.game_storage),
-                )
-            })
+            .map(|component| ComponentHandle::new(component, self.context.clone()))
     }
 
     pub async fn fetch_games(&self) -> Result<(), String> {
@@ -55,7 +41,8 @@ impl StorefrontHandle {
             error
         })?;
 
-        self.game_storage
+        self.context
+            .game_storage
             .insert_many(&new_games)
             .map_err(|err| err.to_string())?;
 

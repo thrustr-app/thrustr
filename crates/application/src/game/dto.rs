@@ -1,4 +1,4 @@
-use crate::{game::Game, id::Id};
+use domain::{game::Game, id::Id};
 
 #[derive(Debug)]
 pub struct GameListItem {

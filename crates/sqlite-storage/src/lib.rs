@@ -7,8 +7,8 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use std::path::Path;
 
 mod models;
-mod repositories;
 mod schema;
+mod storage;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 

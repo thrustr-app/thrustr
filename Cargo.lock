@@ -106,6 +106,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "application"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "domain",
+]
+
+[[package]]
 name = "ar_archive_writer"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6608,14 +6616,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "services"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "domain",
-]
-
-[[package]]
 name = "servo_arc"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6831,6 +6831,7 @@ name = "sqlite-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "application",
  "diesel",
  "diesel_migrations",
  "domain",
@@ -7363,6 +7364,7 @@ name = "thrustr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "application",
  "assets",
  "component-registry",
  "config",
@@ -7372,7 +7374,6 @@ dependencies = [
  "gpui_platform",
  "plugin-manager",
  "serde_json",
- "services",
  "smallvec",
  "smol",
  "sqlite-storage",
