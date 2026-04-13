@@ -8,7 +8,7 @@ use crate::{
 };
 use application::component::ComponentHandle;
 use domain::component::{
-    Field as ConfigField, LoginForm, LoginMethod, Section as ConfigSection, Status,
+    ComponentStatus, Field as ConfigField, LoginForm, LoginMethod, Section as ConfigSection,
 };
 use gpui::{
     AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
@@ -37,7 +37,7 @@ pub struct Config {
     component: ComponentHandle,
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
-    status: Status,
+    status: ComponentStatus,
     local_error: Option<SharedString>,
     status_error: Option<SharedString>,
     login_method: Option<LoginMethod>,
@@ -257,11 +257,13 @@ impl Config {
         let has_login = self.login_method.is_some();
 
         let status_label = match self.status {
-            Status::Initializing => Label::new("INITIALIZING").variant_warning(),
-            Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
-            Status::Active => Label::new("ACTIVE").variant_accent(),
-            Status::Inactive => Label::new("INACTIVE"),
-            Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_destructive(),
+            ComponentStatus::Initializing => Label::new("INITIALIZING").variant_warning(),
+            ComponentStatus::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
+            ComponentStatus::Active => Label::new("ACTIVE").variant_accent(),
+            ComponentStatus::Inactive => Label::new("INACTIVE"),
+            ComponentStatus::Error(_) | ComponentStatus::InitError(_) => {
+                Label::new("ERROR").variant_destructive()
+            }
         };
 
         div()

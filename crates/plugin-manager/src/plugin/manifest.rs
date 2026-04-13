@@ -1,4 +1,4 @@
-use domain::component::{Config, LoginForm};
+use domain::component::{ComponentConfig, LoginForm};
 use semver::Version;
 use serde::Deserialize;
 
@@ -16,5 +16,5 @@ pub struct PluginInfo {
 pub struct PluginManifest {
     pub plugin: PluginInfo,
     pub auth: Option<LoginForm>,
-    pub config: Option<Config>,
+    pub config: Option<ComponentConfig>,
 }

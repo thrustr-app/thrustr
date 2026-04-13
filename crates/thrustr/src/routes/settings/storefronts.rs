@@ -4,7 +4,7 @@ use crate::{
     globals::ComponentRegistryExt,
     navigation::{NavigationExt, SettingsPage},
 };
-use domain::component::Status;
+use domain::component::ComponentStatus;
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
@@ -17,7 +17,7 @@ use ui::{Alert, Card};
 struct Storefront {
     id: SharedString,
     name: SharedString,
-    status: Status,
+    status: ComponentStatus,
     icon: Option<Arc<GpuiImage>>,
     plugin: Option<SharedString>,
 }
@@ -49,23 +49,21 @@ impl Storefronts {
         let mut storefronts: Vec<Storefront> = cx
             .storefronts()
             .into_iter()
-            .filter_map(|storefront| match storefront.component() {
-                None => None,
-                Some(component) => {
-                    if component.status().is_error() {
-                        self.has_errors = true;
-                    }
-                    Some(Storefront {
-                        id: component.id().to_owned().into(),
-                        name: component.metadata().name.to_owned().into(),
-                        status: component.status(),
-                        icon: component.metadata().icon.clone().map(image_to_gpui),
-                        plugin: component
-                            .metadata()
-                            .origin
-                            .plugin_id()
-                            .map(|id| id.to_string().into()),
-                    })
+            .map(|storefront| {
+                let component = storefront.component();
+                if component.status().is_error() {
+                    self.has_errors = true;
+                }
+                Storefront {
+                    id: component.id().to_owned().into(),
+                    name: component.metadata().name.to_owned().into(),
+                    status: component.status(),
+                    icon: component.metadata().icon.clone().map(image_to_gpui),
+                    plugin: component
+                        .metadata()
+                        .origin
+                        .is_plugin()
+                        .then(|| component.id().to_string().into()),
                 }
             })
             .collect();
@@ -83,25 +81,25 @@ impl Render for Storefronts {
         let cards = self.storefronts.clone().into_iter().map(|storefront| {
             let mut status = div().font_weight(FontWeight::BOLD).text_size(rems(0.6));
             match storefront.status {
-                Status::Initializing => {
+                ComponentStatus::Initializing => {
                     status = status
                         .text_color(theme.colors.warning)
                         .child("INITIALIZING");
                 }
-                Status::Unauthenticated => {
+                ComponentStatus::Unauthenticated => {
                     status = status
                         .text_color(theme.colors.warning)
                         .child("UNAUTHENTICATED");
                 }
-                Status::Active => {
+                ComponentStatus::Active => {
                     status = status.text_color(theme.colors.accent).child("ACTIVE");
                 }
-                Status::Inactive => {
+                ComponentStatus::Inactive => {
                     status = status
                         .text_color(theme.colors.card_secondary)
                         .child("INACTIVE");
                 }
-                Status::Error(_) | Status::InitError(_) => {
+                ComponentStatus::Error(_) | ComponentStatus::InitError(_) => {
                     status = status.text_color(theme.colors.error).child("ERROR");
                 }
             }

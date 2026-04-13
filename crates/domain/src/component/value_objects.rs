@@ -1,6 +1,6 @@
+use crate::component::{Error, Field};
 use semver::Version;
 use serde::Deserialize;
-use crate::component::{Error, Field};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFormat {
@@ -35,30 +35,23 @@ pub struct Image {
 }
 
 #[derive(Debug)]
-pub enum Origin {
+pub enum ComponentOrigin {
     Core,
-    Plugin(String),
+    Plugin,
 }
 
-impl Origin {
+impl ComponentOrigin {
     pub fn is_core(&self) -> bool {
         matches!(self, Self::Core)
     }
 
     pub fn is_plugin(&self) -> bool {
-        matches!(self, Self::Plugin(_))
-    }
-
-    pub fn plugin_id(&self) -> Option<&str> {
-        match self {
-            Self::Plugin(id) => Some(id),
-            _ => None,
-        }
+        matches!(self, Self::Plugin)
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Status {
+pub enum ComponentStatus {
     Inactive,
     Initializing,
     Active,
@@ -67,7 +60,7 @@ pub enum Status {
     Error(Error),
 }
 
-impl Status {
+impl ComponentStatus {
     pub fn is_inactive(&self) -> bool {
         matches!(self, Self::Inactive)
     }
@@ -130,26 +123,27 @@ impl Status {
     }
 }
 
+#[derive(Debug)]
 pub struct Metadata {
     pub id: String,
     pub name: String,
-    pub origin: Origin,
+    pub origin: ComponentOrigin,
     pub description: Option<String>,
     pub icon: Option<Image>,
     pub version: Version,
     pub authors: Vec<String>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct LoginForm {
-    #[serde(rename = "field")]
-    pub fields: Vec<Field>,
-}
-
 #[derive(Debug, Clone)]
 pub enum LoginMethod {
     Flow(AuthFlow),
     Form(LoginForm),
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct LoginForm {
+    #[serde(rename = "field")]
+    pub fields: Vec<Field>,
 }
 
 #[derive(Debug, Clone)]

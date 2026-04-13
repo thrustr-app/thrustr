@@ -28,7 +28,7 @@ pub struct Section {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Config {
+pub struct ComponentConfig {
     #[serde(rename = "section")]
     pub sections: Vec<Section>,
 }

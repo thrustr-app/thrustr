@@ -3,10 +3,10 @@ use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use domain::component::capabilities::Storefront;
 use domain::component::{
-    AuthFlow, Capability, Component, ComponentStorage, Config, Error as ComponentError, Image,
-    LoginForm, LoginMethod, Metadata, Origin, Status,
+    AuthFlow, Component, ComponentConfig, ComponentOrigin, ComponentStorage,
+    Error as ComponentError, Image, LoginForm, LoginMethod, Metadata,
 };
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Arc;
 use wasmtime::{Engine, Store};
 
 mod manifest;
@@ -54,9 +54,9 @@ impl PluginBuilder {
 
     pub(crate) fn build(self) -> Plugin {
         let metadata = Metadata {
-            id: self.manifest.plugin.id.clone(),
+            id: self.manifest.plugin.id,
             name: self.manifest.plugin.name,
-            origin: Origin::Plugin(self.manifest.plugin.id),
+            origin: ComponentOrigin::Plugin,
             description: self.manifest.plugin.description,
             icon: self.icon,
             version: self.manifest.plugin.version,
@@ -67,7 +67,6 @@ impl PluginBuilder {
             metadata,
             config: self.manifest.config,
             login_form: self.manifest.auth,
-            status: Mutex::new(Status::Inactive),
             engine: self.engine,
             storage: self.storage,
             storefront_pre: self.storefront_pre,
@@ -77,9 +76,8 @@ impl PluginBuilder {
 
 pub struct Plugin {
     metadata: Metadata,
-    config: Option<Config>,
+    config: Option<ComponentConfig>,
     login_form: Option<LoginForm>,
-    status: Mutex<Status>,
 
     engine: Engine,
     storage: Arc<dyn ComponentStorage>,
@@ -116,15 +114,7 @@ impl Component for Plugin {
         &self.metadata
     }
 
-    fn status(&self) -> Status {
-        self.status.lock().unwrap().clone()
-    }
-
-    fn set_status(&self, status: Status) {
-        *self.status.lock().unwrap() = status;
-    }
-
-    fn config(&self) -> Option<&Config> {
+    fn config(&self) -> Option<&ComponentConfig> {
         self.config.as_ref()
     }
 
@@ -232,13 +222,6 @@ impl Component for Plugin {
             .await
             .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
             .map_err(ComponentError::from)
-    }
-}
-
-impl Capability for Plugin {
-    fn component(self: Arc<Self>) -> Weak<dyn Component> {
-        let arc: Arc<dyn Component> = self;
-        Arc::downgrade(&arc)
     }
 }
 

@@ -8,7 +8,6 @@ mod error;
 mod storage;
 mod value_objects;
 
-pub use capabilities::Capability;
 pub use config::*;
 pub use error::*;
 pub use storage::*;
@@ -19,9 +18,8 @@ pub use value_objects::*;
 #[async_trait]
 pub trait Component: Send + Sync {
     fn metadata(&self) -> &Metadata;
-    fn status(&self) -> Status;
-    fn set_status(&self, status: Status);
-    fn config(&self) -> Option<&Config> {
+
+    fn config(&self) -> Option<&ComponentConfig> {
         None
     }
 
@@ -31,14 +29,19 @@ pub trait Component: Send + Sync {
     }
 
     async fn init(&self) -> Result<(), Error>;
+
     async fn get_login_method(&self) -> Result<Option<LoginMethod>, Error>;
+
     async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
+
     async fn login(
         &self,
         url: Option<String>,
         body: Option<String>,
         fields: Option<Vec<(String, String)>>,
     ) -> Result<(), Error>;
+
     async fn logout(&self) -> Result<(), Error>;
+
     async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), Error>;
 }

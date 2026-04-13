@@ -1,6 +1,8 @@
 use crate::component::RegistryContext;
-use domain::component::{AuthFlow, Component, Config, LoginMethod, Metadata, Status};
-use std::sync::Arc;
+use domain::component::{
+    AuthFlow, Component, ComponentConfig, ComponentStatus, LoginMethod, Metadata,
+};
+use std::sync::{Arc, RwLock};
 
 mod storefront;
 
@@ -10,11 +12,16 @@ pub use storefront::StorefrontHandle;
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
     context: RegistryContext,
+    status: Arc<RwLock<ComponentStatus>>,
 }
 
 impl ComponentHandle {
     pub fn new(component: Arc<dyn Component>, context: RegistryContext) -> Self {
-        Self { component, context }
+        Self {
+            component,
+            context,
+            status: Arc::new(RwLock::new(ComponentStatus::Inactive)),
+        }
     }
 
     pub fn id(&self) -> &str {
@@ -25,29 +32,29 @@ impl ComponentHandle {
         self.component.metadata()
     }
 
-    pub fn status(&self) -> Status {
-        self.component.status()
+    pub fn status(&self) -> ComponentStatus {
+        self.status.read().unwrap().clone()
     }
 
-    pub fn config(&self) -> Option<&Config> {
+    pub fn config(&self) -> Option<&ComponentConfig> {
         self.component.config()
     }
 
     pub fn storefront(&self) -> Option<StorefrontHandle> {
         Arc::clone(&self.component)
             .storefront()
-            .map(|storefront| StorefrontHandle::new(storefront, self.context.clone()))
+            .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
     }
 
     pub async fn init(&self) -> Result<(), String> {
-        if !self.component.status().can_init() {
+        if !self.status().can_init() {
             return Err("Cannot initialize from current state".into());
         }
-        self.set_status(Status::Initializing);
+        self.set_status(ComponentStatus::Initializing);
         let result = self.component.init().await;
         self.set_status(match &result {
-            Ok(_) => Status::Active,
-            Err(e) => Status::InitError(e.clone()),
+            Ok(_) => ComponentStatus::Active,
+            Err(e) => ComponentStatus::InitError(e.clone()),
         });
         result.map_err(|e| e.to_string())?;
 
@@ -62,17 +69,17 @@ impl ComponentHandle {
         body: Option<String>,
         fields: Option<Vec<(String, String)>>,
     ) -> Result<(), String> {
-        if !self.component.status().can_login() {
+        if !self.status().can_login() {
             return Err("Cannot login from current state".into());
         }
-        let prior = self.component.status();
+        let prior = self.status();
         let result = self.component.login(url, body, fields).await;
         if result.is_ok() {
             self.set_status(match prior {
-                Status::Unauthenticated => Status::Active,
-                _ => Status::Inactive,
+                ComponentStatus::Unauthenticated => ComponentStatus::Active,
+                _ => ComponentStatus::Inactive,
             });
-            if self.component.status().can_init() {
+            if self.status().can_init() {
                 return self.init().await;
             }
         }
@@ -80,12 +87,12 @@ impl ComponentHandle {
     }
 
     pub async fn logout(&self) -> Result<(), String> {
-        if !self.component.status().can_logout() {
+        if !self.status().can_logout() {
             return Err("Cannot logout from current state".into());
         }
         let result = self.component.logout().await;
         if result.is_ok() {
-            self.set_status(Status::Unauthenticated);
+            self.set_status(ComponentStatus::Unauthenticated);
         }
         result.map_err(|e| e.to_string())
     }
@@ -119,7 +126,7 @@ impl ComponentHandle {
     }
 
     pub async fn save_config(&self, fields: &[(String, String)]) -> Result<(), String> {
-        if !self.component.status().can_configure() {
+        if !self.status().can_configure() {
             return Err("Cannot configure from current state".into());
         }
         self.validate_config(fields).await?;
@@ -128,15 +135,15 @@ impl ComponentHandle {
             .set_config_values(self.id(), fields)
             .map_err(|e| e.to_string())?;
 
-        if self.component.status().can_init() {
+        if self.status().can_init() {
             return self.init().await;
         }
 
         Ok(())
     }
 
-    fn set_status(&self, status: Status) {
-        self.component.set_status(status);
+    fn set_status(&self, status: ComponentStatus) {
+        *self.status.write().unwrap() = status;
         event::emit("component");
     }
 }

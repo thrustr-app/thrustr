@@ -14,7 +14,7 @@ pub struct RegistryContext {
 
 #[derive(Clone)]
 pub struct ComponentRegistry {
-    components: Arc<DashMap<String, Arc<dyn Component>>>,
+    components: Arc<DashMap<String, ComponentHandle>>,
     context: RegistryContext,
 }
 
@@ -27,46 +27,35 @@ impl ComponentRegistry {
     }
 
     pub fn register(&self, component: Arc<dyn Component>) {
-        self.components
-            .insert(component.metadata().id.to_owned(), component);
+        let id = component.metadata().id.to_owned();
+        let handle = ComponentHandle::new(component, self.context.clone());
+        self.components.insert(id, handle);
     }
 
     pub fn component(&self, id: &str) -> Option<ComponentHandle> {
-        self.components
-            .get(id)
-            .map(|c| ComponentHandle::new(Arc::clone(c.value()), self.context.clone()))
+        self.components.get(id).map(|c| c.value().clone())
     }
 
     pub fn components(&self) -> Vec<ComponentHandle> {
-        self.components
-            .iter()
-            .map(|c| ComponentHandle::new(Arc::clone(c.value()), self.context.clone()))
-            .collect()
+        self.components.iter().map(|c| c.value().clone()).collect()
     }
 
     pub fn plugins(&self) -> Vec<ComponentHandle> {
         self.components
             .iter()
             .filter(|c| c.value().metadata().origin.is_plugin())
-            .map(|c| ComponentHandle::new(Arc::clone(c.value()), self.context.clone()))
+            .map(|c| c.value().clone())
             .collect()
     }
 
     pub fn storefronts(&self) -> Vec<StorefrontHandle> {
         self.components
             .iter()
-            .filter_map(|c| {
-                Arc::clone(c.value())
-                    .storefront()
-                    .map(|s| StorefrontHandle::new(s, self.context.clone()))
-            })
+            .filter_map(|c| c.value().storefront())
             .collect()
     }
 
     pub fn storefront(&self, id: &str) -> Option<StorefrontHandle> {
-        self.components
-            .get(id)
-            .and_then(|c| Arc::clone(c.value()).storefront())
-            .map(|s| StorefrontHandle::new(s, self.context.clone()))
+        self.components.get(id).and_then(|c| c.value().storefront())
     }
 }
