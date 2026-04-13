@@ -1,4 +1,4 @@
-use crate::{plugin::Plugin, thrustr::plugin::types::Game};
+use crate::{plugin::Plugin, wit::thrustr::plugin::types::Game};
 use async_trait::async_trait;
 use domain::{
     component::{Error, capabilities::Storefront},
@@ -28,7 +28,7 @@ impl Plugin {
         NewGame {
             name: game.name,
             source: GameSource {
-                source_id: self.metadata.id.clone(),
+                source_id: self.manifest.plugin.id.clone(),
                 lookup_id: game.lookup_id,
                 external_ids: game.external_ids.into_iter().collect(),
             },

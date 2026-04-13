@@ -50,7 +50,7 @@ impl Config {
     pub fn new(cx: &mut Context<Self>, component_id: &str) -> Self {
         let component = cx.component(component_id).unwrap();
         let metadata = component.metadata();
-        let icon = metadata.icon.clone().map(image_to_gpui);
+        let icon = metadata.icon.to_owned().map(image_to_gpui);
 
         let values: HashMap<SharedString, SharedString> = component
             .get_config_values()
@@ -60,14 +60,14 @@ impl Config {
 
         let sections = component
             .config()
-            .map(|c| c.sections.iter().map(Into::into).collect())
+            .map(|c| c.sections.into_iter().map(Into::into).collect())
             .unwrap_or_default();
 
         let _tasks = vec![cx.listen("component", Self::refresh_status)];
 
         let status = component.status();
         let mut page = Self {
-            name: component.metadata().name.clone().into(),
+            name: component.metadata().name.to_owned().into(),
             icon,
             status_error: status.error_message().map(Into::into),
             status: status,
@@ -172,7 +172,7 @@ impl Config {
         let component = self.component.clone();
         let config_entity = cx.entity().downgrade();
 
-        let form_entity = cx.new(|_| LoginFormState::new(&login_form));
+        let form_entity = cx.new(|_| LoginFormState::new(login_form));
         self.login_form_view = Some(form_entity.clone());
 
         window.open_dialog(cx, move |dialog, _, cx| {
@@ -401,7 +401,7 @@ struct LoginFormState {
 }
 
 impl LoginFormState {
-    pub fn new(login_form: &LoginForm) -> Self {
+    pub fn new(login_form: LoginForm) -> Self {
         let required_ids = login_form
             .fields
             .iter()
@@ -413,7 +413,7 @@ impl LoginFormState {
             })
             .collect();
 
-        let fields = login_form.fields.iter().map(Into::into).collect();
+        let fields = login_form.fields.into_iter().map(Into::into).collect();
 
         Self {
             fields,
@@ -456,17 +456,17 @@ impl Render for LoginFormState {
     }
 }
 
-impl From<&ConfigSection> for Section {
-    fn from(section: &ConfigSection) -> Self {
+impl From<ConfigSection> for Section {
+    fn from(section: ConfigSection) -> Self {
         Section {
-            name: section.name.to_string().into(),
-            fields: section.fields.iter().map(Into::into).collect(),
+            name: section.name.into(),
+            fields: section.fields.into_iter().map(Into::into).collect(),
         }
     }
 }
 
-impl From<&ConfigField> for Field {
-    fn from(field: &ConfigField) -> Self {
+impl From<ConfigField> for Field {
+    fn from(field: ConfigField) -> Self {
         match field {
             ConfigField::Text {
                 id,
@@ -475,12 +475,12 @@ impl From<&ConfigField> for Field {
                 required,
             } => Field {
                 id: id.into(),
-                label: if *required {
+                label: if required {
                     format!("{label} *").into()
                 } else {
                     label.into()
                 },
-                placeholder: placeholder.clone().map(Into::into),
+                placeholder: placeholder.map(Into::into),
             },
         }
     }

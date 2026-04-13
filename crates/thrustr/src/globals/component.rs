@@ -13,13 +13,13 @@ pub(super) fn init(
     cx: &mut App,
     component_storage: Arc<dyn ComponentStorage>,
     game_storage: Arc<dyn GameRepository>,
-) -> Arc<ComponentRegistry> {
+) -> ComponentRegistry {
     let registry = ComponentRegistry::new(RegistryContext {
         component_storage,
         game_storage,
     });
     cx.set_global(ComponentRegistryGlobal(registry.clone()));
-    Arc::new(registry)
+    registry
 }
 
 pub trait ComponentRegistryExt {

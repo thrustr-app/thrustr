@@ -11,7 +11,7 @@ config = { path = "crates/config" }
 domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 pdk = { path = "crates/pdk" }
-plugin-manager = { path = "crates/plugin-manager" }
+plugin = { path = "crates/plugin" }
 sqlite-storage = { path = "crates/sqlite-storage" }
 theme-manager = { path = "crates/theme-manager" }
 ui = { path = "crates/ui" }

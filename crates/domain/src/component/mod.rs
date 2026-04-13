@@ -17,9 +17,9 @@ pub use value_objects::*;
 /// A component may expose one or more capabilities.
 #[async_trait]
 pub trait Component: Send + Sync {
-    fn metadata(&self) -> &Metadata;
+    fn metadata(&self) -> Metadata<'_>;
 
-    fn config(&self) -> Option<&ComponentConfig> {
+    fn config(&self) -> Option<ComponentConfig> {
         None
     }
 

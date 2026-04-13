@@ -14,9 +14,9 @@ pub fn image_format_to_gpui(format: ImageFormat) -> GpuiImageFormat {
     }
 }
 
-pub fn image_to_gpui(image: Image) -> Arc<GpuiImage> {
+pub fn image_to_gpui(image: &Image) -> Arc<GpuiImage> {
     Arc::new(GpuiImage::from_bytes(
         image_format_to_gpui(image.format),
-        image.bytes,
+        image.bytes.clone(),
     ))
 }

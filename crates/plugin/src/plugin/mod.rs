@@ -1,105 +1,47 @@
-use crate::exports::thrustr::plugin::base::{AuthFlow as PluginAuthFlow, Error as PluginError};
-use crate::{StorefrontPlugin, StorefrontPluginPre};
+use crate::wit::exports::thrustr::plugin::base::{
+    AuthFlow as PluginAuthFlow, Error as PluginError,
+};
+use crate::wit::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use domain::component::capabilities::Storefront;
 use domain::component::{
     AuthFlow, Component, ComponentConfig, ComponentStorage, Error as ComponentError, Image,
-    LoginForm, LoginMethod, Metadata, Origin,
+    LoginMethod, Metadata, Origin,
 };
 use std::sync::Arc;
 use wasmtime::{Engine, Store};
 
+mod capabilities;
+mod host;
 mod manifest;
 mod state;
-mod storefront;
 
 pub use manifest::*;
 pub use state::PluginState;
 
-pub(crate) struct PluginBuilder {
-    manifest: PluginManifest,
-    engine: Engine,
-    storage: Arc<dyn ComponentStorage>,
-    icon: Option<Image>,
-    storefront_pre: Option<StorefrontPluginPre<PluginState>>,
-}
-
-impl PluginBuilder {
-    pub(crate) fn new(
-        manifest: PluginManifest,
-        engine: Engine,
-        storage: Arc<dyn ComponentStorage>,
-    ) -> Self {
-        Self {
-            manifest,
-            engine,
-            storage,
-            icon: None,
-            storefront_pre: None,
-        }
-    }
-
-    pub(crate) fn icon(mut self, icon: Option<Image>) -> Self {
-        self.icon = icon;
-        self
-    }
-
-    pub(crate) fn storefront_pre(
-        mut self,
-        storefront_pre: Option<StorefrontPluginPre<PluginState>>,
-    ) -> Self {
-        self.storefront_pre = storefront_pre;
-        self
-    }
-
-    pub(crate) fn build(self) -> Plugin {
-        let metadata = Metadata {
-            id: self.manifest.plugin.id,
-            name: self.manifest.plugin.name,
-            origin: Origin::Plugin,
-            description: self.manifest.plugin.description,
-            icon: self.icon,
-            version: self.manifest.plugin.version,
-            authors: self.manifest.plugin.authors,
-        };
-
-        Plugin {
-            metadata,
-            config: self.manifest.config,
-            login_form: self.manifest.auth,
-            engine: self.engine,
-            storage: self.storage,
-            storefront_pre: self.storefront_pre,
-        }
-    }
-}
-
 pub struct Plugin {
-    metadata: Metadata,
-    config: Option<ComponentConfig>,
-    login_form: Option<LoginForm>,
-
-    engine: Engine,
-    storage: Arc<dyn ComponentStorage>,
-
-    storefront_pre: Option<StorefrontPluginPre<PluginState>>,
+    pub manifest: PluginManifest,
+    pub icon: Option<Image>,
+    pub engine: Engine,
+    pub storage: Arc<dyn ComponentStorage>,
+    pub storefront_pre: Option<StorefrontPluginPre<PluginState>>,
 }
 
 impl Plugin {
-    pub(crate) async fn instantiate_storefront(
+    async fn instantiate_storefront(
         &self,
     ) -> Result<(StorefrontPlugin, Store<PluginState>), PluginError> {
-        let storefront_pre = self
+        let pre = self
             .storefront_pre
             .as_ref()
             .ok_or(PluginError::Other("Not a storefront".into()))?;
 
         let mut store = Store::new(
             &self.engine,
-            PluginState::new(&self.metadata.id, self.storage.clone()),
+            PluginState::new(&self.manifest.plugin.id, self.storage.clone()),
         );
 
-        let instance = storefront_pre
+        let instance = pre
             .instantiate_async(&mut store)
             .await
             .map_err(|e| PluginError::Other(format!("Instantiation failed: {e}")))?;
@@ -110,18 +52,25 @@ impl Plugin {
 
 #[async_trait]
 impl Component for Plugin {
-    fn metadata(&self) -> &Metadata {
-        &self.metadata
+    fn metadata(&self) -> Metadata<'_> {
+        Metadata {
+            id: &self.manifest.plugin.id,
+            name: &self.manifest.plugin.name,
+            description: self.manifest.plugin.description.as_deref(),
+            version: &self.manifest.plugin.version,
+            authors: &self.manifest.plugin.authors,
+            icon: self.icon.as_ref(),
+            origin: Origin::Plugin,
+        }
     }
 
-    fn config(&self) -> Option<&ComponentConfig> {
-        self.config.as_ref()
+    fn config(&self) -> Option<ComponentConfig> {
+        self.manifest.config.clone()
     }
 
     fn storefront(self: Arc<Self>) -> Option<Arc<dyn Storefront>> {
-        self.storefront_pre
-            .is_some()
-            .then(|| self as Arc<dyn Storefront>)
+        self.storefront_pre.as_ref()?;
+        Some(self as Arc<dyn Storefront>)
     }
 
     async fn init(&self) -> Result<(), ComponentError> {
@@ -153,7 +102,7 @@ impl Component for Plugin {
 
         Ok(result
             .map(|flow| LoginMethod::Flow(flow.into()))
-            .or_else(|| self.login_form.clone().map(LoginMethod::Form)))
+            .or_else(|| self.manifest.auth.clone().map(LoginMethod::Form)))
     }
 
     async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, ComponentError> {

@@ -124,14 +124,14 @@ impl Status {
 }
 
 #[derive(Debug)]
-pub struct Metadata {
-    pub id: String,
-    pub name: String,
+pub struct Metadata<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
     pub origin: Origin,
-    pub description: Option<String>,
-    pub icon: Option<Image>,
-    pub version: Version,
-    pub authors: Vec<String>,
+    pub description: Option<&'a str>,
+    pub icon: Option<&'a Image>,
+    pub version: &'a Version,
+    pub authors: &'a [String],
 }
 
 #[derive(Debug, Clone)]

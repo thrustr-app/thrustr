@@ -1,5 +1,5 @@
 [package]
-name = "plugin-manager"
+name = "plugin"
 version = "0.1.0"
 edition = "2024"
 
@@ -19,7 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 smol.workspace = true
 toml.workspace = true
-wasmtime = "42"
-wasmtime-wasi = "42"
-wasmtime-wasi-http = "42"
+wasmtime = "43"
+wasmtime-wasi = "43"
+wasmtime-wasi-http = "43"
 zip = { version = "2", default-features = false, features = ["deflate"] }

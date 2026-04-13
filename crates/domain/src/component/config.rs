@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Field {
     Text {
@@ -20,14 +20,14 @@ impl Field {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Section {
     pub name: String,
     #[serde(rename = "field")]
     pub fields: Vec<Field>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct ComponentConfig {
     #[serde(rename = "section")]
     pub sections: Vec<Section>,

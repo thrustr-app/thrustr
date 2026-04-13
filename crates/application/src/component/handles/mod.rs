@@ -1,6 +1,9 @@
 use crate::component::RegistryContext;
 use domain::component::{AuthFlow, Component, ComponentConfig, LoginMethod, Metadata, Status};
-use std::sync::{Arc, RwLock};
+use std::{
+    ops::Deref,
+    sync::{Arc, RwLock},
+};
 
 mod storefront;
 
@@ -23,10 +26,10 @@ impl ComponentHandle {
     }
 
     pub fn id(&self) -> &str {
-        self.component.metadata().id.as_str()
+        self.component.metadata().id
     }
 
-    pub fn metadata(&self) -> &Metadata {
+    pub fn metadata(&self) -> Metadata<'_> {
         self.component.metadata()
     }
 
@@ -34,7 +37,7 @@ impl ComponentHandle {
         self.status.read().unwrap().clone()
     }
 
-    pub fn config(&self) -> Option<&ComponentConfig> {
+    pub fn config(&self) -> Option<ComponentConfig> {
         self.component.config()
     }
 
@@ -143,5 +146,13 @@ impl ComponentHandle {
     fn set_status(&self, status: Status) {
         *self.status.write().unwrap() = status;
         event::emit("component");
+    }
+}
+
+impl Deref for ComponentHandle {
+    type Target = Arc<dyn Component>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.component
     }
 }
