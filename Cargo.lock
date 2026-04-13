@@ -1133,16 +1133,6 @@ name = "commit_lint"
 version = "0.1.0"
 
 [[package]]
-name = "component-registry"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "dashmap",
- "domain",
- "event",
-]
-
-[[package]]
 name = "compression-codecs"
 version = "0.4.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
