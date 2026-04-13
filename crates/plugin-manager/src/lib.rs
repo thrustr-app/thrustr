@@ -1,6 +1,6 @@
 use crate::plugin::{PluginBuilder, PluginManifest, PluginState};
 use anyhow::Result;
-use component_registry::ComponentRegistry;
+use application::component::ComponentRegistry;
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use futures::TryStreamExt;
 use std::{

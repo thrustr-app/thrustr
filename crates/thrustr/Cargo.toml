@@ -8,7 +8,6 @@ edition = "2024"
 application.workspace = true
 assets.workspace = true
 config.workspace = true
-component-registry.workspace = true
 domain.workspace = true
 event.workspace = true
 plugin-manager.workspace = true

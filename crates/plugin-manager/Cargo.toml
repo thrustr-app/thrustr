@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Local
-component-registry.workspace = true
+application.workspace = true
 domain.workspace = true
 event.workspace = true
 

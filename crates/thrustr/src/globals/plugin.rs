@@ -1,4 +1,4 @@
-use component_registry::ComponentRegistry;
+use application::component::ComponentRegistry;
 use domain::component::ComponentStorage;
 use gpui::{App, Global};
 use plugin_manager::PluginManager;
