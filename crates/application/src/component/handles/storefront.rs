@@ -1,5 +1,5 @@
 use crate::component::ComponentHandle;
-use domain::component::{ComponentStatus, capabilities::Storefront};
+use domain::component::{Status, capabilities::Storefront};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ impl StorefrontHandle {
         }
         let new_games = self.storefront.list_games().await.map_err(|e| {
             let error = e.to_string();
-            self.component.set_status(ComponentStatus::Error(e));
+            self.component.set_status(Status::Error(e));
             error
         })?;
         self.component

@@ -4,7 +4,7 @@ use crate::{
     globals::ComponentRegistryExt,
     navigation::{NavigationExt, SettingsPage},
 };
-use domain::component::ComponentStatus;
+use domain::component::Status;
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
@@ -17,7 +17,7 @@ use ui::{Alert, Card};
 struct Storefront {
     id: SharedString,
     name: SharedString,
-    status: ComponentStatus,
+    status: Status,
     icon: Option<Arc<GpuiImage>>,
     plugin: Option<SharedString>,
 }
@@ -81,25 +81,25 @@ impl Render for Storefronts {
         let cards = self.storefronts.clone().into_iter().map(|storefront| {
             let mut status = div().font_weight(FontWeight::BOLD).text_size(rems(0.6));
             match storefront.status {
-                ComponentStatus::Initializing => {
+                Status::Initializing => {
                     status = status
                         .text_color(theme.colors.warning)
                         .child("INITIALIZING");
                 }
-                ComponentStatus::Unauthenticated => {
+                Status::Unauthenticated => {
                     status = status
                         .text_color(theme.colors.warning)
                         .child("UNAUTHENTICATED");
                 }
-                ComponentStatus::Active => {
+                Status::Active => {
                     status = status.text_color(theme.colors.accent).child("ACTIVE");
                 }
-                ComponentStatus::Inactive => {
+                Status::Inactive => {
                     status = status
                         .text_color(theme.colors.card_secondary)
                         .child("INACTIVE");
                 }
-                ComponentStatus::Error(_) | ComponentStatus::InitError(_) => {
+                Status::Error(_) | Status::InitError(_) => {
                     status = status.text_color(theme.colors.error).child("ERROR");
                 }
             }

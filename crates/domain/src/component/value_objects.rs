@@ -35,12 +35,12 @@ pub struct Image {
 }
 
 #[derive(Debug)]
-pub enum ComponentOrigin {
+pub enum Origin {
     Core,
     Plugin,
 }
 
-impl ComponentOrigin {
+impl Origin {
     pub fn is_core(&self) -> bool {
         matches!(self, Self::Core)
     }
@@ -51,7 +51,7 @@ impl ComponentOrigin {
 }
 
 #[derive(Debug, Clone)]
-pub enum ComponentStatus {
+pub enum Status {
     Inactive,
     Initializing,
     Active,
@@ -60,7 +60,7 @@ pub enum ComponentStatus {
     Error(Error),
 }
 
-impl ComponentStatus {
+impl Status {
     pub fn is_inactive(&self) -> bool {
         matches!(self, Self::Inactive)
     }
@@ -127,7 +127,7 @@ impl ComponentStatus {
 pub struct Metadata {
     pub id: String,
     pub name: String,
-    pub origin: ComponentOrigin,
+    pub origin: Origin,
     pub description: Option<String>,
     pub icon: Option<Image>,
     pub version: Version,

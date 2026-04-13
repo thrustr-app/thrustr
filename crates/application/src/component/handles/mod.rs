@@ -1,7 +1,5 @@
 use crate::component::RegistryContext;
-use domain::component::{
-    AuthFlow, Component, ComponentConfig, ComponentStatus, LoginMethod, Metadata,
-};
+use domain::component::{AuthFlow, Component, ComponentConfig, LoginMethod, Metadata, Status};
 use std::sync::{Arc, RwLock};
 
 mod storefront;
@@ -12,7 +10,7 @@ pub use storefront::StorefrontHandle;
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
     context: RegistryContext,
-    status: Arc<RwLock<ComponentStatus>>,
+    status: Arc<RwLock<Status>>,
 }
 
 impl ComponentHandle {
@@ -20,7 +18,7 @@ impl ComponentHandle {
         Self {
             component,
             context,
-            status: Arc::new(RwLock::new(ComponentStatus::Inactive)),
+            status: Arc::new(RwLock::new(Status::Inactive)),
         }
     }
 
@@ -32,7 +30,7 @@ impl ComponentHandle {
         self.component.metadata()
     }
 
-    pub fn status(&self) -> ComponentStatus {
+    pub fn status(&self) -> Status {
         self.status.read().unwrap().clone()
     }
 
@@ -50,11 +48,11 @@ impl ComponentHandle {
         if !self.status().can_init() {
             return Err("Cannot initialize from current state".into());
         }
-        self.set_status(ComponentStatus::Initializing);
+        self.set_status(Status::Initializing);
         let result = self.component.init().await;
         self.set_status(match &result {
-            Ok(_) => ComponentStatus::Active,
-            Err(e) => ComponentStatus::InitError(e.clone()),
+            Ok(_) => Status::Active,
+            Err(e) => Status::InitError(e.clone()),
         });
         result.map_err(|e| e.to_string())?;
 
@@ -76,8 +74,8 @@ impl ComponentHandle {
         let result = self.component.login(url, body, fields).await;
         if result.is_ok() {
             self.set_status(match prior {
-                ComponentStatus::Unauthenticated => ComponentStatus::Active,
-                _ => ComponentStatus::Inactive,
+                Status::Unauthenticated => Status::Active,
+                _ => Status::Inactive,
             });
             if self.status().can_init() {
                 return self.init().await;
@@ -92,7 +90,7 @@ impl ComponentHandle {
         }
         let result = self.component.logout().await;
         if result.is_ok() {
-            self.set_status(ComponentStatus::Unauthenticated);
+            self.set_status(Status::Unauthenticated);
         }
         result.map_err(|e| e.to_string())
     }
@@ -142,7 +140,7 @@ impl ComponentHandle {
         Ok(())
     }
 
-    fn set_status(&self, status: ComponentStatus) {
+    fn set_status(&self, status: Status) {
         *self.status.write().unwrap() = status;
         event::emit("component");
     }

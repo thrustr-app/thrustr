@@ -3,8 +3,8 @@ use crate::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use domain::component::capabilities::Storefront;
 use domain::component::{
-    AuthFlow, Component, ComponentConfig, ComponentOrigin, ComponentStorage,
-    Error as ComponentError, Image, LoginForm, LoginMethod, Metadata,
+    AuthFlow, Component, ComponentConfig, ComponentStorage, Error as ComponentError, Image,
+    LoginForm, LoginMethod, Metadata, Origin,
 };
 use std::sync::Arc;
 use wasmtime::{Engine, Store};
@@ -56,7 +56,7 @@ impl PluginBuilder {
         let metadata = Metadata {
             id: self.manifest.plugin.id,
             name: self.manifest.plugin.name,
-            origin: ComponentOrigin::Plugin,
+            origin: Origin::Plugin,
             description: self.manifest.plugin.description,
             icon: self.icon,
             version: self.manifest.plugin.version,
