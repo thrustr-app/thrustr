@@ -9,7 +9,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct RegistryContext {
     pub component_storage: Arc<dyn ComponentStorage>,
-    pub game_storage: Arc<dyn GameRepository>,
+    pub game_repository: Arc<dyn GameRepository>,
 }
 
 #[derive(Clone)]
@@ -40,12 +40,8 @@ impl ComponentRegistry {
         self.components.iter().map(|c| c.value().clone()).collect()
     }
 
-    pub fn plugins(&self) -> Vec<ComponentHandle> {
-        self.components
-            .iter()
-            .filter(|c| c.value().metadata().origin.is_plugin())
-            .map(|c| c.value().clone())
-            .collect()
+    pub fn storefront(&self, id: &str) -> Option<StorefrontHandle> {
+        self.components.get(id).and_then(|c| c.value().storefront())
     }
 
     pub fn storefronts(&self) -> Vec<StorefrontHandle> {
@@ -53,9 +49,5 @@ impl ComponentRegistry {
             .iter()
             .filter_map(|c| c.value().storefront())
             .collect()
-    }
-
-    pub fn storefront(&self, id: &str) -> Option<StorefrontHandle> {
-        self.components.get(id).and_then(|c| c.value().storefront())
     }
 }

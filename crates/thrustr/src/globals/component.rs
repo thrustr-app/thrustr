@@ -12,11 +12,11 @@ impl Global for ComponentRegistryGlobal {}
 pub(super) fn init(
     cx: &mut App,
     component_storage: Arc<dyn ComponentStorage>,
-    game_storage: Arc<dyn GameRepository>,
+    game_repository: Arc<dyn GameRepository>,
 ) -> ComponentRegistry {
     let registry = ComponentRegistry::new(RegistryContext {
         component_storage,
-        game_storage,
+        game_repository,
     });
     cx.set_global(ComponentRegistryGlobal(registry.clone()));
     registry

@@ -24,16 +24,19 @@ impl StorefrontHandle {
         if !self.component.status().is_active() {
             return Err("Storefront is not active.".into());
         }
+
         let new_games = self.storefront.list_games().await.map_err(|e| {
             let error = e.to_string();
             self.component.set_status(Status::Error(e));
             error
         })?;
+
         self.component
             .context
-            .game_storage
+            .game_repository
             .insert_many(&new_games)
             .map_err(|err| err.to_string())?;
+
         Ok(())
     }
 }
