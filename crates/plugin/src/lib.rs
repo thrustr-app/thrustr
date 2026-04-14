@@ -1,7 +1,8 @@
 mod manager;
 mod plugin;
+mod service;
 
-pub use manager::PluginManager;
+pub use service::*;
 
 mod wit {
     use wasmtime::component::bindgen;

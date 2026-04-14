@@ -9,7 +9,7 @@ mod plugin;
 
 pub use component::ComponentRegistryExt;
 pub use game::GameServiceExt;
-pub use plugin::PluginManagerExt;
+pub use plugin::PluginServiceExt;
 
 pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
     cx.set_global(ThemeManager::new());

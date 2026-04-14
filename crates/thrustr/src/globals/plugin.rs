@@ -1,30 +1,30 @@
 use application::component::ComponentRegistry;
 use domain::component::ComponentStorage;
 use gpui::{App, Global};
-use plugin::PluginManager;
+use plugin::PluginService;
 use std::sync::Arc;
 
-pub struct PluginManagerGlobal(PluginManager);
+pub struct PluginServiceGlobal(PluginService);
 
-impl Global for PluginManagerGlobal {}
+impl Global for PluginServiceGlobal {}
 
 pub fn init(
     cx: &mut App,
     storage: Arc<dyn ComponentStorage>,
     component_registry: ComponentRegistry,
 ) {
-    cx.set_global(PluginManagerGlobal(PluginManager::new(
+    cx.set_global(PluginServiceGlobal(PluginService::new(
         storage,
         component_registry,
     )));
 }
 
-pub trait PluginManagerExt {
-    fn plugin_manager(&self) -> PluginManager;
+pub trait PluginServiceExt {
+    fn plugin_service(&self) -> PluginService;
 }
 
-impl PluginManagerExt for App {
-    fn plugin_manager(&self) -> PluginManager {
-        self.global::<PluginManagerGlobal>().0.clone()
+impl PluginServiceExt for App {
+    fn plugin_service(&self) -> PluginService {
+        self.global::<PluginServiceGlobal>().0.clone()
     }
 }

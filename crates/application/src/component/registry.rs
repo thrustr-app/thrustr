@@ -26,10 +26,11 @@ impl ComponentRegistry {
         }
     }
 
-    pub fn register(&self, component: Arc<dyn Component>) {
+    pub fn register(&self, component: Arc<dyn Component>) -> ComponentHandle {
         let id = component.metadata().id.to_owned();
         let handle = ComponentHandle::new(component, self.context.clone());
-        self.components.insert(id, handle);
+        self.components.insert(id, handle.clone());
+        handle
     }
 
     pub fn component(&self, id: &str) -> Option<ComponentHandle> {

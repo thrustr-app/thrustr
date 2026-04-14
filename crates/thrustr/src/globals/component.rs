@@ -29,10 +29,6 @@ pub trait ComponentRegistryExt {
         self.component_registry().component(id)
     }
 
-    fn components(&self) -> Vec<ComponentHandle> {
-        self.component_registry().components()
-    }
-
     fn storefronts(&self) -> Vec<StorefrontHandle> {
         self.component_registry().storefronts()
     }

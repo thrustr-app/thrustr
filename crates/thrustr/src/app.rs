@@ -1,10 +1,7 @@
-use crate::extensions::EventListenerExt;
-use crate::globals::ComponentRegistryExt;
-use crate::gpui_tokio::Tokio;
 use crate::navigation::{NavigationExt, Navigator, Page};
 use crate::{
     components::{Sidebar, Topbar},
-    globals::PluginManagerExt,
+    globals::PluginServiceExt,
 };
 use config::paths;
 use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
@@ -29,11 +26,6 @@ impl App {
         })
         .detach();
 
-        cx.listen("plugin", |app, cx| {
-            app.init_components(cx);
-        })
-        .detach();
-
         let app = Self {
             current_page,
             active_view,
@@ -43,23 +35,13 @@ impl App {
     }
 
     fn load_plugins(&self, cx: &mut Context<Self>) {
-        let plugin_manager = cx.plugin_manager();
+        let plugin_manager = cx.plugin_service();
         cx.background_spawn(async move {
             let _ = plugin_manager
-                .load_plugins(paths::plugins_dir().as_path())
+                .load_and_init(paths::plugins_dir().as_path())
                 .await;
         })
         .detach();
-    }
-
-    fn init_components(&self, cx: &mut Context<Self>) {
-        let components = cx.components();
-        for component in components {
-            Tokio::spawn(cx, async move {
-                let _ = component.init().await;
-            })
-            .detach();
-        }
     }
 }
 

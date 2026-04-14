@@ -3,14 +3,11 @@ use crate::{
     wit::{StorefrontPlugin, StorefrontPluginPre},
 };
 use anyhow::Result;
-use application::component::ComponentRegistry;
 use domain::component::{ComponentStorage, Image, ImageFormat};
-use futures::TryStreamExt;
 use std::{
-    ffi::OsStr,
     fs::File,
     io::{Read, Seek},
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::Arc,
 };
 use wasmtime::{
@@ -24,11 +21,10 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
-    component_registry: ComponentRegistry,
 }
 
 impl PluginManager {
-    pub fn new(storage: Arc<dyn ComponentStorage>, component_registry: ComponentRegistry) -> Self {
+    pub fn new(storage: Arc<dyn ComponentStorage>) -> Self {
         let config = Config::new();
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
@@ -45,29 +41,10 @@ impl PluginManager {
             engine,
             linker: Arc::new(linker),
             storage,
-            component_registry,
         }
     }
 
-    pub async fn load_plugins(&self, dir: &Path) -> Result<()> {
-        let mut read_dir = smol::fs::read_dir(dir).await?;
-        let mut paths: Vec<PathBuf> = Vec::new();
-
-        while let Some(entry) = read_dir.try_next().await? {
-            let path = entry.path();
-            if path.extension() == Some(OsStr::new("tp")) {
-                paths.push(path);
-            }
-        }
-
-        futures::stream::iter(paths.into_iter().map(Ok::<PathBuf, anyhow::Error>))
-            .try_for_each_concurrent(None, |path| async move { self.load_plugin(path).await })
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn load_plugin(&self, path: PathBuf) -> Result<()> {
+    pub async fn load_plugin(&self, path: PathBuf) -> Result<Plugin> {
         let (manifest, wasm_bytes, icon) = smol::unblock(move || read_plugin_archive(path)).await?;
 
         let component = smol::unblock({
@@ -87,10 +64,7 @@ impl PluginManager {
             storefront_pre: storefront,
         };
 
-        self.component_registry.register(Arc::new(plugin));
-
-        event::emit("plugin");
-        Ok(())
+        Ok(plugin)
     }
 }
 
