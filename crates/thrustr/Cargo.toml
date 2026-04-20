@@ -5,11 +5,12 @@ edition = "2024"
 
 [dependencies]
 # Local
-application.workspace = true
 assets.workspace = true
+component.workspace = true
 config.workspace = true
 domain.workspace = true
 event.workspace = true
+game.workspace = true
 plugin.workspace = true
 sqlite-storage.workspace = true
 theme-manager.workspace = true

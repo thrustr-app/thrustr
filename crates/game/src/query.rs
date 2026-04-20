@@ -1,4 +1,4 @@
-use crate::game::GameListItem;
+use crate::GameListItem;
 use anyhow::Result;
 
 pub trait GameQuery: Send + Sync {

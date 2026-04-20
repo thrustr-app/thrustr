@@ -1,4 +1,4 @@
-use crate::component::RegistryContext;
+use crate::RegistryContext;
 use domain::component::{AuthFlow, Component, ComponentConfig, LoginMethod, Metadata, Status};
 use std::sync::{Arc, RwLock};
 

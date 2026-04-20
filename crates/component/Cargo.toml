@@ -1,0 +1,9 @@
+[package]
+name = "component"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dashmap.workspace = true
+domain.workspace = true
+event.workspace = true

@@ -1,13 +1,8 @@
 [package]
-name = "application"
+name = "game"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# Local
 anyhow.workspace = true
 domain.workspace = true
-event.workspace = true
-
-# External
-dashmap.workspace = true

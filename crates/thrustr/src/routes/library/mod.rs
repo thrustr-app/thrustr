@@ -1,11 +1,10 @@
-use std::rc::Rc;
-
 use crate::{extensions::SpawnTaskExt, globals::GameServiceExt};
-use application::game::GameListItem;
+use game::GameListItem;
 use gpui::{
     App, Bounds, Context, IntoElement, ParentElement, Pixels, Render, RenderOnce, SharedString,
     Styled, Window, div, px, rems, uniform_list,
 };
+use std::rc::Rc;
 use theme_manager::ThemeExt;
 
 const GAME_CARD_WIDTH: Pixels = px(200.);

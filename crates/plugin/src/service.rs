@@ -1,6 +1,6 @@
 use crate::manager::PluginManager;
 use anyhow::{Result, anyhow};
-use application::component::ComponentRegistry;
+use component::ComponentRegistry;
 use domain::component::ComponentStorage;
 use futures::TryStreamExt;
 use std::{

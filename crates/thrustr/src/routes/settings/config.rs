@@ -6,7 +6,7 @@ use crate::{
     navigation::NavigationExt,
     webview::{WebviewError, open_auth_webview},
 };
-use application::component::ComponentHandle;
+use component::ComponentHandle;
 use domain::component::{
     Field as ConfigField, LoginForm, LoginMethod, Section as ConfigSection, Status,
 };

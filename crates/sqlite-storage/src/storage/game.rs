@@ -1,9 +1,9 @@
 use crate::SqliteStorage;
 use crate::models::{GameRow, NewGameRow};
 use anyhow::Result;
-use application::game::{GameListItem, GameQuery};
 use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use domain::game::{GameRepository, NewGame};
+use game::{GameListItem, GameQuery};
 
 impl GameRepository for SqliteStorage {
     fn insert(&self, new_game: &NewGame) -> Result<()> {

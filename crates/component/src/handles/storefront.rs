@@ -1,4 +1,4 @@
-use crate::component::ComponentHandle;
+use crate::ComponentHandle;
 use domain::component::{Status, capabilities::Storefront};
 use std::sync::Arc;
 

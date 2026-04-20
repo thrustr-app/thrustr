@@ -1,4 +1,4 @@
-use crate::game::{GameListItem, GameQuery};
+use crate::{GameListItem, GameQuery};
 use anyhow::Result;
 use std::sync::Arc;
 

@@ -1,4 +1,4 @@
-use application::game::{GameQuery, GameService};
+use game::{GameQuery, GameService};
 use gpui::{App, Global};
 use std::sync::Arc;
 

@@ -1,6 +1,4 @@
-use application::component::{
-    ComponentHandle, ComponentRegistry, RegistryContext, StorefrontHandle,
-};
+use component::{ComponentHandle, ComponentRegistry, RegistryContext, StorefrontHandle};
 use domain::{component::ComponentStorage, game::GameRepository};
 use gpui::{App, Global};
 use std::sync::Arc;
