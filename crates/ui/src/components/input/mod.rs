@@ -18,7 +18,7 @@ mod text_ops;
 
 pub(super) use actions::init;
 pub use events::*;
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 /// Context identifier for text input key bindings
 const CONTEXT: &str = "input";

@@ -4,7 +4,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
     transparent_black,
 };
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 #[derive(IntoElement)]
 struct SidebarIconButton {

@@ -6797,7 +6797,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sqlite-storage"
+name = "sqlite"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -7270,7 +7270,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "theme-manager"
+name = "theme"
 version = "0.1.0"
 dependencies = [
  "assets",
@@ -7346,8 +7346,8 @@ dependencies = [
  "serde_json",
  "smallvec",
  "smol",
- "sqlite-storage",
- "theme-manager",
+ "sqlite",
+ "theme",
  "tokio",
  "ui",
 ]
@@ -7749,7 +7749,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "smallvec",
- "theme-manager",
+ "theme",
  "unicode-segmentation",
 ]
 

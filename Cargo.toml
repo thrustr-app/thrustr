@@ -13,8 +13,8 @@ event = { path = "crates/event" }
 game = { path = "crates/game" }
 pdk = { path = "crates/pdk" }
 plugin = { path = "crates/plugin" }
-sqlite-storage = { path = "crates/sqlite-storage" }
-theme-manager = { path = "crates/theme-manager" }
+sqlite = { path = "crates/sqlite" }
+theme = { path = "crates/theme" }
 ui = { path = "crates/ui" }
 
 # External

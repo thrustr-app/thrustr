@@ -5,7 +5,7 @@ use gpui::{
     Styled, Window, div, px, rems, uniform_list,
 };
 use std::rc::Rc;
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 const GAME_CARD_WIDTH: Pixels = px(200.);
 const MIN_GAP: Pixels = px(16.);

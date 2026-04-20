@@ -7,7 +7,7 @@ use gpui::{
 };
 use smallvec::SmallVec;
 use std::time::Duration;
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 #[derive(IntoElement)]
 pub struct Button {

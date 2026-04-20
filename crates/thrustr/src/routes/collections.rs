@@ -1,5 +1,5 @@
 use gpui::{Context, IntoElement, Render, Styled, Window, div};
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 pub struct Collections;
 

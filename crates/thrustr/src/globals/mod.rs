@@ -1,7 +1,7 @@
 use gpui::App;
-use sqlite_storage::SqliteStorage;
+use sqlite::SqliteStorage;
 use std::sync::Arc;
-use theme_manager::ThemeManager;
+use theme::ThemeManager;
 
 mod component;
 mod game;

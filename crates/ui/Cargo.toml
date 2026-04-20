@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 # Local
 gpui.workspace = true
-theme-manager.workspace = true
+theme.workspace = true
 
 # External
 smallvec.workspace = true

@@ -4,7 +4,7 @@ use gpui::{
     RenderOnce, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
     transparent_black,
 };
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 mod appearance;
 mod config;

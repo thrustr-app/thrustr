@@ -5,7 +5,7 @@ use crate::{
 };
 use config::paths;
 use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 use ui::UiProvider;
 
 pub struct App {

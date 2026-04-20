@@ -5,7 +5,7 @@ use gpui::{
     anchored, div, prelude::FluentBuilder, px, rems,
 };
 use std::rc::Rc;
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 const CONTEXT: &str = "dialog";
 

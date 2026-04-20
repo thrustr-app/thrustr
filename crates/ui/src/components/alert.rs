@@ -2,7 +2,7 @@ use gpui::{
     App, FontWeight, IntoElement, ParentElement, Refineable, RenderOnce, SharedString,
     StyleRefinement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
 };
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 #[derive(IntoElement)]
 pub struct Alert {

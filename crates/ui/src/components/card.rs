@@ -4,7 +4,7 @@ use gpui::{
     StyleRefinement, Styled, Window, div, prelude::FluentBuilder, rems, transparent_black,
 };
 use smallvec::SmallVec;
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 #[derive(IntoElement)]
 pub struct Card {

@@ -17,7 +17,7 @@ use gpui::{
 };
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 use ui::{Alert, Button, Card, InputEvent, Label, PortalContext, WithSize, WithVariant, input};
 
 struct Field {

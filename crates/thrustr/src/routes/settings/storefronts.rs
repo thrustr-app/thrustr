@@ -10,7 +10,7 @@ use gpui::{
     SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
 };
 use std::sync::Arc;
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 use ui::{Alert, Card};
 
 #[derive(Clone)]

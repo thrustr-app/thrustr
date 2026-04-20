@@ -2,7 +2,7 @@ use gpui::{
     App, FontWeight, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
     rems,
 };
-use theme_manager::ThemeExt;
+use theme::ThemeExt;
 
 #[derive(IntoElement)]
 pub struct Topbar {
