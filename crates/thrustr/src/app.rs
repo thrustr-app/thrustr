@@ -4,24 +4,29 @@ use crate::{
     globals::PluginServiceExt,
 };
 use config::paths;
-use gpui::{AnyView, AppContext, Context, IntoElement, ParentElement, Render, Styled, Window, div};
+use gpui::{
+    AnyView, App as GpuiApp, AppContext, Context, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Render, Styled, Window, div,
+};
 use theme::ThemeExt;
 use ui::UiProvider;
 
 pub struct App {
     current_page: Page,
     active_view: AnyView,
+    focus_handle: FocusHandle,
 }
 
 impl App {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let current_page = cx.current_page();
         let active_view = current_page.build_view(cx);
 
-        cx.observe_global::<Navigator>(|this, cx| {
+        cx.observe_global_in::<Navigator>(window, |this, window, cx| {
             let page = cx.current_page();
             this.active_view = page.build_view(cx);
             this.current_page = page;
+            this.focus_handle.focus(window, cx);
             cx.notify();
         })
         .detach();
@@ -29,6 +34,7 @@ impl App {
         let app = Self {
             current_page,
             active_view,
+            focus_handle: cx.focus_handle(),
         };
         app.load_plugins(cx);
         app
@@ -45,10 +51,17 @@ impl App {
     }
 }
 
+impl Focusable for App {
+    fn focus_handle(&self, _: &GpuiApp) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
 impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         div()
+            .track_focus(&self.focus_handle(cx))
             .size_full()
             .bg(theme.colors.background)
             .child(

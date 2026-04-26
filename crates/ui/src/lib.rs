@@ -1,6 +1,6 @@
 use gpui::{
-    AnyView, App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Render, Styled, Window, actions, div,
+    AnyView, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
+    KeyBinding, ParentElement, Render, Styled, Window, actions, div,
 };
 use std::rc::Rc;
 
@@ -20,7 +20,6 @@ pub(crate) struct ActiveDialog {
 
 pub struct UiProvider {
     view: AnyView,
-    focus_handle: FocusHandle,
     previous_focus_handle: Option<FocusHandle>,
     pub(crate) active_dialogs: Vec<ActiveDialog>,
 }
@@ -34,9 +33,8 @@ impl UiProvider {
         ]);
 
         let view = view.into();
-        cx.new(|cx| UiProvider {
+        cx.new(|_| UiProvider {
             view,
-            focus_handle: cx.focus_handle(),
             previous_focus_handle: None,
             active_dialogs: Vec::new(),
         })
@@ -112,16 +110,9 @@ impl UiProvider {
     }
 }
 
-impl Focusable for UiProvider {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
 impl Render for UiProvider {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .track_focus(&self.focus_handle(cx))
             .size_full()
             .child(self.view.clone())
             .id("ui-provider")
