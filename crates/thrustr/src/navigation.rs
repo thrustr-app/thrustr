@@ -1,28 +1,19 @@
 use crate::routes;
-use gpui::{AnyView, App, AppContext, BorrowAppContext, Global, SharedString};
+use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString};
+use std::{collections::VecDeque, mem::replace};
+
+const MAX_HISTORY: usize = 20;
 
 pub fn init(cx: &mut App) {
     cx.set_global(Navigator::new(Page::Home));
 }
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Page {
     Home,
     Library,
     Collections,
-    Settings(SettingsPage),
-}
-
-impl PartialEq for Page {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (Page::Home, Page::Home)
-                | (Page::Library, Page::Library)
-                | (Page::Collections, Page::Collections)
-                | (Page::Settings(_), Page::Settings(_))
-        )
-    }
+    Settings(Option<SettingsPage>),
 }
 
 impl Page {
@@ -31,7 +22,8 @@ impl Page {
             Self::Home => "Home",
             Self::Library => "Library",
             Self::Collections => "Collections",
-            Self::Settings(sub) => sub.label(),
+            Self::Settings(None) => "Settings",
+            Self::Settings(Some(sub)) => sub.label(),
         }
     }
 
@@ -49,60 +41,33 @@ impl Page {
             Self::Home => cx.new(|_| routes::Home).into(),
             Self::Library => cx.new(|cx| routes::Library::new(cx)).into(),
             Self::Collections => cx.new(|_| routes::Collections).into(),
-            Self::Settings(sub) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
+            Self::Settings(Some(sub)) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
+            _ => cx.new(|_| EmptyView).into(),
         }
     }
 
-    fn is_same_page(&self, other: &Self) -> bool {
+    /// Whether this page is the parent of the other page, i.e. the other page is a subpage of this one.
+    fn is_parent_of(&self, other: &Self) -> bool {
         match (self, other) {
-            (Page::Settings(a), Page::Settings(b)) => {
-                std::mem::discriminant(a) == std::mem::discriminant(b)
-            }
+            (Self::Settings(None), Self::Settings(_)) => true,
+
+            (Self::Settings(Some(a)), Self::Settings(Some(b))) => a.is_parent_of(b),
             _ => self == other,
         }
     }
 }
 
-#[derive(Debug, Clone, Eq)]
+impl From<SettingsPage> for Page {
+    fn from(sub: SettingsPage) -> Self {
+        Self::Settings(Some(sub))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsPage {
     Storefronts(Option<SharedString>),
     Plugins(Option<SharedString>),
     Appearance,
-}
-
-impl PartialEq for SettingsPage {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (SettingsPage::Storefronts(_), SettingsPage::Storefronts(_))
-                | (SettingsPage::Plugins(_), SettingsPage::Plugins(_))
-                | (SettingsPage::Appearance, SettingsPage::Appearance)
-        )
-    }
-}
-
-impl PartialEq<Page> for SettingsPage {
-    fn eq(&self, other: &Page) -> bool {
-        matches!(
-            (self, other),
-            (
-                SettingsPage::Storefronts(_),
-                Page::Settings(SettingsPage::Storefronts(_))
-            ) | (
-                SettingsPage::Plugins(_),
-                Page::Settings(SettingsPage::Plugins(_))
-            ) | (
-                SettingsPage::Appearance,
-                Page::Settings(SettingsPage::Appearance)
-            )
-        )
-    }
-}
-
-impl PartialEq<SettingsPage> for Page {
-    fn eq(&self, other: &SettingsPage) -> bool {
-        other == self
-    }
 }
 
 impl Default for SettingsPage {
@@ -138,61 +103,89 @@ impl SettingsPage {
             Self::Appearance => cx.new(|_| routes::Appearance).into(),
         }
     }
-}
 
-impl Into<Page> for SettingsPage {
-    fn into(self) -> Page {
-        Page::Settings(self)
+    /// Whether this page is the parent of the other page, i.e. the other page is a subpage of this one.
+    fn is_parent_of(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Storefronts(None), Self::Storefronts(_)) => true,
+            (Self::Plugins(None), Self::Plugins(_)) => true,
+            _ => self == other,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Navigator {
     current: Page,
-    history: Vec<Page>,
+    history: VecDeque<Page>,
 }
+
+impl Global for Navigator {}
 
 impl Navigator {
     fn new(initial: Page) -> Self {
         Self {
             current: initial,
-            history: Vec::new(),
+            history: VecDeque::new(),
+        }
+    }
+
+    pub fn current_page(&self) -> Page {
+        self.current.clone()
+    }
+
+    /// Returns `true` if the given page is the same or a parent of the current page.
+    pub fn is_active_for(&self, page: impl Into<Page>) -> bool {
+        page.into().is_parent_of(&self.current)
+    }
+
+    fn navigate(&mut self, page: impl Into<Page>) {
+        let mut next = page.into();
+
+        if let Page::Settings(None) = next {
+            next = SettingsPage::Storefronts(None).into();
+        }
+
+        if self.current.is_parent_of(&next) || next.is_parent_of(&self.current) {
+            self.current = next;
+            return;
+        }
+
+        let previous = replace(&mut self.current, next);
+        self.history.push_back(previous);
+
+        if self.history.len() > MAX_HISTORY {
+            self.history.pop_front();
+        }
+    }
+
+    fn navigate_back(&mut self) {
+        if let Some(previous) = self.history.pop_back() {
+            self.current = previous;
         }
     }
 }
 
-impl Global for Navigator {}
-
-pub trait NavigationExt {
+/// Extension trait that provides navigation-related methods.
+pub trait NavigatorExt {
+    /// Returns a reference to the navigator.
+    fn navigator(&self) -> &Navigator;
+    /// Navigates to the given page, pushing the current page onto the history.
     fn navigate(&mut self, page: impl Into<Page>);
-    fn current_page(&self) -> Page;
+    /// Navigates back to the previous page, if available.
     fn navigate_back(&mut self);
 }
 
-impl NavigationExt for App {
-    fn navigate(&mut self, page: impl Into<Page>) {
-        self.update_global::<Navigator, _>(|nav, _| {
-            let previous = nav.current.clone();
-            nav.current = page.into();
-
-            if !nav.current.is_same_page(&previous) {
-                nav.history.push(previous);
-                if nav.history.len() > 20 {
-                    nav.history.remove(0);
-                }
-            }
-        });
+impl NavigatorExt for App {
+    fn navigator(&self) -> &Navigator {
+        self.global::<Navigator>()
     }
 
-    fn current_page(&self) -> Page {
-        self.global::<Navigator>().current.clone()
+    fn navigate(&mut self, page: impl Into<Page>) {
+        self.global_mut::<Navigator>().navigate(page);
     }
 
     fn navigate_back(&mut self) {
-        self.update_global::<Navigator, _>(|nav, _| {
-            if let Some(previous) = nav.history.pop() {
-                nav.current = previous;
-            }
-        });
+        self.global_mut::<Navigator>().navigate_back();
     }
 }

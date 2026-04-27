@@ -1,8 +1,7 @@
-use crate::navigation::{NavigationExt, Page, SettingsPage};
+use crate::navigation::{NavigatorExt, Page};
 use gpui::{
-    App, ClickEvent, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
-    transparent_black,
+    App, InteractiveElement, IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement,
+    Styled, Window, div, prelude::FluentBuilder, rems, svg, transparent_black,
 };
 use theme::ThemeExt;
 
@@ -20,19 +19,15 @@ impl SidebarIconButton {
 impl RenderOnce for SidebarIconButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let current = cx.current_page();
-        let target = self.page.clone();
+
+        let target_page = self.page.clone();
         let label = self.page.label();
-        let is_active = self.page == current;
+        let is_active = cx.navigator().is_active_for(self.page.clone());
 
         div()
             .id(label)
             .cursor_pointer()
-            .on_click(
-                move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                    cx.navigate(target.clone());
-                },
-            )
+            .on_click(move |_, _, cx| cx.navigate(target_page.clone()))
             .group(label)
             .p(rems(0.625))
             .flex()
@@ -84,9 +79,7 @@ impl RenderOnce for Sidebar {
             .items_center()
             .gap(rems(0.75))
             .mb(rems(1.5))
-            .child(SidebarIconButton::new(Page::Settings(
-                SettingsPage::default(),
-            )));
+            .child(SidebarIconButton::new(Page::Settings(None)));
 
         div()
             .flex()

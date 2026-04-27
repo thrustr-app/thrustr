@@ -2,7 +2,7 @@ use crate::{
     conversions::image::image_to_gpui,
     extensions::EventListenerExt,
     globals::ComponentRegistryExt,
-    navigation::{NavigationExt, SettingsPage},
+    navigation::{NavigatorExt, SettingsPage},
 };
 use domain::component::Status;
 use gpui::{

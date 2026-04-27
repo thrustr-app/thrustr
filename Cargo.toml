@@ -22,7 +22,7 @@ anyhow = "1"
 async-trait = "0.1.89"
 dashmap = "6"
 futures = "0.3"
-gpui = { git = "https://github.com/zed-industries/zed" }
+gpui = { git = "https://github.com/zed-industries/zed", features = ["test-support"] }
 gpui_macros = { git = "https://github.com/zed-industries/zed" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
 semver = { version = "1", features = ["serde"] }

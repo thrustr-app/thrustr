@@ -1,4 +1,4 @@
-use crate::navigation::{NavigationExt, Navigator, Page};
+use crate::navigation::{Navigator, NavigatorExt, Page};
 use crate::{
     components::{Sidebar, Topbar},
     globals::PluginServiceExt,
@@ -19,11 +19,11 @@ pub struct App {
 
 impl App {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let current_page = cx.current_page();
+        let current_page = cx.navigator().current_page();
         let active_view = current_page.build_view(cx);
 
         cx.observe_global_in::<Navigator>(window, |this, window, cx| {
-            let page = cx.current_page();
+            let page = cx.navigator().current_page();
             this.active_view = page.build_view(cx);
             this.current_page = page;
             this.focus_handle.focus(window, cx);

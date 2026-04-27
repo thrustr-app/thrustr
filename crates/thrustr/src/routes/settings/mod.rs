@@ -1,7 +1,7 @@
-use crate::navigation::{NavigationExt, SettingsPage};
+use crate::navigation::{NavigatorExt, SettingsPage};
 use gpui::{
-    AnyView, App, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, Render,
-    RenderOnce, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
+    AnyView, App, Context, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
+    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
     transparent_black,
 };
 use theme::ThemeExt;
@@ -30,18 +30,14 @@ impl SettingsPageButton {
 impl RenderOnce for SettingsPageButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let current_page = cx.current_page();
-        let is_active = current_page == self.page;
+
         let target = self.page.clone();
+        let is_active = cx.navigator().is_active_for(self.page.clone());
 
         div()
             .id(self.page.label())
             .cursor_pointer()
-            .on_click(
-                move |_event: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                    cx.navigate(target.clone());
-                },
-            )
+            .on_click(move |_, _, cx| cx.navigate(target.clone()))
             .py(rems(0.625))
             .px(rems(1.25))
             .w_full()

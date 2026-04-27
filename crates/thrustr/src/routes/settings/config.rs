@@ -3,7 +3,7 @@ use crate::{
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::ComponentRegistryExt,
     gpui_tokio::Tokio,
-    navigation::NavigationExt,
+    navigation::NavigatorExt,
     webview::{WebviewError, open_auth_webview},
 };
 use component::ComponentHandle;
