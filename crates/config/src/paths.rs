@@ -16,6 +16,28 @@ pub fn db_path() -> PathBuf {
     data_dir().join(DB_NAME)
 }
 
+/// Path to the applicationmedia directory.
+pub fn media_dir() -> PathBuf {
+    data_dir().join("media")
+}
+
+/// Path to the cover images directoy.
+pub fn covers_dir() -> PathBuf {
+    media_dir().join("covers")
+}
+
+/// Path to the cover image for a given ID.
+pub fn cover_path(id: u64, extension: &str) -> PathBuf {
+    let base = covers_dir();
+
+    let dir1 = id / 1_000;
+    let dir2 = id % 1_000;
+
+    base.join(format!("{dir1:03}"))
+        .join(format!("{dir2:03}"))
+        .join(format!("{id}.{extension}"))
+}
+
 /// Path to the plugins directory, creating it if it doesn't exist.
 pub fn plugins_dir() -> PathBuf {
     let dir = if cfg!(debug_assertions) {

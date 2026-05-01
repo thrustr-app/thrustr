@@ -63,7 +63,7 @@ impl GameQuery for SqliteStorage {
         let items = rows
             .into_iter()
             .map(|row| GameListItem {
-                id: row.id.into(),
+                id: (row.id as u64).into(),
                 name: row.name,
                 source_id: row.source_id,
             })

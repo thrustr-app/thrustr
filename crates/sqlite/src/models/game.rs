@@ -31,7 +31,7 @@ pub struct NewGameRow<'a> {
 impl From<GameRow> for Game {
     fn from(row: GameRow) -> Self {
         Self {
-            id: row.id.into(),
+            id: (row.id as u64).into(),
             name: row.name,
             source: GameSource {
                 source_id: row.source_id,
