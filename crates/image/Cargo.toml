@@ -1,0 +1,15 @@
+[package]
+name = "image"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Local
+connectivity.workspace = true
+
+# External
+anyhow.workspace = true
+image = "0.25"
+reqwest.workspace = true
+tokio.workspace = true
+webp = "0.3"

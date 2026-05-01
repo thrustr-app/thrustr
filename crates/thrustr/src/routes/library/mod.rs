@@ -46,6 +46,7 @@ impl RenderOnce for GameCard {
             .overflow_hidden()
             .whitespace_nowrap()
             .text_color(theme.colors.primary)
+            .text_size(rems(0.9))
             .child(self.game.name)
     }
 }
