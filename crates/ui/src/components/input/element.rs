@@ -155,7 +155,7 @@ impl Element for TextElement {
         let state = self.state.read(cx);
         let style = window.text_style();
 
-        let (display_text, text_color) = self.prepare_display_text(&state, style.color);
+        let (display_text, text_color) = self.prepare_display_text(state, style.color);
 
         let base_run = TextRun {
             len: display_text.len(),
@@ -263,10 +263,11 @@ impl Element for TextElement {
         )
         .unwrap();
 
-        if focus_handle.is_focused(window) && self.state.read(cx).cursor_visible(window, cx) {
-            if let Some(cursor) = prepaint.cursor.take() {
-                window.paint_quad(cursor);
-            }
+        if focus_handle.is_focused(window)
+            && self.state.read(cx).cursor_visible(window, cx)
+            && let Some(cursor) = prepaint.cursor.take()
+        {
+            window.paint_quad(cursor);
         }
 
         self.state.update(cx, |state, _cx| {

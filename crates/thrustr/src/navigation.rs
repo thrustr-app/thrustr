@@ -39,7 +39,7 @@ impl Page {
     pub fn build_view(&self, cx: &mut App) -> AnyView {
         match self {
             Self::Home => cx.new(|_| routes::Home).into(),
-            Self::Library => cx.new(|cx| routes::Library::new(cx)).into(),
+            Self::Library => cx.new(routes::Library::new).into(),
             Self::Collections => cx.new(|_| routes::Collections).into(),
             Self::Settings(Some(sub)) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
             _ => cx.new(|_| EmptyView).into(),
@@ -95,8 +95,8 @@ impl SettingsPage {
 
     pub fn build_view(&self, cx: &mut App) -> AnyView {
         match self {
-            Self::Storefronts(None) => cx.new(|cx| routes::Storefronts::new(cx)).into(),
-            Self::Plugins(None) => cx.new(|cx| routes::Plugins::new(cx)).into(),
+            Self::Storefronts(None) => cx.new(routes::Storefronts::new).into(),
+            Self::Plugins(None) => cx.new(routes::Plugins::new).into(),
             Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => {
                 cx.new(|cx| routes::Config::new(cx, id)).into()
             }

@@ -9,6 +9,7 @@ use smallvec::SmallVec;
 use std::time::Duration;
 use theme::ThemeExt;
 
+#[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct Button {
     id: ElementId,

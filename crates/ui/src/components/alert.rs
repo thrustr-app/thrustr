@@ -4,7 +4,7 @@ use gpui::{
 };
 use theme::ThemeExt;
 
-#[derive(IntoElement)]
+#[derive(IntoElement, Default)]
 pub struct Alert {
     style: StyleRefinement,
     title: Option<SharedString>,

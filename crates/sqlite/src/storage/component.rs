@@ -31,7 +31,7 @@ impl ComponentStorage for SqliteStorage {
             .values(NewComponentDataRow {
                 component_id,
                 key,
-                value: &data,
+                value: data,
             })
             .on_conflict((dsl::component_id, dsl::key))
             .do_update()
@@ -101,7 +101,7 @@ impl ComponentStorage for SqliteStorage {
             .values(NewComponentConfigRow {
                 component_id,
                 field_id,
-                value: &value,
+                value,
             })
             .on_conflict((dsl::component_id, dsl::field_id))
             .do_update()

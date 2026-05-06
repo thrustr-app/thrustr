@@ -28,7 +28,7 @@ impl Change {
             },
             Change::Delete { range, text } => Change::Insert {
                 range: range.start..range.start,
-                text: text,
+                text,
             },
             Change::Replace {
                 range,

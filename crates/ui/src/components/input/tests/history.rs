@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod history {
+mod history_tests {
     use crate::components::input::history::{Change, History};
     use std::ops::Range;
 

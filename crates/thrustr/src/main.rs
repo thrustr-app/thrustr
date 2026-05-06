@@ -20,10 +20,8 @@ mod webview;
 
 fn main() {
     let db_path = paths::db_path();
-    let sqlite_storage = SqliteStorage::new(&db_path).expect(&format!(
-        "Failed to initialize database at {}",
-        db_path.display()
-    ));
+    let sqlite_storage = SqliteStorage::new(&db_path)
+        .unwrap_or_else(|_| panic!("Failed to initialize database at {}", db_path.display()));
     let storage = Arc::new(sqlite_storage);
 
     gpui_platform::application()

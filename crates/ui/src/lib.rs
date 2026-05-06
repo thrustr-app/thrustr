@@ -12,6 +12,7 @@ pub use traits::*;
 
 actions!(global, [Tab, TabPrev]);
 
+#[allow(clippy::type_complexity)]
 #[derive(Clone)]
 pub(crate) struct ActiveDialog {
     focus_handle: FocusHandle,
@@ -92,10 +93,10 @@ impl UiProvider {
             })
             .collect::<Vec<_>>();
 
-        if let Some(ix) = show_overlay_ix {
-            if let Some(dialog) = dialogs.get_mut(ix) {
-                dialog.overlay_visible = true;
-            }
+        if let Some(ix) = show_overlay_ix
+            && let Some(dialog) = dialogs.get_mut(ix)
+        {
+            dialog.overlay_visible = true;
         }
 
         Some(div().children(dialogs))

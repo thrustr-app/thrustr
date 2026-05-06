@@ -51,6 +51,7 @@ pub fn input(id: impl Into<ElementId>) -> Input {
     }
 }
 
+#[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct Input {
     id: ElementId,

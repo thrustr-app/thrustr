@@ -70,7 +70,7 @@ impl Config {
             name: component.metadata().name.to_owned().into(),
             icon,
             status_error: status.error_message().map(Into::into),
-            status: status,
+            status,
             component,
             sections,
             values,
@@ -199,7 +199,7 @@ impl Config {
                     cx.spawn(async move |cx| {
                         let result = task.await;
                         if let Some(entity) = config_entity.upgrade() {
-                            let _ = entity.update(cx, |config, cx| {
+                            entity.update(cx, |config, cx| {
                                 config.authenticating = false;
                                 config.login_form_view = None;
                                 config.local_error = match result {
@@ -215,7 +215,7 @@ impl Config {
                 })
                 .on_cancel(move |_, _, cx| {
                     if let Some(entity) = config_entity_for_cancel.upgrade() {
-                        let _ = entity.update(cx, |config, cx| {
+                        entity.update(cx, |config, cx| {
                             config.authenticating = false;
                             config.login_form_view = None;
                             cx.notify();
@@ -425,7 +425,7 @@ impl LoginFormState {
     pub fn is_valid(&self) -> bool {
         self.required_ids
             .iter()
-            .all(|id| self.values.get(id).map_or(false, |v| !v.is_empty()))
+            .all(|id| self.values.get(id).is_some_and(|v| !v.is_empty()))
     }
 
     pub fn login_fields(&self) -> Vec<(String, String)> {

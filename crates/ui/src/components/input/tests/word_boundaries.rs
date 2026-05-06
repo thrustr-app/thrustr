@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod word_boundaries {
+mod word_boundaries_tests {
     use crate::components::input::text_ops::TextOps;
 
     fn test_boundaries(text: &str, cursor: usize, expected_prev: usize, expected_next: usize) {

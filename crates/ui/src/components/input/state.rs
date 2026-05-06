@@ -19,6 +19,7 @@ const DEFAULT_SELECTION_COLOR: u32 = 0x3390FF80;
 ///
 /// Handles text editing, cursor positioning, selection, and scrolling
 /// for single-line text fields.
+#[allow(clippy::type_complexity)]
 pub struct InputState {
     pub focus_handle: FocusHandle,
     pub value: SharedString,
@@ -577,7 +578,7 @@ impl InputState {
 
         // Handle multi-click selection
         if event.click_count > 1 {
-            if event.click_count % 2 == 0 {
+            if event.click_count.is_multiple_of(2) {
                 // Double-click: select word
                 self.select_word(self.index_for_mouse_position(event.position), cx);
             } else {

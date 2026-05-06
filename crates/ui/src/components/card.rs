@@ -6,6 +6,7 @@ use gpui::{
 use smallvec::SmallVec;
 use theme::ThemeExt;
 
+#[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct Card {
     id: ElementId,

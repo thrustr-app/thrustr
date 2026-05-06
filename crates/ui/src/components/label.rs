@@ -31,7 +31,7 @@ impl RenderOnce for Label {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
-        let label = div()
+        div()
             .child(self.text)
             .text_size(rems(0.6))
             .p(rems(0.3))
@@ -58,8 +58,6 @@ impl RenderOnce for Label {
                 label
                     .bg(theme.colors.error)
                     .text_color(theme.colors.primary)
-            });
-
-        label
+            })
     }
 }

@@ -67,12 +67,11 @@ impl TextOps {
                 continue;
             }
 
-            if found_non_whitespace {
-                if let Some(last_type) = last_char_type {
-                    if char_type != last_type || char_type == CharType::Whitespace {
-                        return Self::next_boundary(text, i);
-                    }
-                }
+            if found_non_whitespace
+                && let Some(last_type) = last_char_type
+                && (char_type != last_type || char_type == CharType::Whitespace)
+            {
+                return Self::next_boundary(text, i);
             }
 
             last_char_type = Some(char_type);
@@ -109,12 +108,11 @@ impl TextOps {
                 continue;
             }
 
-            if found_non_whitespace {
-                if let Some(last_type) = last_char_type {
-                    if char_type != last_type || char_type == CharType::Whitespace {
-                        return i;
-                    }
-                }
+            if found_non_whitespace
+                && let Some(last_type) = last_char_type
+                && (char_type != last_type || char_type == CharType::Whitespace)
+            {
+                return i;
             }
 
             last_char_type = Some(char_type);
@@ -128,12 +126,12 @@ impl TextOps {
     fn char_type(ch: char, next: Option<char>, prev: Option<char>) -> CharType {
         if ch.is_whitespace() {
             CharType::Whitespace
-        } else if (ch == '.')
-            && prev.map_or(false, |c| c.is_ascii_digit())
-            && next.map_or(false, |c| c.is_ascii_digit())
+        } else if ch.is_alphanumeric()
+            || ch == '_'
+            || (ch == '.'
+                && prev.is_some_and(|c| c.is_ascii_digit())
+                && next.is_some_and(|c| c.is_ascii_digit()))
         {
-            CharType::Word
-        } else if ch.is_alphanumeric() || ch == '_' {
             CharType::Word
         } else {
             CharType::Punctuation

@@ -18,6 +18,12 @@ pub struct ThemeManager {
     default_theme: String,
 }
 
+impl Default for ThemeManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThemeManager {
     pub fn new() -> Self {
         let default_theme = load_default_theme();

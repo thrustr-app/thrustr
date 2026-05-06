@@ -47,10 +47,10 @@ fn main() {
             std::process::exit(0);
         })
         .with_on_page_load_handler(move |event, nav_url| {
-            if let PageLoadEvent::Finished = event {
-                if nav_url.starts_with(&target_clone) {
-                    tx.send(()).ok();
-                }
+            if let PageLoadEvent::Finished = event
+                && nav_url.starts_with(&target_clone)
+            {
+                tx.send(()).ok();
             }
         })
         .build(&window)

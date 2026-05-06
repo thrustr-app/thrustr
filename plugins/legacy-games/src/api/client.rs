@@ -36,18 +36,17 @@ pub async fn get_products(
     for product in &mut products {
         if let Some(catalog_product) = catalog.get(&product.id) {
             for game in &mut product.games {
-                if game.game_name.is_empty() || game.game_description.is_empty() {
-                    if let Some(cg) = catalog_product
+                if (game.game_name.is_empty() || game.game_description.is_empty())
+                    && let Some(cg) = catalog_product
                         .games
                         .iter()
                         .find(|cg| cg.installer_uuid == game.installer_uuid)
-                    {
-                        if game.game_name.is_empty() {
-                            game.game_name = cg.game_name.clone();
-                        }
-                        if game.game_description.is_empty() {
-                            game.game_description = cg.game_description.clone();
-                        }
+                {
+                    if game.game_name.is_empty() {
+                        game.game_name = cg.game_name.clone();
+                    }
+                    if game.game_description.is_empty() {
+                        game.game_description = cg.game_description.clone();
                     }
                 }
             }

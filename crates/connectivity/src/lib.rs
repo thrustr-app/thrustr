@@ -63,7 +63,7 @@ impl Inner {
         self.last_probe
             .lock()
             .await
-            .map_or(false, |t| t.elapsed() < self.min_probe_interval)
+            .is_some_and(|t| t.elapsed() < self.min_probe_interval)
     }
 
     async fn run_probe(&self) -> ConnectivityState {
@@ -246,7 +246,7 @@ async fn probe_all(endpoints: &[&'static str], timeout: Duration) -> Connectivit
         set.spawn(async move {
             tokio::time::timeout(timeout, TcpStream::connect(endpoint))
                 .await
-                .map_or(false, |r| r.is_ok())
+                .is_ok_and(|r| r.is_ok())
         });
     }
 

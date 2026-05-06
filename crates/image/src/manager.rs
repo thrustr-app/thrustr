@@ -125,9 +125,8 @@ impl ImageManager {
 
     pub fn enqueue(&self, task: ImageTask) -> Result<(), mpsc::error::SendError<ImageTask>> {
         self.pending.fetch_add(1, Ordering::Relaxed);
-        self.sender.send(task).map_err(|e| {
+        self.sender.send(task).inspect_err(|_| {
             self.pending.fetch_sub(1, Ordering::Relaxed);
-            e
         })
     }
 
@@ -194,7 +193,7 @@ async fn run_with_retry(task: ImageTask, client: Client, connectivity: Connectiv
 
 fn is_network_error(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
-        .map_or(false, |e| e.is_connect() || e.is_timeout())
+        .is_some_and(|e| e.is_connect() || e.is_timeout())
 }
 
 /// Sleeps for a random short duration to avoid multiple waiting tasks from retrying at the same time.
