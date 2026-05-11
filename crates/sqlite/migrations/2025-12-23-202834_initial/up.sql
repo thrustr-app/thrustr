@@ -4,6 +4,7 @@ CREATE TABLE games (
   source_id TEXT NOT NULL,
   lookup_id TEXT NOT NULL,
   external_ids JSON NOT NULL DEFAULT '{}',
+  cover_url TEXT,
   UNIQUE (source_id, lookup_id)
 );
 

@@ -32,6 +32,7 @@ impl Plugin {
                 lookup_id: game.lookup_id,
                 external_ids: game.external_ids.into_iter().collect(),
             },
+            cover_url: game.cover_url,
         }
     }
 }

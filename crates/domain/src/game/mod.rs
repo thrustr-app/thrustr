@@ -10,6 +10,7 @@ pub struct Game {
     pub id: Id<Self>,
     pub name: String,
     pub source: GameSource,
+    pub cover_url: String,
 }
 
 #[derive(Debug)]
@@ -27,4 +28,5 @@ pub struct GameSource {
 pub struct NewGame {
     pub name: String,
     pub source: GameSource,
+    pub cover_url: String,
 }

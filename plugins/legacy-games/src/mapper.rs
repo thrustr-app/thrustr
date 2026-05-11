@@ -13,6 +13,7 @@ impl From<Product> for Vec<Game> {
                     ("game_id".into(), g.game_id),
                     ("product_id".into(), product.id.to_string()),
                 ],
+                cover_url: g.game_coverart,
             })
             .collect()
     }

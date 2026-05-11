@@ -16,6 +16,7 @@ impl GameRepository for SqliteStorage {
                 source_id: &new_game.source.source_id,
                 lookup_id: &new_game.source.lookup_id,
                 external_ids: serde_json::to_value(&new_game.source.external_ids)?,
+                cover_url: &new_game.cover_url,
             })
             .execute(&mut conn)?;
         Ok(())
@@ -33,6 +34,7 @@ impl GameRepository for SqliteStorage {
                         source_id: &game.source.source_id,
                         lookup_id: &game.source.lookup_id,
                         external_ids: serde_json::to_value(&game.source.external_ids)?,
+                        cover_url: &game.cover_url,
                     })
                     .execute(conn)?;
             }

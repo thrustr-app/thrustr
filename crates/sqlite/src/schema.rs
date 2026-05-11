@@ -5,6 +5,7 @@ diesel::table! {
         source_id -> Text,
         lookup_id -> Text,
         external_ids -> Json,
+        cover_url -> Text,
     }
 }
 
