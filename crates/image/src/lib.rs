@@ -4,7 +4,7 @@ use connectivity::ConnectivityManager;
 use domain::game::Game;
 use std::{path::PathBuf, sync::Arc};
 
-const DEFAULT_QUALITY: f32 = 85.;
+const DEFAULT_QUALITY: f32 = 75.;
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
 
 mod manager;

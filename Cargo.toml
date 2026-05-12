@@ -22,6 +22,7 @@ ui = { path = "crates/ui" }
 # External
 anyhow = "1"
 async-trait = "0.1.89"
+bytes = "1.11"
 dashmap = "6"
 futures = "0.3"
 gpui = { git = "https://github.com/zed-industries/zed", features = ["test-support"] }

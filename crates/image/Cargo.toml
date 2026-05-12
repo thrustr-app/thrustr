@@ -11,6 +11,7 @@ domain.workspace = true
 
 # External
 anyhow.workspace = true
+bytes.workspace = true
 image = "0.25"
 reqwest.workspace = true
 tokio.workspace = true
