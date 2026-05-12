@@ -31,12 +31,18 @@ impl StorefrontHandle {
             error
         })?;
 
+        if new_games.is_empty() {
+            return Ok(());
+        }
+
         let games = self
             .component
             .context
             .game_repository
             .insert_many(&new_games)
             .map_err(|err| err.to_string())?;
+
+        event::emit("games");
 
         self.component
             .context

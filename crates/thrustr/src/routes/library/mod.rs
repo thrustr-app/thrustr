@@ -1,10 +1,14 @@
-use crate::{cache::lru_image_cache, extensions::SpawnTaskExt, globals::GameServiceExt};
+use crate::{
+    cache::lru_image_cache,
+    extensions::{EventListenerExt, SpawnTaskExt},
+    globals::GameServiceExt,
+};
 use config::paths;
 use game::GameListItem;
 use gpui::{
     App, Bounds, Context, FontWeight, ImageSource, IntoElement, ObjectFit, ParentElement, Pixels,
-    Render, RenderOnce, Resource, SharedString, Styled, StyledImage, Window, div, img, px, rems,
-    uniform_list,
+    Render, RenderOnce, Resource, SharedString, Styled, StyledImage, Task, Window, div, img, px,
+    rems, uniform_list,
 };
 use std::{path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
@@ -74,6 +78,7 @@ impl RenderOnce for GameCard {
 pub struct Library {
     games: Rc<Vec<GameEntry>>,
     grid_bounds: Bounds<Pixels>,
+    _tasks: Vec<Task<()>>,
 }
 
 impl Library {
@@ -81,10 +86,15 @@ impl Library {
         let mut page = Self {
             games: Rc::new(Vec::new()),
             grid_bounds: Bounds::default(),
+            _tasks: Vec::new(),
         };
 
-        page.refresh_games(cx);
+        let task = cx.listen("games", |page, cx| {
+            page.refresh_games(cx);
+        });
+        page._tasks.push(task);
 
+        page.refresh_games(cx);
         page
     }
 

@@ -28,14 +28,18 @@ pub fn covers_dir() -> PathBuf {
 
 /// Path to the cover image for a given ID.
 pub fn cover_path(id: u64, extension: &str) -> PathBuf {
-    let base = covers_dir();
-
-    let dir1 = id / 1_000;
-    let dir2 = id % 1_000;
-
-    base.join(format!("{dir1:03}"))
-        .join(format!("{dir2:03}"))
+    let hash = hash_id(id);
+    let l1 = (hash >> 8) & 0xFF;
+    let l2 = hash & 0xFF;
+    covers_dir()
+        .join(format!("{l1:02x}"))
+        .join(format!("{l2:02x}"))
         .join(format!("{id}.{extension}"))
+}
+
+/// Hashes an ID using Fibbonacci.
+fn hash_id(id: u64) -> u64 {
+    id.wrapping_mul(0x9e3779b97f4a7c15).rotate_right(32)
 }
 
 /// Path to the plugins directory, creating it if it doesn't exist.
