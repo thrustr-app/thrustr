@@ -22,7 +22,7 @@ define_theme_colors!(
     card_secondary,
 );
 
-define_theme_radius!(sm, lg, full);
+define_theme_radius!(sm, md, lg, full);
 
 #[derive(Debug, Deserialize)]
 pub struct Theme {

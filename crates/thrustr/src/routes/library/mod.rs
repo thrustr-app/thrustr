@@ -6,20 +6,21 @@ use crate::{
 use config::paths;
 use game::GameListItem;
 use gpui::{
-    App, Bounds, Context, FontWeight, ImageSource, IntoElement, ObjectFit, ParentElement, Pixels,
-    Render, RenderOnce, Resource, SharedString, Styled, StyledImage, Task, Window, div, img, px,
-    rems, uniform_list,
+    App, Bounds, Context, FontWeight, ImageSource, InteractiveElement, IntoElement, ObjectFit,
+    ParentElement, Pixels, Render, RenderOnce, Resource, SharedString, Styled, StyledImage, Task,
+    Window, div, img, px, rems, uniform_list,
 };
 use std::{path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
 
-const GAME_CARD_WIDTH: Pixels = px(200.);
-const MIN_GAP: Pixels = px(16.);
+const GAME_CARD_WIDTH: Pixels = px(220.);
+const MIN_GAP: Pixels = px(8.);
 
 #[derive(Clone)]
 struct GameEntry {
-    cover_path: Arc<Path>,
+    id: SharedString,
     name: SharedString,
+    cover_path: Arc<Path>,
 }
 
 #[derive(IntoElement)]
@@ -40,37 +41,49 @@ impl GameCard {
 impl RenderOnce for GameCard {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+        let group_name = self.game.as_ref().map(|g| g.id.clone()).unwrap_or_default();
 
         let content = div()
+            .id(group_name.clone())
             .flex_shrink_0()
             .flex()
             .flex_col()
-            .gap(rems(0.5))
-            .w(GAME_CARD_WIDTH);
+            .gap(rems(0.75))
+            .w(GAME_CARD_WIDTH)
+            .group(group_name.clone())
+            .p(rems(0.75))
+            .rounded(theme.radius.lg)
+            .bg(theme.colors.card_background.opacity(0.));
 
         match self.game {
             None => content,
             Some(game) => content
+                .hover(|style| style.bg(theme.colors.card_background))
                 .child(
                     div()
                         .aspect_ratio(2. / 3.)
                         .w_full()
                         .bg(theme.colors.card_background)
-                        .rounded(theme.radius.lg)
+                        .rounded(theme.radius.md)
                         .child(
                             img(ImageSource::Resource(Resource::Path(game.cover_path)))
                                 .object_fit(ObjectFit::Contain)
                                 .w_full()
                                 .h_full()
-                                .rounded(theme.radius.lg),
+                                .rounded(theme.radius.md),
                         ),
                 )
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_color(theme.colors.primary)
-                .text_size(rems(1.))
-                .font_weight(FontWeight::MEDIUM)
-                .child(game.name),
+                .child(
+                    div()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .w_full()
+                        .text_ellipsis()
+                        .child(game.name)
+                        .text_color(theme.colors.primary)
+                        .text_size(rems(0.9))
+                        .font_weight(FontWeight::LIGHT),
+                ),
         }
     }
 }
@@ -144,7 +157,7 @@ impl Render for Library {
             .flex_grow()
             .px(rems(2.))
             .text_color(theme.colors.accent)
-            .image_cache(lru_image_cache("game-grid-cache", 100))
+            .image_cache(lru_image_cache("game-grid-cache", num_cols * 6))
             .child(
                 uniform_list("game-grid", num_rows, move |range, _, _| {
                     range
@@ -159,7 +172,7 @@ impl Render for Library {
                                 .w_full()
                                 .flex()
                                 .justify_between()
-                                .pb(rems(2.))
+                                .pb(rems(1.5))
                                 .children(row.iter().map(|game| GameCard::new(game.clone())))
                                 .children((0..blanks).map(|_| GameCard::blank()))
                         })
@@ -173,8 +186,9 @@ impl Render for Library {
 impl From<GameListItem> for GameEntry {
     fn from(entry: GameListItem) -> Self {
         Self {
-            cover_path: paths::cover_path(entry.id.into(), "webp").into(),
+            id: entry.id.to_string().into(),
             name: entry.name.into(),
+            cover_path: paths::cover_path(entry.id.into(), "webp").into(),
         }
     }
 }

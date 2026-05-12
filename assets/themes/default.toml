@@ -29,5 +29,6 @@ card_secondary = "#646464"
 
 [radius]
 sm = "0.5rem"
+md = "1rem"
 lg = "1.5rem"
 full = "999px"
