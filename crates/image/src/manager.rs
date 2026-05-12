@@ -16,34 +16,35 @@ use tokio::{
 const MAX_ATTEMPTS: u32 = 3;
 const RECOVERY_JITTER_MAX_MS: u64 = 500;
 
+struct Inner {
+    pending: AtomicUsize,
+    active: AtomicUsize,
+    max_concurrent: AtomicUsize,
+    paused: AtomicBool,
+    wakeup: Notify,
+}
+
 pub struct ImageManager {
     sender: mpsc::UnboundedSender<ImageTask>,
-    pending: Arc<AtomicUsize>,
-    active: Arc<AtomicUsize>,
-    max_concurrent: Arc<AtomicUsize>,
-    paused: Arc<AtomicBool>,
-    wakeup: Arc<Notify>,
+    inner: Arc<Inner>,
 }
 
 impl ImageManager {
     pub fn new(max_concurrent: usize, connectivity: ConnectivityManager) -> Self {
         let (sender, mut receiver) = mpsc::unbounded_channel::<ImageTask>();
 
-        let pending = Arc::new(AtomicUsize::new(0));
-        let active = Arc::new(AtomicUsize::new(0));
-        let max_concurrent = Arc::new(AtomicUsize::new(max_concurrent));
-        let paused = Arc::new(AtomicBool::new(false));
-        let wakeup = Arc::new(Notify::new());
+        let inner = Arc::new(Inner {
+            pending: AtomicUsize::new(0),
+            active: AtomicUsize::new(0),
+            max_concurrent: AtomicUsize::new(max_concurrent),
+            paused: AtomicBool::new(false),
+            wakeup: Notify::new(),
+        });
+
         let client = Client::new();
 
         tokio::spawn({
-            let (pending, active, max_concurrent, paused, wakeup) = (
-                pending.clone(),
-                active.clone(),
-                max_concurrent.clone(),
-                paused.clone(),
-                wakeup.clone(),
-            );
+            let inner = inner.clone();
             let mut connectivity_rx = connectivity.subscribe();
 
             async move {
@@ -51,41 +52,40 @@ impl ImageManager {
 
                 loop {
                     while join_set.try_join_next().is_some() {
-                        pending.fetch_sub(1, Ordering::Relaxed);
-                        active.fetch_sub(1, Ordering::Relaxed);
+                        inner.pending.fetch_sub(1, Ordering::Relaxed);
+                        inner.active.fetch_sub(1, Ordering::Relaxed);
                     }
 
                     while connectivity_rx.borrow_and_update().is_offline() {
                         tokio::select! {
                             _ = connectivity_rx.changed() => {}
                             Some(_) = join_set.join_next() => {
-                                pending.fetch_sub(1, Ordering::Relaxed);
-                                active.fetch_sub(1, Ordering::Relaxed);
+                                inner.pending.fetch_sub(1, Ordering::Relaxed);
+                                inner.active.fetch_sub(1, Ordering::Relaxed);
                             }
                         }
                     }
 
-                    if paused.load(Ordering::Acquire) {
+                    if inner.paused.load(Ordering::Acquire) {
                         tokio::select! {
-                            _ = wakeup.notified() => {},
+                            _ = inner.wakeup.notified() => {},
                             Some(_) = join_set.join_next() => {
-                                pending.fetch_sub(1, Ordering::Relaxed);
-                                active.fetch_sub(1, Ordering::Relaxed);
+                                inner.pending.fetch_sub(1, Ordering::Relaxed);
+                                inner.active.fetch_sub(1, Ordering::Relaxed);
                             }
                         }
                         continue;
                     }
 
-                    let at_capacity =
-                        active.load(Ordering::Acquire) >= max_concurrent.load(Ordering::Acquire);
-
-                    if at_capacity {
+                    if inner.active.load(Ordering::Acquire)
+                        >= inner.max_concurrent.load(Ordering::Acquire)
+                    {
                         tokio::select! {
                             Some(_) = join_set.join_next() => {
-                                pending.fetch_sub(1, Ordering::Relaxed);
-                                active.fetch_sub(1, Ordering::Relaxed);
+                                inner.pending.fetch_sub(1, Ordering::Relaxed);
+                                inner.active.fetch_sub(1, Ordering::Relaxed);
                             }
-                            _ = wakeup.notified() => {}
+                            _ = inner.wakeup.notified() => {}
                         }
                         continue;
                     }
@@ -93,71 +93,60 @@ impl ImageManager {
                     tokio::select! {
                         task = receiver.recv() => match task {
                             Some(task) => {
-                                join_set.spawn(run_with_retry(
-                                    task,
-                                    client.clone(),
-                                    connectivity.clone()
-                                ));
-                                active.fetch_add(1, Ordering::Relaxed);
+                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone()));
+                                inner.active.fetch_add(1, Ordering::Relaxed);
                             }
                             None => break,
                         },
-                        _ = wakeup.notified() => {}
+                        _ = inner.wakeup.notified() => {}
                     }
                 }
 
                 while join_set.join_next().await.is_some() {
-                    pending.fetch_sub(1, Ordering::Relaxed);
-                    active.fetch_sub(1, Ordering::Relaxed);
+                    inner.pending.fetch_sub(1, Ordering::Relaxed);
+                    inner.active.fetch_sub(1, Ordering::Relaxed);
                 }
             }
         });
 
-        Self {
-            sender,
-            pending,
-            active,
-            max_concurrent,
-            paused,
-            wakeup,
-        }
+        Self { sender, inner }
     }
 
     pub fn enqueue(&self, task: ImageTask) -> Result<(), mpsc::error::SendError<ImageTask>> {
-        self.pending.fetch_add(1, Ordering::Relaxed);
+        self.inner.pending.fetch_add(1, Ordering::Relaxed);
         self.sender.send(task).inspect_err(|_| {
-            self.pending.fetch_sub(1, Ordering::Relaxed);
+            self.inner.pending.fetch_sub(1, Ordering::Relaxed);
         })
     }
 
-    pub fn is_paused(&self) -> bool {
-        self.paused.load(Ordering::Acquire)
+    pub fn _is_paused(&self) -> bool {
+        self.inner.paused.load(Ordering::Acquire)
     }
 
-    pub fn pause(&self) {
-        self.paused.store(true, Ordering::Release);
+    pub fn _pause(&self) {
+        self.inner.paused.store(true, Ordering::Release);
     }
 
-    pub fn resume(&self) {
-        self.paused.store(false, Ordering::Release);
-        self.wakeup.notify_one();
+    pub fn _resume(&self) {
+        self.inner.paused.store(false, Ordering::Release);
+        self.inner.wakeup.notify_one();
     }
 
     pub fn max_concurrent(&self) -> usize {
-        self.max_concurrent.load(Ordering::Acquire)
+        self.inner.max_concurrent.load(Ordering::Acquire)
     }
 
     pub fn set_max_concurrent(&self, max: usize) {
-        self.max_concurrent.store(max, Ordering::Release);
-        self.wakeup.notify_one();
+        self.inner.max_concurrent.store(max, Ordering::Release);
+        self.inner.wakeup.notify_one();
     }
 
-    pub fn active(&self) -> usize {
-        self.active.load(Ordering::Acquire)
+    pub fn _active(&self) -> usize {
+        self.inner.active.load(Ordering::Acquire)
     }
 
-    pub fn pending(&self) -> usize {
-        self.pending.load(Ordering::Acquire)
+    pub fn _pending(&self) -> usize {
+        self.inner.pending.load(Ordering::Acquire)
     }
 }
 

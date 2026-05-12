@@ -61,6 +61,7 @@ impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         div()
+            .font_family("Metropolis")
             .track_focus(&self.focus_handle(cx))
             .size_full()
             .bg(theme.colors.background)

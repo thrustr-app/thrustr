@@ -7,3 +7,4 @@ edition = "2024"
 dashmap.workspace = true
 domain.workspace = true
 event.workspace = true
+image.workspace = true

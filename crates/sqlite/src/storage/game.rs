@@ -1,16 +1,18 @@
 use crate::SqliteStorage;
 use crate::models::{GameRow, NewGameRow};
 use anyhow::Result;
-use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
-use domain::game::{GameRepository, NewGame};
+use diesel::{
+    Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
+};
+use domain::game::{Game, GameRepository, NewGame};
 use game::{GameListItem, GameQuery};
 
 impl GameRepository for SqliteStorage {
-    fn insert(&self, new_game: &NewGame) -> Result<()> {
+    fn insert(&self, new_game: &NewGame) -> Result<Option<Game>> {
         use crate::schema::games::dsl;
 
         let mut conn = self.pool.get()?;
-        diesel::insert_or_ignore_into(dsl::games)
+        let row = diesel::insert_or_ignore_into(dsl::games)
             .values(NewGameRow {
                 name: &new_game.name,
                 source_id: &new_game.source.source_id,
@@ -18,17 +20,21 @@ impl GameRepository for SqliteStorage {
                 external_ids: serde_json::to_value(&new_game.source.external_ids)?,
                 cover_url: &new_game.cover_url,
             })
-            .execute(&mut conn)?;
-        Ok(())
+            .returning(GameRow::as_returning())
+            .get_result::<GameRow>(&mut conn)
+            .optional()?;
+
+        Ok(row.map(Game::from))
     }
 
-    fn insert_many(&self, games: &[NewGame]) -> Result<()> {
+    fn insert_many(&self, games: &[NewGame]) -> Result<Vec<Game>> {
         use crate::schema::games::dsl;
 
         let mut conn = self.pool.get()?;
         conn.transaction(|conn| {
+            let mut inserted = Vec::new();
             for game in games {
-                diesel::insert_or_ignore_into(dsl::games)
+                let row = diesel::insert_or_ignore_into(dsl::games)
                     .values(NewGameRow {
                         name: &game.name,
                         source_id: &game.source.source_id,
@@ -36,9 +42,15 @@ impl GameRepository for SqliteStorage {
                         external_ids: serde_json::to_value(&game.source.external_ids)?,
                         cover_url: &game.cover_url,
                     })
-                    .execute(conn)?;
+                    .returning(GameRow::as_returning())
+                    .get_result::<GameRow>(conn)
+                    .optional()?;
+
+                if let Some(row) = row {
+                    inserted.push(Game::from(row));
+                }
             }
-            Ok(())
+            Ok(inserted)
         })
     }
 }

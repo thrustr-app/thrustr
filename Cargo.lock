@@ -1170,6 +1170,7 @@ dependencies = [
  "dashmap",
  "domain",
  "event",
+ "image 0.1.0",
 ]
 
 [[package]]
@@ -3564,6 +3565,11 @@ name = "hashbrown"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "heapless"
@@ -3932,7 +3938,9 @@ name = "image"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "config",
  "connectivity",
+ "domain",
  "image 0.25.10",
  "reqwest",
  "tokio",
@@ -4507,6 +4515,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fae87c125b03c1d2c0150c90365d7d6bcc53fb73a9acaef207d2d065860f062"
 dependencies = [
  "imgref",
+]
+
+[[package]]
+name = "lru"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a860605968fce16869fd239cf4237a82f3ac470723415db603b0e8b6c8d4fb9"
+dependencies = [
+ "hashbrown 0.17.0",
 ]
 
 [[package]]
@@ -7822,11 +7839,15 @@ dependencies = [
  "assets",
  "component",
  "config",
+ "connectivity",
  "domain",
  "event",
+ "futures",
  "game",
  "gpui",
  "gpui_platform",
+ "image 0.1.0",
+ "lru",
  "plugin",
  "serde_json",
  "smallvec",

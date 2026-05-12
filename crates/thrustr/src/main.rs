@@ -9,6 +9,7 @@ use std::sync::Arc;
 use ui::UiProvider;
 
 mod app;
+mod cache;
 mod components;
 mod conversions;
 mod extensions;

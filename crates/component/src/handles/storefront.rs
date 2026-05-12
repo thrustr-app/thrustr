@@ -31,11 +31,17 @@ impl StorefrontHandle {
             error
         })?;
 
-        self.component
+        let games = self
+            .component
             .context
             .game_repository
             .insert_many(&new_games)
             .map_err(|err| err.to_string())?;
+
+        self.component
+            .context
+            .image_service
+            .enqueue_from_games(&games);
 
         Ok(())
     }

@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 # Local
+config.workspace = true
 connectivity.workspace = true
+domain.workspace = true
 
 # External
 anyhow.workspace = true

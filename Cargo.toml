@@ -12,6 +12,7 @@ connectivity = { path = "crates/connectivity" }
 domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 game = { path = "crates/game" }
+image = { path = "crates/image" }
 pdk = { path = "crates/pdk" }
 plugin = { path = "crates/plugin" }
 sqlite = { path = "crates/sqlite" }

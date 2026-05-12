@@ -1,4 +1,7 @@
-use gpui::App;
+use crate::gpui_tokio::Tokio;
+use connectivity::ConnectivityManager;
+use gpui::{App, block_on};
+use image::ImageService;
 use sqlite::SqliteStorage;
 use std::sync::Arc;
 use theme::ThemeManager;
@@ -14,7 +17,13 @@ pub use plugin::PluginServiceExt;
 pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
     cx.set_global(ThemeManager::new());
 
-    let registry = component::init(cx, storage.clone(), storage.clone());
+    let image_service = block_on(Tokio::spawn(cx, async move {
+        let connectivity = ConnectivityManager::builder().build_probing().await;
+        ImageService::new(connectivity)
+    }))
+    .expect("Error initializing connectivity manager");
+
+    let registry = component::init(cx, storage.clone(), storage.clone(), image_service);
     plugin::init(cx, storage.clone(), registry);
     game::init(cx, storage);
 }

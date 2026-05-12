@@ -1,6 +1,7 @@
 use component::{ComponentHandle, ComponentRegistry, RegistryContext, StorefrontHandle};
 use domain::{component::ComponentStorage, game::GameRepository};
 use gpui::{App, Global};
+use image::ImageService;
 use std::sync::Arc;
 
 pub(super) struct ComponentRegistryGlobal(ComponentRegistry);
@@ -11,10 +12,12 @@ pub(super) fn init(
     cx: &mut App,
     component_storage: Arc<dyn ComponentStorage>,
     game_repository: Arc<dyn GameRepository>,
+    image_service: ImageService,
 ) -> ComponentRegistry {
     let registry = ComponentRegistry::new(RegistryContext {
         component_storage,
         game_repository,
+        image_service,
     });
     cx.set_global(ComponentRegistryGlobal(registry.clone()));
     registry
