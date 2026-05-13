@@ -1,7 +1,8 @@
 use futures::FutureExt;
 use gpui::{
     App, AppContext, Asset, AssetLogger, Context, ElementId, Entity, ImageAssetLoader, ImageCache,
-    ImageCacheError, ImageCacheItem, ImageCacheProvider, RenderImage, Resource, Window, hash,
+    ImageCacheError, ImageCacheItem, ImageCacheProvider, RenderImage, Resource, WeakEntity, Window,
+    hash,
 };
 use lru::LruCache;
 use std::{
@@ -33,20 +34,15 @@ impl ImageCacheProvider for LruImageCacheProvider {
         let max_items = self.max_items;
         window
             .with_global_id(self.id.clone(), |global_id, window| {
-                window.with_element_state::<Entity<LruImageCache>, _>(
-                    global_id,
-                    |cache, _window| {
-                        let cache = cache.unwrap_or_else(|| {
-                            cx.new(|cx| LruImageCache::new(max_items, retry_delay, cx))
-                        });
-                        let cache = if cache.read(cx).cap() != max_items {
-                            cx.new(|cx| LruImageCache::new(max_items, retry_delay, cx))
-                        } else {
-                            cache
-                        };
-                        (cache.clone(), cache)
-                    },
-                )
+                window.with_element_state::<Entity<LruImageCache>, _>(global_id, |cache, window| {
+                    let cache = cache.unwrap_or_else(|| {
+                        cx.new(|cx| LruImageCache::new(max_items, retry_delay, cx))
+                    });
+                    if cache.read(cx).cap() != max_items {
+                        cache.update(cx, |c, cx| c.resize(max_items, window, cx));
+                    }
+                    (cache.clone(), cache)
+                })
             })
             .into()
     }
@@ -62,6 +58,7 @@ pub struct LruImageCache {
     cache: LruCache<u64, ImageCacheItem>,
     pending_retry: HashMap<u64, PendingRetry>,
     next_wakeup: Option<Instant>,
+    weak_self: WeakEntity<Self>,
 }
 
 impl LruImageCache {
@@ -81,11 +78,25 @@ impl LruImageCache {
             cache: LruCache::new(cap),
             pending_retry: HashMap::new(),
             next_wakeup: None,
+            weak_self: cx.entity().downgrade(),
         }
     }
 
     pub fn cap(&self) -> usize {
         self.cache.cap().get()
+    }
+
+    fn resize(&mut self, new_cap: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let new_cap = new_cap.max(1);
+        while self.cache.len() > new_cap {
+            if let Some((key, mut evicted)) = self.cache.pop_lru() {
+                self.pending_retry.remove(&key);
+                if let Some(Ok(image)) = evicted.get() {
+                    cx.drop_image(image, Some(window));
+                }
+            }
+        }
+        self.cache.resize(NonZeroUsize::new(new_cap).unwrap());
     }
 
     fn evict_lru_if_full(&mut self, window: &mut Window, cx: &mut App) {
@@ -106,11 +117,19 @@ impl LruImageCache {
         self.evict_lru_if_full(window, cx);
         self.cache.put(key, ImageCacheItem::Loading(task.clone()));
 
-        let entity = window.current_view();
+        let weak = self.weak_self.clone();
         window
             .spawn(cx, async move |cx| {
                 _ = task.await;
-                cx.on_next_frame(move |_, cx| cx.notify(entity));
+                cx.on_next_frame(move |_, cx| {
+                    if let Some(entity) = weak.upgrade() {
+                        cx.update_entity(&entity, |cache, cx| {
+                            if cache.cache.contains(&key) {
+                                cx.notify();
+                            }
+                        });
+                    }
+                });
             })
             .detach();
     }
@@ -126,8 +145,8 @@ impl LruImageCache {
             return;
         }
 
-        let delay = retry_at.saturating_duration_since(now);
         self.next_wakeup = Some(retry_at);
+        let delay = retry_at.saturating_duration_since(now);
 
         let entity = window.current_view();
         window
@@ -183,6 +202,9 @@ impl ImageCache for LruImageCache {
                 return None;
             }
             let pending = self.pending_retry.remove(&key).unwrap();
+            if self.pending_retry.is_empty() {
+                self.next_wakeup = None;
+            }
             self.start_load(key, &pending.resource, window, cx);
             return None;
         }
