@@ -11,6 +11,8 @@ pub enum ImageFormat {
     Svg,
     Bmp,
     Tiff,
+    Ico,
+    Pnm,
 }
 
 impl ImageFormat {
@@ -23,6 +25,8 @@ impl ImageFormat {
             "svg" => Some(Self::Svg),
             "bmp" => Some(Self::Bmp),
             "tiff" => Some(Self::Tiff),
+            "ico" => Some(Self::Ico),
+            "pbm" | "ppm" | "pgm" => Some(Self::Pnm),
             _ => None,
         }
     }

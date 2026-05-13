@@ -11,6 +11,8 @@ pub fn image_format_to_gpui(format: ImageFormat) -> GpuiImageFormat {
         ImageFormat::Svg => GpuiImageFormat::Svg,
         ImageFormat::Bmp => GpuiImageFormat::Bmp,
         ImageFormat::Tiff => GpuiImageFormat::Tiff,
+        ImageFormat::Ico => GpuiImageFormat::Ico,
+        ImageFormat::Pnm => GpuiImageFormat::Pnm,
     }
 }
 
