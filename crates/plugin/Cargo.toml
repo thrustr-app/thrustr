@@ -19,7 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 smol.workspace = true
 toml.workspace = true
-wasmtime = "43"
-wasmtime-wasi = "43"
-wasmtime-wasi-http = "43"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+wasmtime = "44"
+wasmtime-wasi = "44"
+wasmtime-wasi-http = "44"
+zip.workspace = true
