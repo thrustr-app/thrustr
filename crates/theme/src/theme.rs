@@ -1,5 +1,7 @@
 use gpui::{AbsoluteLength, Hsla};
 use serde::Deserialize;
+use std::ops::Deref;
+use std::sync::Arc;
 
 define_theme_colors!(
     background,
@@ -24,16 +26,32 @@ define_theme_colors!(
 
 define_theme_radius!(sm, md, lg, full);
 
+#[doc(hidden)]
 #[derive(Debug, Deserialize)]
-pub struct Theme {
+pub struct ThemeData {
     pub manifest: ThemeManifest,
     pub colors: ThemeColors,
     pub radius: ThemeRadius,
 }
 
+#[derive(Debug, Clone)]
+pub struct Theme(Arc<ThemeData>);
+
 impl Theme {
+    pub fn new(data: ThemeData) -> Self {
+        Self(Arc::new(data))
+    }
+
     pub fn id(&self) -> &str {
         &self.manifest.id
+    }
+}
+
+impl Deref for Theme {
+    type Target = ThemeData;
+
+    fn deref(&self) -> &ThemeData {
+        &self.0
     }
 }
 
@@ -54,8 +72,8 @@ pub struct PartialTheme {
 }
 
 impl PartialTheme {
-    pub fn merge(mut self, other: &Theme) -> Theme {
-        Theme {
+    pub fn merge(mut self, other: &ThemeData) -> Theme {
+        Theme::new(ThemeData {
             manifest: self.manifest,
             colors: self
                 .colors
@@ -67,6 +85,6 @@ impl PartialTheme {
                 .take()
                 .map(|r| r.merge(&other.radius))
                 .unwrap_or_else(|| other.radius.clone()),
-        }
+        })
     }
 }

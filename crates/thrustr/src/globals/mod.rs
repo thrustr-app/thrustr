@@ -4,7 +4,6 @@ use gpui::{App, block_on};
 use image::ImageService;
 use sqlite::SqliteStorage;
 use std::sync::Arc;
-use theme::ThemeManager;
 
 mod component;
 mod game;
@@ -15,8 +14,6 @@ pub use game::GameServiceExt;
 pub use plugin::PluginServiceExt;
 
 pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
-    cx.set_global(ThemeManager::new());
-
     let image_service = block_on(Tokio::spawn(cx, async move {
         let connectivity = ConnectivityManager::builder().build_probing().await;
         ImageService::new(connectivity)

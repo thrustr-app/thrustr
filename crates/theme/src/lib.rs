@@ -10,6 +10,10 @@ mod theme;
 
 pub use theme::*;
 
+pub fn init(cx: &mut App) {
+    cx.set_global(ThemeManager::new());
+}
+
 type Result<T> = std::result::Result<T, ThemeError>;
 
 pub struct ThemeManager {
@@ -26,11 +30,11 @@ impl Default for ThemeManager {
 
 impl ThemeManager {
     pub fn new() -> Self {
-        let default_theme = load_default_theme();
-        let default_id = default_theme.id().to_owned();
+        let default_data = load_default_theme_data();
+        let default_id = default_data.manifest.id.clone();
 
-        let mut themes = load_builtin_themes(&default_theme);
-        themes.insert(default_id.clone(), default_theme);
+        let mut themes = load_builtin_themes(&default_data);
+        themes.insert(default_id.clone(), Theme::new(default_data));
 
         Self {
             themes,
@@ -55,11 +59,12 @@ impl ThemeManager {
     }
 
     /// Get the currently active theme or the default theme as a fallback.
-    pub fn active_theme(&self) -> &Theme {
+    pub fn active_theme(&self) -> Theme {
         self.themes
             .get(&self.active_theme)
             .or_else(|| self.themes.get(&self.default_theme))
             .expect("Default theme not found")
+            .clone()
     }
 }
 
@@ -67,7 +72,7 @@ impl Global for ThemeManager {}
 
 pub trait ThemeExt {
     fn theme_manager(&self) -> &ThemeManager;
-    fn theme(&self) -> &Theme {
+    fn theme(&self) -> Theme {
         self.theme_manager().active_theme()
     }
 }
@@ -78,12 +83,12 @@ impl ThemeExt for App {
     }
 }
 
-fn load_default_theme() -> Theme {
+fn load_default_theme_data() -> ThemeData {
     let file = Assets::get("themes/default.toml").expect("Default theme not found");
     toml::from_slice(&file.data).expect("Failed to parse default theme")
 }
 
-fn load_builtin_themes(default: &Theme) -> HashMap<String, Theme> {
+fn load_builtin_themes(default: &ThemeData) -> HashMap<String, Theme> {
     Assets::iter()
         .filter(|path| {
             path.starts_with("themes/") && path.ends_with(".toml") && !path.contains("default")

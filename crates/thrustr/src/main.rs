@@ -32,6 +32,7 @@ fn main() {
                 .load_fonts(cx)
                 .expect("Failed to load embedded fonts");
 
+            theme::init(cx);
             navigation::init(cx);
             gpui_tokio::init(cx);
 
