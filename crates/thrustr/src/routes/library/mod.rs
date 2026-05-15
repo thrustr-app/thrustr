@@ -1,8 +1,8 @@
 use crate::{
-    cache::lru_image_cache,
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::{ComponentRegistryExt, GameServiceExt},
+    routes::library::cache::lru_image_cache,
 };
 use config::paths;
 use gpui::{
@@ -12,6 +12,8 @@ use gpui::{
 };
 use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
+
+mod cache;
 
 const GAME_CARD_WIDTH: Pixels = px(220.);
 const MIN_GAP: Pixels = px(8.);

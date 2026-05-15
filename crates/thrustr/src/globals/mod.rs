@@ -1,4 +1,4 @@
-use crate::gpui_tokio::Tokio;
+use crate::tokio::Tokio;
 use connectivity::ConnectivityManager;
 use gpui::{App, block_on};
 use image::ImageService;

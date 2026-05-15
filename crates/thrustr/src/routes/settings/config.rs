@@ -2,8 +2,8 @@ use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::ComponentRegistryExt,
-    gpui_tokio::Tokio,
     navigation::NavigatorExt,
+    tokio::Tokio,
     webview::{WebviewError, open_auth_webview},
 };
 use component::ComponentHandle;

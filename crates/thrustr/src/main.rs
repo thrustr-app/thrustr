@@ -9,14 +9,12 @@ use std::sync::Arc;
 use ui::UiProvider;
 
 mod app;
-mod cache;
-mod components;
 mod conversions;
 mod extensions;
 mod globals;
-mod gpui_tokio;
 mod navigation;
 mod routes;
+mod tokio;
 mod webview;
 
 fn main() {
@@ -34,7 +32,7 @@ fn main() {
 
             theme::init(cx);
             navigation::init(cx);
-            gpui_tokio::init(cx);
+            tokio::init(cx);
 
             globals::init(cx, storage);
 

@@ -1,7 +1,6 @@
+use crate::tokio::Tokio;
 use gpui::{AppContext, Context, Task};
 use std::future::Future;
-
-use crate::gpui_tokio::Tokio;
 
 /// Extension trait for common task spawning operations.
 pub trait SpawnTaskExt<T: 'static> {
