@@ -46,7 +46,7 @@ impl RenderOnce for SettingsPageButton {
             .rounded(theme.radius.full)
             .gap(rems(0.75))
             .bg(transparent_black())
-            .hover(|style| style.bg(theme.colors.surface))
+            .hover(|style| style.bg(theme.colors.hover))
             .when(is_active, |style| {
                 style
                     .bg(theme.colors.surface)

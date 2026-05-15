@@ -40,7 +40,7 @@ impl RenderOnce for SidebarIconButton {
             .justify_center()
             .rounded(theme.radius.full)
             .bg(transparent_black())
-            .hover(|div| div.bg(theme.colors.sidebar_surface))
+            .hover(|div| div.bg(theme.colors.sidebar_hover))
             .when(is_active, |div| div.bg(theme.colors.sidebar_surface))
             .child(
                 svg()
@@ -48,7 +48,6 @@ impl RenderOnce for SidebarIconButton {
                     .path(icon_path)
                     .text_color(theme.colors.sidebar_secondary)
                     .size(rems(1.5))
-                    .group_hover(label, |div| div.text_color(theme.colors.sidebar_primary))
                     .when(is_active, |svg| {
                         svg.text_color(theme.colors.sidebar_primary)
                     }),
