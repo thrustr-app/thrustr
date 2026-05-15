@@ -237,7 +237,7 @@ impl Render for Library {
         div()
             .on_children_prepainted(cx.processor(Self::set_bounds))
             .flex_grow()
-            .px(rems(2.))
+            .px(rems(2. - CARD_PADDING_REM))
             .text_color(theme.colors.accent)
             .image_cache(lru_image_cache("game-grid-cache", dims.cache_capacity()))
             .child(
