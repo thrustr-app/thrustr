@@ -13,7 +13,7 @@ pub mod wit {
 
 pub use wit::exports::thrustr::plugin::base::AuthFlow;
 pub use wit::exports::thrustr::plugin::storefront::Guest as Storefront;
-pub use wit::thrustr::plugin::types::{Error, Game};
+pub use wit::thrustr::plugin::types::{Error, Game, GameVersion, Platform};
 
 pub trait Plugin {
     fn init() -> Result<(), Error>;
@@ -60,8 +60,12 @@ macro_rules! register_storefront {
         }
 
         impl $crate::wit::exports::thrustr::plugin::storefront::Guest for Guest {
-            fn list_games() -> Result<Vec<$crate::Game>, $crate::Error> {
-                <$plugin_type as $crate::Storefront>::list_games()
+            fn get_games() -> Result<Vec<$crate::Game>, $crate::Error> {
+                <$plugin_type as $crate::Storefront>::get_games()
+            }
+
+            fn get_game_versions(game: $crate::Game) -> Result<Vec<$crate::GameVersion>, $crate::Error> {
+                <$plugin_type as $crate::Storefront>::get_game_versions(game)
             }
         }
 

@@ -1,4 +1,4 @@
-use crate::id::Id;
+use crate::{id::Id, platform::Platform};
 use std::collections::HashMap;
 
 mod repository;
@@ -16,12 +16,19 @@ pub struct Game {
 #[derive(Debug)]
 pub struct GameSource {
     /// The identifier for the game source (e.g. "steam", "gog").
-    pub source_id: String,
+    pub id: String,
     /// The unique identifier for the game in the source. This usually is a specific
     /// identifier (e.g. Steam App ID) or a combination of multiple identifiers.
     pub lookup_id: String,
     /// Arbitrary external identifiers to be consumed by components.
     pub external_ids: HashMap<String, String>,
+}
+
+#[derive(Debug)]
+pub struct GameVersion {
+    pub id: String,
+    pub pretty_name: Option<String>,
+    pub platform: Platform,
 }
 
 #[derive(Debug)]

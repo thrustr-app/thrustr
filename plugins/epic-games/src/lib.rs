@@ -1,10 +1,6 @@
+use crate::api::endpoints::auth_url;
+use pdk::{AuthFlow, Error, Game, GameVersion, Plugin, Storefront, register_storefront};
 use std::collections::HashMap;
-
-use crate::api::{endpoints::auth_url, models::AuthResponse};
-use pdk::{
-    AuthFlow, Error, Game, Plugin, Storefront, config::Config, kv_store::KvStore,
-    register_storefront,
-};
 
 mod api;
 
@@ -32,7 +28,7 @@ impl Plugin for EpicGames {
     fn login(
         url: Option<String>,
         body: Option<String>,
-        fields: Option<HashMap<String, String>>,
+        _fields: Option<HashMap<String, String>>,
     ) -> Result<(), Error> {
         println!("got url: {:?}", url);
         println!("got body: {:?}", body);
@@ -44,13 +40,17 @@ impl Plugin for EpicGames {
         Ok(())
     }
 
-    fn validate_config(fields: HashMap<String, String>) -> Result<(), Error> {
+    fn validate_config(_fields: HashMap<String, String>) -> Result<(), Error> {
         Ok(())
     }
 }
 
 impl Storefront for EpicGames {
-    fn list_games() -> Result<Vec<Game>, Error> {
+    fn get_games() -> Result<Vec<Game>, Error> {
+        Ok(vec![])
+    }
+
+    fn get_game_versions(_game: Game) -> Result<Vec<GameVersion>, Error> {
         Ok(vec![])
     }
 }

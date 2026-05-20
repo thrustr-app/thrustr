@@ -1,13 +1,14 @@
-use crate::{plugin::Plugin, wit::thrustr::plugin::types::Game};
+use crate::{plugin::Plugin, wit::thrustr::plugin::types};
 use async_trait::async_trait;
 use domain::{
     component::{Error, capabilities::Storefront},
-    game::{GameSource, NewGame},
+    game::{Game, GameSource, GameVersion, NewGame},
+    platform::Platform,
 };
 
 #[async_trait]
 impl Storefront for Plugin {
-    async fn list_games(&self) -> Result<Vec<NewGame>, Error> {
+    async fn get_games(&self) -> Result<Vec<NewGame>, Error> {
         let (instance, mut store) = self
             .instantiate_storefront()
             .await
@@ -15,24 +16,70 @@ impl Storefront for Plugin {
 
         instance
             .thrustr_plugin_storefront()
-            .call_list_games(&mut store)
+            .call_get_games(&mut store)
             .await
             .map_err(|e| Error::Other(format!("Wasm call failed: {e}")))?
             .map_err(Error::from)
             .map(|games| games.into_iter().map(|g| self.to_new_game(g)).collect())
     }
+
+    async fn get_game_versions(&self, game: Game) -> Result<Vec<GameVersion>, Error> {
+        let (instance, mut store) = self
+            .instantiate_storefront()
+            .await
+            .map_err(|e| Error::Other(format!("{e:?}")))?;
+
+        instance
+            .thrustr_plugin_storefront()
+            .call_get_game_versions(&mut store, &game.into())
+            .await
+            .map_err(|e| Error::Other(format!("Wasm call failed: {e}")))?
+            .map_err(Error::from)
+            .map(|versions| versions.into_iter().map(Into::into).collect())
+    }
 }
 
 impl Plugin {
-    fn to_new_game(&self, game: Game) -> NewGame {
+    fn to_new_game(&self, game: types::Game) -> NewGame {
         NewGame {
             name: game.name,
             source: GameSource {
-                source_id: self.manifest.plugin.id.clone(),
+                id: self.manifest.plugin.id.clone(),
                 lookup_id: game.lookup_id,
                 external_ids: game.external_ids.into_iter().collect(),
             },
             cover_url: game.cover_url,
+        }
+    }
+}
+
+impl From<types::GameVersion> for GameVersion {
+    fn from(value: types::GameVersion) -> Self {
+        GameVersion {
+            id: value.id,
+            pretty_name: value.pretty_name,
+            platform: value.platform.into(),
+        }
+    }
+}
+
+impl From<types::Platform> for Platform {
+    fn from(value: types::Platform) -> Self {
+        match value {
+            types::Platform::Windows => Platform::Windows,
+            types::Platform::Linux => Platform::Linux,
+            types::Platform::Macos => Platform::Macos,
+        }
+    }
+}
+
+impl From<Game> for types::Game {
+    fn from(value: Game) -> Self {
+        types::Game {
+            name: value.name,
+            lookup_id: value.source.lookup_id,
+            external_ids: value.source.external_ids.into_iter().collect(),
+            cover_url: value.cover_url,
         }
     }
 }

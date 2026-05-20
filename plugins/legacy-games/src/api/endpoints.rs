@@ -1,4 +1,4 @@
-use crate::api::BASE_URL;
+const BASE_URL: &str = "https://api.legacygames.com";
 
 pub fn login() -> String {
     format!("{BASE_URL}/users/login")

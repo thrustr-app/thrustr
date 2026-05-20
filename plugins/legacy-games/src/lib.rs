@@ -1,6 +1,9 @@
 use crate::api::{get_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use pdk::{AuthFlow, Error, Game, Plugin, Storefront, kv_store::KvStore, register_storefront};
+use pdk::{
+    AuthFlow, Error, Game, GameVersion, Platform, Plugin, Storefront, kv_store::KvStore,
+    register_storefront,
+};
 use std::collections::HashMap;
 use wstd::runtime::block_on;
 
@@ -76,7 +79,7 @@ impl Plugin for LegacyGames {
 }
 
 impl Storefront for LegacyGames {
-    fn list_games() -> Result<Vec<Game>, Error> {
+    fn get_games() -> Result<Vec<Game>, Error> {
         block_on(async {
             let email: String =
                 KvStore::get("email")?.ok_or(Error::Auth("not logged in".into()))?;
@@ -91,6 +94,14 @@ impl Storefront for LegacyGames {
 
             Ok(games)
         })
+    }
+
+    fn get_game_versions(game: Game) -> Result<Vec<GameVersion>, Error> {
+        Ok(vec![GameVersion {
+            id: game.lookup_id,
+            pretty_name: Some(game.name),
+            platform: Platform::Windows,
+        }])
     }
 }
 

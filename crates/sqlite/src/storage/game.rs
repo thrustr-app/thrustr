@@ -15,7 +15,7 @@ impl GameRepository for SqliteStorage {
         let row = diesel::insert_or_ignore_into(dsl::games)
             .values(NewGameRow {
                 name: &new_game.name,
-                source_id: &new_game.source.source_id,
+                source_id: &new_game.source.id,
                 lookup_id: &new_game.source.lookup_id,
                 external_ids: serde_json::to_value(&new_game.source.external_ids)?,
                 cover_url: &new_game.cover_url,
@@ -37,7 +37,7 @@ impl GameRepository for SqliteStorage {
                 let row = diesel::insert_or_ignore_into(dsl::games)
                     .values(NewGameRow {
                         name: &game.name,
-                        source_id: &game.source.source_id,
+                        source_id: &game.source.id,
                         lookup_id: &game.source.lookup_id,
                         external_ids: serde_json::to_value(&game.source.external_ids)?,
                         cover_url: &game.cover_url,

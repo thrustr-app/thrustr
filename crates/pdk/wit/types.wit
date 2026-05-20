@@ -7,10 +7,22 @@ interface types {
         other(string),
     }
 
+    enum platform {
+        windows,
+        linux,
+        macos,
+    }
+
     record game {
         name: string,
         lookup-id: string,
         external-ids: list<tuple<string, string>>,
         cover-url: string,
+    }
+
+    record game-version {
+        id: string,
+        pretty-name: option<string>,
+        platform: platform,
     }
 }

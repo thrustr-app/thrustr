@@ -36,7 +36,7 @@ impl From<GameRow> for Game {
             id: (row.id as u64).into(),
             name: row.name,
             source: GameSource {
-                source_id: row.source_id,
+                id: row.source_id,
                 lookup_id: row.lookup_id,
                 external_ids: serde_json::from_value(row.external_ids).unwrap_or_default(),
             },

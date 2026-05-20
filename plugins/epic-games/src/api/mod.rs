@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod endpoints;
 pub mod models;
 

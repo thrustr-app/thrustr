@@ -20,12 +20,12 @@ impl StorefrontHandle {
         &self.component
     }
 
-    pub async fn fetch_games(&self) -> Result<(), String> {
+    pub async fn get_games(&self) -> Result<(), String> {
         if !self.component.status().is_active() {
             return Err("Storefront is not active.".into());
         }
 
-        let new_games = self.storefront.list_games().await.map_err(|e| {
+        let new_games = self.storefront.get_games().await.map_err(|e| {
             let error = e.to_string();
             self.component.set_status(Status::Error(e));
             error

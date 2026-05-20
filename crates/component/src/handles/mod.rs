@@ -57,7 +57,7 @@ impl ComponentHandle {
         result.map_err(|e| e.to_string())?;
 
         // TODO: temporal
-        self.storefront().unwrap().fetch_games().await.unwrap();
+        self.storefront().unwrap().get_games().await.unwrap();
         Ok(())
     }
 
