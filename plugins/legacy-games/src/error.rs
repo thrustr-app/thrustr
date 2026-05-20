@@ -4,10 +4,10 @@ use pdk::Error;
 impl From<ApiError> for Error {
     fn from(e: ApiError) -> Self {
         match e {
-            ApiError::InvalidCredentials => Error::Auth("Invalid credentials.".into()),
-            ApiError::UserNotFound => Error::Auth("User not found.".into()),
-            ApiError::Request(e) => Error::Other(e.to_string()),
-            ApiError::Other(e) => Error::Other(e.to_string()),
+            ApiError::InvalidCredentials => Error::auth("Invalid credentials."),
+            ApiError::UserNotFound => Error::auth("User not found."),
+            ApiError::Request(e) => Error::other(e.to_string()),
+            ApiError::Other(e) => Error::other(e),
         }
     }
 }

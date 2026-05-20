@@ -15,17 +15,47 @@ pub use wit::exports::thrustr::plugin::base::AuthFlow;
 pub use wit::exports::thrustr::plugin::storefront::Guest as Storefront;
 pub use wit::thrustr::plugin::types::{Error, Game, GameVersion, Platform};
 
+impl Error {
+    pub fn auth(message: impl Into<String>) -> Self {
+        Error::Auth(message.into())
+    }
+
+    pub fn config(message: impl Into<String>) -> Self {
+        Error::Config(message.into())
+    }
+
+    pub fn other(message: impl Into<String>) -> Self {
+        Error::Other(message.into())
+    }
+}
+
+#[allow(unused_variables)]
 pub trait Plugin {
     fn init() -> Result<(), Error>;
-    fn get_login_flow() -> Result<Option<AuthFlow>, Error>;
-    fn get_logout_flow() -> Result<Option<AuthFlow>, Error>;
+
+    fn get_login_flow() -> Result<Option<AuthFlow>, Error> {
+        Ok(None)
+    }
+
+    fn get_logout_flow() -> Result<Option<AuthFlow>, Error> {
+        Ok(None)
+    }
+
     fn login(
         url: Option<String>,
         body: Option<String>,
         fields: Option<HashMap<String, String>>,
-    ) -> Result<(), Error>;
-    fn logout() -> Result<(), Error>;
-    fn validate_config(fields: HashMap<String, String>) -> Result<(), Error>;
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn logout() -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn validate_config(fields: HashMap<String, String>) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[macro_export]

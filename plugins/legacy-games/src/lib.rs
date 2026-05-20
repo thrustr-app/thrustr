@@ -1,8 +1,7 @@
 use crate::api::{get_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use pdk::{
-    AuthFlow, Error, Game, GameVersion, Platform, Plugin, Storefront, kv_store::KvStore,
-    register_storefront,
+    Error, Game, GameVersion, Platform, Plugin, Storefront, kv_store::KvStore, register_storefront,
 };
 use std::collections::HashMap;
 use wstd::runtime::block_on;
@@ -16,8 +15,7 @@ pub struct LegacyGames;
 impl Plugin for LegacyGames {
     fn init() -> Result<(), Error> {
         block_on(async move {
-            let email: String =
-                KvStore::get("email")?.ok_or(Error::Auth("not logged in".into()))?;
+            let email: String = KvStore::get("email")?.ok_or(Error::auth("not logged in"))?;
             let token = KvStore::get::<String>("token")?;
 
             match token {
@@ -37,10 +35,10 @@ impl Plugin for LegacyGames {
         fields: Option<HashMap<String, String>>,
     ) -> Result<(), Error> {
         block_on(async {
-            let fields = fields.ok_or(Error::Auth("fields should not be None".into()))?;
+            let fields = fields.ok_or(Error::auth("fields should not be None"))?;
             let email = fields
                 .get("email")
-                .ok_or(Error::Auth("email is mandatory".into()))?;
+                .ok_or(Error::auth("email is mandatory"))?;
             let password = fields.get("password");
 
             if let Some(password) = password {
@@ -64,25 +62,12 @@ impl Plugin for LegacyGames {
         KvStore::delete("token")?;
         Ok(())
     }
-
-    fn validate_config(_fields: HashMap<String, String>) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn get_login_flow() -> Result<Option<AuthFlow>, Error> {
-        Ok(None)
-    }
-
-    fn get_logout_flow() -> Result<Option<AuthFlow>, Error> {
-        Ok(None)
-    }
 }
 
 impl Storefront for LegacyGames {
     fn get_games() -> Result<Vec<Game>, Error> {
         block_on(async {
-            let email: String =
-                KvStore::get("email")?.ok_or(Error::Auth("not logged in".into()))?;
+            let email: String = KvStore::get("email")?.ok_or(Error::auth("not logged in"))?;
             let token = KvStore::get::<String>("token")?;
             let user_id = KvStore::get("user_id")?;
 

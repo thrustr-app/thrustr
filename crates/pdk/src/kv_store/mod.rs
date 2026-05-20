@@ -13,6 +13,13 @@ impl KvStore {
         get(key)?.map(T::from_bytes).transpose()
     }
 
+    pub fn get_or<T: KvValue>(key: &str, default: T) -> Result<T, Error> {
+        get(key)?
+            .map(T::from_bytes)
+            .transpose()
+            .map(|o| o.unwrap_or(default))
+    }
+
     pub fn set<T: KvValue>(key: &str, value: &T) -> Result<(), Error> {
         set(key, &value.as_bytes())
     }
