@@ -73,7 +73,7 @@ struct GameEntry {
     id: SharedString,
     name: SharedString,
     cover_path: Option<Arc<Path>>,
-    vibrant_color: Option<Hsla>,
+    accent_color: Option<Hsla>,
     source_icon: Option<Arc<Image>>,
 }
 
@@ -149,7 +149,7 @@ impl RenderOnce for GameCard {
 
         base.hover(|style| {
             style.bg(game
-                .vibrant_color
+                .accent_color
                 .unwrap_or(theme.colors.card_background)
                 .opacity(0.25))
         })
@@ -205,10 +205,10 @@ impl Library {
                             games
                                 .into_iter()
                                 .map(|g| {
-                                    let (cover_path, vibrant_color) = match g.artwork {
+                                    let (cover_path, accent_color) = match g.artwork {
                                         Some(art) => (
                                             Some(paths::artwork_path(&art.hash, "webp").into()),
-                                            art.vibrant_color.map(Color::to_hex),
+                                            art.accent_color.map(Color::to_hex),
                                         ),
                                         None => (None, None),
                                     };
@@ -220,7 +220,7 @@ impl Library {
                                             .cloned(),
                                         name: g.name.into(),
                                         cover_path,
-                                        vibrant_color: vibrant_color.map(|c| rgb(c).into()),
+                                        accent_color: accent_color.map(|c| rgb(c).into()),
                                     }
                                 })
                                 .collect(),

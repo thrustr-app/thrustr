@@ -215,7 +215,7 @@ async fn finalize(
         hash: processed.hash,
         kind: task.kind,
         position: task.position,
-        vibrant_color: processed.color,
+        accent_color: processed.color,
     };
     spawn_blocking(move || artwork.insert(task.game_id.into(), &record)).await??;
 

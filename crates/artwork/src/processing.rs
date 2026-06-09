@@ -1,4 +1,4 @@
-use crate::{ArtworkTask, color::extract_vibrant};
+use crate::{ArtworkTask, color::extract_accent};
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use domain::artwork::Color;
@@ -25,7 +25,7 @@ pub async fn process_task(task: ArtworkTask, client: Client) -> Result<Processed
 async fn encode(bytes: Bytes, quality: f32) -> Result<ProcessedArtwork> {
     spawn_blocking(move || {
         let img = decode_and_process(&bytes)?;
-        let color = extract_vibrant(&img);
+        let color = extract_accent(&img);
         let webp = encode_webp(&img, quality)?;
         let hash = blake3::hash(&webp).to_hex().to_string();
         Ok(ProcessedArtwork {

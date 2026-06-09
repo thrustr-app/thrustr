@@ -15,7 +15,7 @@ pub struct Artwork {
     pub hash: String,
     pub kind: ArtworkKind,
     pub position: u32,
-    pub vibrant_color: Option<Color>,
+    pub accent_color: Option<Color>,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -13,7 +13,7 @@ pub struct ArtworkRow {
     pub hash: String,
     pub kind: String,
     pub position: i32,
-    pub vibrant_color: Option<i32>,
+    pub accent_color: Option<i32>,
 }
 
 #[derive(Insertable, Debug)]
@@ -25,7 +25,7 @@ pub struct NewArtworkRow<'a> {
     pub hash: &'a str,
     pub kind: &'a str,
     pub position: i32,
-    pub vibrant_color: Option<i32>,
+    pub accent_color: Option<i32>,
 }
 
 impl From<ArtworkRow> for Artwork {
@@ -34,7 +34,7 @@ impl From<ArtworkRow> for Artwork {
             hash: row.hash,
             kind: ArtworkKind::from_str(&row.kind).unwrap(),
             position: row.position as u32,
-            vibrant_color: row.vibrant_color.map(|c| Color::from_hex(c as u32)),
+            accent_color: row.accent_color.map(|c| Color::from_hex(c as u32)),
         }
     }
 }

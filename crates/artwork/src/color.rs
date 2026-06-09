@@ -22,14 +22,14 @@ struct Bucket {
     b: u64,
 }
 
-/// Extracts a strong, vibrant "accent" color out of an image.
+/// Extracts a strong, vibrant accent color out of an image.
 ///
 /// The process is:
 /// 1. Shrink the image to reduce processing time
 /// 2. Group similar colors together into buckets
 /// 3. Score each bucket based on how common it is and how visually "interesting" it is
 /// 4. Pick the best one and adjust it so it works well in the UI
-pub fn extract_vibrant(img: &DynamicImage) -> Option<Color> {
+pub fn extract_accent(img: &DynamicImage) -> Option<Color> {
     let sample = img
         .resize(SAMPLE_SIZE, SAMPLE_SIZE, FilterType::Triangle)
         .to_rgb8();

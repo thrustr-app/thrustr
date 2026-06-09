@@ -14,7 +14,7 @@ impl ArtworkRepository for SqliteStorage {
         let row = NewArtworkRow {
             game_id: u64::from(game_id) as i64,
             hash: &artwork.hash,
-            vibrant_color: artwork.vibrant_color.map(|c| c.to_hex() as i32),
+            accent_color: artwork.accent_color.map(|c| c.to_hex() as i32),
             kind: artwork.kind.as_ref(),
             position: artwork.position as i32,
         };
@@ -26,7 +26,7 @@ impl ArtworkRepository for SqliteStorage {
             .do_update()
             .set((
                 dsl::hash.eq(&row.hash),
-                dsl::vibrant_color.eq(row.vibrant_color),
+                dsl::accent_color.eq(row.accent_color),
             ))
             .execute(&mut conn)?;
 
