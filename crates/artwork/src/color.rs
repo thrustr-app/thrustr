@@ -7,6 +7,14 @@ const QUANT_BITS: u32 = 4;
 const QUANT_SHIFT: u32 = 8 - QUANT_BITS;
 const QUANT_LEVELS: usize = 1 << QUANT_BITS;
 
+// This avoids super dark or washed-out colors.
+const MIN_LIGHTNESS: f32 = 0.38;
+const MAX_LIGHTNESS: f32 = 0.62;
+
+// If a color is too desaturated, bump it up to at least this level
+// so it looks good as an accent color.
+const MIN_SATURATION: f32 = 0.45;
+
 struct Bucket {
     count: u64,
     r: u64,
@@ -14,11 +22,13 @@ struct Bucket {
     b: u64,
 }
 
-/// Extracts a vibrant background color from an image.
+/// Extracts a strong, vibrant "accent" color out of an image.
 ///
-/// Downscales, quantizes pixels into a coarse color histogram, then scores each bucket
-/// by population weighted towards saturated, mid-luminance colors so the result is a
-/// lively accent rather than a dull average or a near-black/white extreme.
+/// The process is:
+/// 1. Shrink the image to reduce processing time
+/// 2. Group similar colors together into buckets
+/// 3. Score each bucket based on how common it is and how visually "interesting" it is
+/// 4. Pick the best one and adjust it so it works well in the UI
 pub fn extract_vibrant(img: &DynamicImage) -> Option<Color> {
     let sample = img
         .resize(SAMPLE_SIZE, SAMPLE_SIZE, FilterType::Triangle)
@@ -33,6 +43,7 @@ pub fn extract_vibrant(img: &DynamicImage) -> Option<Color> {
         })
         .collect();
 
+    // Build a coarse histogram by grouping similar colors together
     for pixel in sample.pixels() {
         let [r, g, b] = pixel.0;
         let idx = bucket_index(r, g, b);
@@ -46,12 +57,16 @@ pub fn extract_vibrant(img: &DynamicImage) -> Option<Color> {
     let mut best_score = 0.0_f32;
     let mut best: Option<Color> = None;
 
+    // Go through all populated buckets and find the most “vibrant” one
     for bucket in buckets.iter().filter(|b| b.count > 0) {
         let count = bucket.count as f32;
+
+        // Compute the average color of this bucket
         let r = (bucket.r as f32 / count) as u8;
         let g = (bucket.g as f32 / count) as u8;
         let b = (bucket.b as f32 / count) as u8;
 
+        // Score combines how common the color is and how visually strong it feels
         let score = count * vibrancy_weight(r, g, b);
         if score > best_score {
             best_score = score;
@@ -59,7 +74,8 @@ pub fn extract_vibrant(img: &DynamicImage) -> Option<Color> {
         }
     }
 
-    best
+    // Normalize the best candidate
+    best.map(|c| normalize(c.r, c.g, c.b))
 }
 
 fn bucket_index(r: u8, g: u8, b: u8) -> usize {
@@ -69,8 +85,11 @@ fn bucket_index(r: u8, g: u8, b: u8) -> usize {
     (r * QUANT_LEVELS + g) * QUANT_LEVELS + b
 }
 
-/// Weights a color by saturation and how far its luminance sits from pure black/white,
-/// so flat dark/light backgrounds lose out to colorful regions.
+/// Gives a color a "vibrancy score" based on how saturated it is and whether it
+/// sits in a nice brightness range.
+///
+/// Very dark or very bright colors are ignored completely. Mid-range, colorful tones
+/// get the highest scores.
 fn vibrancy_weight(r: u8, g: u8, b: u8) -> f32 {
     let (rf, gf, bf) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
     let max = rf.max(gf).max(bf);
@@ -78,9 +97,98 @@ fn vibrancy_weight(r: u8, g: u8, b: u8) -> f32 {
 
     let saturation = if max <= 0.0 { 0.0 } else { (max - min) / max };
     let luminance = 0.299 * rf + 0.587 * gf + 0.114 * bf;
-    // Tent function peaking at mid luminance, zero at the extremes.
-    let luma_weight = 1.0 - (luminance - 0.5).abs() * 2.0;
 
-    // Keep a small floor so a fully desaturated-but-mid image still yields a color.
+    if !(0.15..=0.82).contains(&luminance) {
+        return 0.0;
+    }
+
+    let luma_weight = (1.0 - (luminance - 0.45).abs() / 0.40).max(0.0);
+
     0.1 + saturation * luma_weight
+}
+
+fn normalize(r: u8, g: u8, b: u8) -> Color {
+    let rf = r as f32 / 255.0;
+    let gf = g as f32 / 255.0;
+    let bf = b as f32 / 255.0;
+
+    let (h, s, l) = rgb_to_hsl(rf, gf, bf);
+    let l_norm = l.clamp(MIN_LIGHTNESS, MAX_LIGHTNESS);
+    let s_norm = s.max(MIN_SATURATION);
+
+    let (nr, ng, nb) = hsl_to_rgb(h, s_norm, l_norm);
+    Color {
+        r: (nr * 255.0).round() as u8,
+        g: (ng * 255.0).round() as u8,
+        b: (nb * 255.0).round() as u8,
+    }
+}
+
+fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+
+    let d = max - min;
+    if d < 1e-6 {
+        return (0.0, 0.0, l);
+    }
+
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
+
+    let h = if r >= g && r >= b {
+        let mut h = (g - b) / d;
+        if h < 0.0 {
+            h += 6.0;
+        }
+        h / 6.0
+    } else if g >= b {
+        ((b - r) / d + 2.0) / 6.0
+    } else {
+        ((r - g) / d + 4.0) / 6.0
+    };
+
+    (h, s, l)
+}
+
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
+    if s < 1e-6 {
+        return (l, l, l);
+    }
+
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
+    let p = 2.0 * l - q;
+
+    (
+        hue_to_rgb(p, q, h + 1.0 / 3.0),
+        hue_to_rgb(p, q, h),
+        hue_to_rgb(p, q, h - 1.0 / 3.0),
+    )
+}
+
+fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
+    if t < 0.0 {
+        t += 1.0;
+    }
+    if t > 1.0 {
+        t -= 1.0;
+    }
+    if t < 1.0 / 6.0 {
+        return p + (q - p) * 6.0 * t;
+    }
+    if t < 0.5 {
+        return q;
+    }
+    if t < 2.0 / 3.0 {
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    }
+    p
 }
