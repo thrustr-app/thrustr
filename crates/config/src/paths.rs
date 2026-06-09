@@ -21,25 +21,17 @@ pub fn media_dir() -> PathBuf {
     data_dir().join("media")
 }
 
-/// Path to the cover images directoy.
-pub fn covers_dir() -> PathBuf {
-    media_dir().join("covers")
+/// Path to the artwork images directory.
+pub fn artwork_dir() -> PathBuf {
+    media_dir().join("artwork")
 }
 
-/// Path to the cover image for a given ID.
-pub fn cover_path(id: u64, extension: &str) -> PathBuf {
-    let hash = hash_id(id);
-    let l1 = (hash >> 8) & 0xFF;
-    let l2 = hash & 0xFF;
-    covers_dir()
-        .join(format!("{l1:02x}"))
-        .join(format!("{l2:02x}"))
-        .join(format!("{id}.{extension}"))
-}
-
-/// Hashes an ID using Fibbonacci.
-fn hash_id(id: u64) -> u64 {
-    id.wrapping_mul(0x9e3779b97f4a7c15).rotate_right(32)
+/// Path to the artwork image for a given content hash.
+pub fn artwork_path(hash: &str, extension: &str) -> PathBuf {
+    artwork_dir()
+        .join(&hash[0..2])
+        .join(&hash[2..4])
+        .join(format!("{hash}.{extension}"))
 }
 
 /// Path to the plugins directory, creating it if it doesn't exist.

@@ -366,7 +366,7 @@ impl Config {
         div()
             .flex()
             .flex_col()
-            .flex_grow()
+            .flex_grow_1()
             .h_0()
             .gap(rems(1.5))
             .id("config-form")
@@ -384,7 +384,7 @@ impl Config {
 impl Render for Config {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .flex_grow()
+            .flex_grow_1()
             .pl(rems(1.5))
             .flex()
             .flex_col()

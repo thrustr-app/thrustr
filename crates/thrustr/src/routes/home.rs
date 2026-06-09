@@ -6,6 +6,6 @@ pub struct Home;
 impl Render for Home {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _theme = cx.theme();
-        div().flex_grow()
+        div().flex_grow_1()
     }
 }

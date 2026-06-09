@@ -1,6 +1,7 @@
-use crate::ImageTask;
+use crate::{ArtworkTask, color::extract_vibrant};
 use anyhow::{Context, Result};
 use bytes::Bytes;
+use domain::artwork::Color;
 use image::{DynamicImage, imageops::FilterType};
 use reqwest::Client;
 use std::{path::Path, time::Duration};
@@ -10,11 +11,30 @@ use webp::Encoder;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_HEIGHT: u32 = 600;
 
-pub async fn process_task(task: ImageTask, client: Client) -> Result<()> {
+pub struct ProcessedArtwork {
+    pub bytes: Vec<u8>,
+    pub hash: String,
+    pub color: Option<Color>,
+}
+
+pub async fn process_task(task: ArtworkTask, client: Client) -> Result<ProcessedArtwork> {
     let bytes = download_image(&task.url, client).await?;
-    let webp = to_webp(bytes, task.quality).await?;
-    write_file(&task.path, &webp).await?;
-    Ok(())
+    encode(bytes, task.quality).await
+}
+
+async fn encode(bytes: Bytes, quality: f32) -> Result<ProcessedArtwork> {
+    spawn_blocking(move || {
+        let img = decode_and_process(&bytes)?;
+        let color = extract_vibrant(&img);
+        let webp = encode_webp(&img, quality)?;
+        let hash = blake3::hash(&webp).to_hex().to_string();
+        Ok(ProcessedArtwork {
+            bytes: webp,
+            hash,
+            color,
+        })
+    })
+    .await?
 }
 
 async fn download_image(url: &str, client: Client) -> Result<Bytes> {
@@ -27,14 +47,6 @@ async fn download_image(url: &str, client: Client) -> Result<Bytes> {
         .with_context(|| format!("Failed to download image from {url}"))?;
 
     Ok(response.bytes().await?)
-}
-
-async fn to_webp(bytes: Bytes, quality: f32) -> Result<Vec<u8>> {
-    spawn_blocking(move || {
-        let img = decode_and_process(&bytes)?;
-        encode_webp(&img, quality)
-    })
-    .await?
 }
 
 fn decode_and_process(bytes: &[u8]) -> Result<DynamicImage> {
@@ -71,7 +83,7 @@ fn resize_to_max_height(img: DynamicImage, max_h: u32) -> DynamicImage {
     img.resize(u32::MAX, max_h, FilterType::Lanczos3)
 }
 
-async fn write_file(path: impl AsRef<Path>, data: &[u8]) -> Result<()> {
+pub(crate) async fn write_file(path: impl AsRef<Path>, data: &[u8]) -> Result<()> {
     let path = path.as_ref();
 
     if let Some(parent) = path.parent() {

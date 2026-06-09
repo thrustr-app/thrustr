@@ -1046,7 +1046,7 @@ impl Render for InputState {
         div()
             .id("text-element")
             .flex_1()
-            .flex_grow()
+            .flex_grow_1()
             .overflow_x_hidden()
             .child(TextElement::new(cx.entity().clone()))
     }

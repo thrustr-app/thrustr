@@ -1,5 +1,10 @@
-use crate::{ImageTask, processing::process_task};
+use crate::{
+    ArtworkTask,
+    processing::{ProcessedArtwork, process_task, write_file},
+};
+use config::paths::artwork_path;
 use connectivity::ConnectivityManager;
+use domain::artwork::{Artwork, ArtworkRepository};
 use reqwest::Client;
 use std::{
     sync::{
@@ -10,7 +15,7 @@ use std::{
 };
 use tokio::{
     sync::{Notify, mpsc},
-    task::JoinSet,
+    task::{JoinSet, spawn_blocking},
 };
 
 const MAX_ATTEMPTS: u32 = 3;
@@ -24,14 +29,18 @@ struct Inner {
     wakeup: Notify,
 }
 
-pub struct ImageManager {
-    sender: mpsc::UnboundedSender<ImageTask>,
+pub struct ArtworkManager {
+    sender: mpsc::UnboundedSender<ArtworkTask>,
     inner: Arc<Inner>,
 }
 
-impl ImageManager {
-    pub fn new(max_concurrent: usize, connectivity: ConnectivityManager) -> Self {
-        let (sender, mut receiver) = mpsc::unbounded_channel::<ImageTask>();
+impl ArtworkManager {
+    pub fn new(
+        max_concurrent: usize,
+        connectivity: ConnectivityManager,
+        artwork: Arc<dyn ArtworkRepository>,
+    ) -> Self {
+        let (sender, mut receiver) = mpsc::unbounded_channel::<ArtworkTask>();
 
         let inner = Arc::new(Inner {
             pending: AtomicUsize::new(0),
@@ -93,7 +102,7 @@ impl ImageManager {
                     tokio::select! {
                         task = receiver.recv() => match task {
                             Some(task) => {
-                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone()));
+                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), artwork.clone()));
                                 inner.active.fetch_add(1, Ordering::Relaxed);
                             }
                             None => break,
@@ -112,7 +121,7 @@ impl ImageManager {
         Self { sender, inner }
     }
 
-    pub fn enqueue(&self, task: ImageTask) -> Result<(), mpsc::error::SendError<ImageTask>> {
+    pub fn enqueue(&self, task: ArtworkTask) -> Result<(), mpsc::error::SendError<ArtworkTask>> {
         self.inner.pending.fetch_add(1, Ordering::Relaxed);
         self.sender.send(task).inspect_err(|_| {
             self.inner.pending.fetch_sub(1, Ordering::Relaxed);
@@ -150,11 +159,22 @@ impl ImageManager {
     }
 }
 
-async fn run_with_retry(task: ImageTask, client: Client, connectivity: ConnectivityManager) {
+async fn run_with_retry(
+    task: ArtworkTask,
+    client: Client,
+    connectivity: ConnectivityManager,
+    artwork: Arc<dyn ArtworkRepository>,
+) {
     let mut attempts = 0;
     loop {
         match process_task(task.clone(), client.clone()).await {
-            Ok(_) => return,
+            Ok(processed) => {
+                let game_id = task.game_id;
+                if let Err(e) = finalize(task, processed, artwork).await {
+                    eprintln!("Failed to persist cover for game {}: {}", game_id, e);
+                }
+                return;
+            }
             Err(ref e) if is_network_error(e) => {
                 connectivity.report_error();
                 connectivity.wait_until_online().await;
@@ -178,6 +198,28 @@ async fn run_with_retry(task: ImageTask, client: Client, connectivity: Connectiv
             }
         }
     }
+}
+
+/// Writes the processed image to its content-addressed path, then persists the artwork
+/// metadata. The DB row is only written after the file exists on disk, so the table
+/// never references a missing file.
+async fn finalize(
+    task: ArtworkTask,
+    processed: ProcessedArtwork,
+    artwork: Arc<dyn ArtworkRepository>,
+) -> anyhow::Result<()> {
+    let path = artwork_path(&processed.hash, "webp");
+    write_file(&path, &processed.bytes).await?;
+
+    let record = Artwork {
+        hash: processed.hash,
+        kind: task.kind,
+        position: task.position,
+        vibrant_color: processed.color,
+    };
+    spawn_blocking(move || artwork.insert(task.game_id.into(), &record)).await??;
+
+    Ok(())
 }
 
 fn is_network_error(e: &anyhow::Error) -> bool {

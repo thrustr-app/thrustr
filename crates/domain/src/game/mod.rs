@@ -1,4 +1,4 @@
-use crate::{id::Id, platform::Platform};
+use crate::{artwork::Artwork, id::Id, platform::Platform};
 use std::collections::HashMap;
 
 mod repository;
@@ -10,7 +10,9 @@ pub struct Game {
     pub id: Id<Self>,
     pub name: String,
     pub source: GameSource,
-    pub cover_url: String,
+    /// The URL of the original cover art for the game, as provided by the storefront.
+    pub cover_url: Option<String>,
+    pub cover: Option<Artwork>,
 }
 
 #[derive(Debug)]
@@ -35,5 +37,5 @@ pub struct GameVersion {
 pub struct NewGame {
     pub name: String,
     pub source: GameSource,
-    pub cover_url: String,
+    pub cover_url: Option<String>,
 }

@@ -46,7 +46,7 @@ impl StorefrontHandle {
 
         self.component
             .context
-            .image_service
+            .artwork_service
             .enqueue_from_games(&games);
 
         Ok(())

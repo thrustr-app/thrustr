@@ -18,6 +18,10 @@ mod tokio;
 mod webview;
 
 fn main() {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to set default TLS provider");
+
     let db_path = paths::db_path();
     let sqlite_storage = SqliteStorage::new(&db_path)
         .unwrap_or_else(|_| panic!("Failed to initialize database at {}", db_path.display()));

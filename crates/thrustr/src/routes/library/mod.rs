@@ -5,10 +5,11 @@ use crate::{
     routes::library::cache::lru_image_cache,
 };
 use config::paths;
+use domain::artwork::Color;
 use gpui::{
-    App, Bounds, Context, FontWeight, Image, ImageSource, InteractiveElement, IntoElement,
+    App, Bounds, Context, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement,
     ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString, Styled,
-    StyledImage, Task, Window, div, img, px, rems, uniform_list,
+    StyledImage, Task, Window, div, img, px, rems, rgb, uniform_list,
 };
 use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
@@ -71,7 +72,8 @@ impl GridDims {
 struct GameEntry {
     id: SharedString,
     name: SharedString,
-    cover_path: Arc<Path>,
+    cover_path: Option<Arc<Path>>,
+    vibrant_color: Option<Hsla>,
     source_icon: Option<Arc<Image>>,
 }
 
@@ -111,18 +113,21 @@ impl RenderOnce for GameCard {
             return base;
         };
 
-        let cover = div()
+        let mut cover = div()
             .aspect_ratio(2. / 3.)
             .w_full()
             .bg(theme.colors.card_background)
-            .rounded(theme.radius.md)
-            .child(
-                img(ImageSource::Resource(Resource::Path(game.cover_path)))
+            .rounded(theme.radius.md);
+
+        if let Some(path) = game.cover_path {
+            cover = cover.child(
+                img(ImageSource::Resource(Resource::Path(path)))
                     .object_fit(ObjectFit::Contain)
                     .w_full()
                     .h_full()
                     .rounded(theme.radius.md),
             );
+        }
 
         let title = div()
             .overflow_hidden()
@@ -142,10 +147,15 @@ impl RenderOnce for GameCard {
             div().mb(rems(CARD_ICON_SIZE_REM)).into_any_element()
         };
 
-        base.hover(|style| style.bg(theme.colors.card_background))
-            .child(cover)
-            .child(title)
-            .child(icon_row)
+        base.hover(|style| {
+            style.bg(game
+                .vibrant_color
+                .unwrap_or(theme.colors.card_background)
+                .opacity(0.25))
+        })
+        .child(cover)
+        .child(title)
+        .child(icon_row)
     }
 }
 
@@ -194,11 +204,24 @@ impl Library {
                         library.games = Rc::new(
                             games
                                 .into_iter()
-                                .map(|g| GameEntry {
-                                    id: g.id.to_string().into(),
-                                    source_icon: library.component_icons.get(&g.source_id).cloned(),
-                                    name: g.name.into(),
-                                    cover_path: paths::cover_path(g.id.into(), "webp").into(),
+                                .map(|g| {
+                                    let (cover_path, vibrant_color) = match g.artwork {
+                                        Some(art) => (
+                                            Some(paths::artwork_path(&art.hash, "webp").into()),
+                                            art.vibrant_color.map(Color::to_hex),
+                                        ),
+                                        None => (None, None),
+                                    };
+                                    GameEntry {
+                                        id: g.id.to_string().into(),
+                                        source_icon: library
+                                            .component_icons
+                                            .get(&g.source_id)
+                                            .cloned(),
+                                        name: g.name.into(),
+                                        cover_path,
+                                        vibrant_color: vibrant_color.map(|c| rgb(c).into()),
+                                    }
                                 })
                                 .collect(),
                         );
@@ -238,7 +261,7 @@ impl Render for Library {
 
         div()
             .on_children_prepainted(cx.processor(Self::set_bounds))
-            .flex_grow()
+            .flex_grow_1()
             .px(rems(2. - CARD_PADDING_REM))
             .text_color(theme.colors.accent)
             .image_cache(lru_image_cache("game-grid-cache", dims.cache_capacity()))
