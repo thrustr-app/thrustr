@@ -13,6 +13,7 @@ domain.workspace = true
 anyhow.workspace = true
 blake3.workspace = true
 bytes.workspace = true
+event.workspace = true
 image = "0.25"
 reqwest.workspace = true
 tokio.workspace = true

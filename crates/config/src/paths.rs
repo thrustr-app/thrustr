@@ -16,14 +16,9 @@ pub fn db_path() -> PathBuf {
     data_dir().join(DB_NAME)
 }
 
-/// Path to the applicationmedia directory.
-pub fn media_dir() -> PathBuf {
-    data_dir().join("media")
-}
-
 /// Path to the artwork images directory.
 pub fn artwork_dir() -> PathBuf {
-    media_dir().join("artwork")
+    data_dir().join("artwork")
 }
 
 /// Path to the artwork image for a given content hash.

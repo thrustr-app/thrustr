@@ -200,9 +200,6 @@ async fn run_with_retry(
     }
 }
 
-/// Writes the processed image to its content-addressed path, then persists the artwork
-/// metadata. The DB row is only written after the file exists on disk, so the table
-/// never references a missing file.
 async fn finalize(
     task: ArtworkTask,
     processed: ProcessedArtwork,
@@ -219,6 +216,7 @@ async fn finalize(
     };
     spawn_blocking(move || artwork.insert(task.game_id.into(), &record)).await??;
 
+    event::emit("game");
     Ok(())
 }
 

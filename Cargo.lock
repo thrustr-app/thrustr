@@ -245,6 +245,7 @@ dependencies = [
  "config",
  "connectivity",
  "domain",
+ "event",
  "image",
  "reqwest",
  "tokio",
