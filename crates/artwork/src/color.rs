@@ -13,7 +13,7 @@ const MAX_LIGHTNESS: f32 = 0.62;
 
 // If a color is too desaturated, bump it up to at least this level
 // so it looks good as an accent color.
-const MIN_SATURATION: f32 = 0.45;
+const MIN_SATURATION: f32 = 0.55;
 
 struct Bucket {
     count: u64,
@@ -43,7 +43,6 @@ pub fn extract_vibrant(img: &DynamicImage) -> Option<Color> {
         })
         .collect();
 
-    // Build a coarse histogram by grouping similar colors together
     for pixel in sample.pixels() {
         let [r, g, b] = pixel.0;
         let idx = bucket_index(r, g, b);
@@ -57,24 +56,20 @@ pub fn extract_vibrant(img: &DynamicImage) -> Option<Color> {
     let mut best_score = 0.0_f32;
     let mut best: Option<Color> = None;
 
-    // Go through all populated buckets and find the most “vibrant” one
     for bucket in buckets.iter().filter(|b| b.count > 0) {
         let count = bucket.count as f32;
 
-        // Compute the average color of this bucket
         let r = (bucket.r as f32 / count) as u8;
         let g = (bucket.g as f32 / count) as u8;
         let b = (bucket.b as f32 / count) as u8;
 
-        // Score combines how common the color is and how visually strong it feels
-        let score = count * vibrancy_weight(r, g, b);
+        let score = count * (1.0 + vibrancy_weight(r, g, b));
         if score > best_score {
             best_score = score;
             best = Some(Color { r, g, b });
         }
     }
 
-    // Normalize the best candidate
     best.map(|c| normalize(c.r, c.g, c.b))
 }
 
@@ -85,11 +80,6 @@ fn bucket_index(r: u8, g: u8, b: u8) -> usize {
     (r * QUANT_LEVELS + g) * QUANT_LEVELS + b
 }
 
-/// Gives a color a "vibrancy score" based on how saturated it is and whether it
-/// sits in a nice brightness range.
-///
-/// Very dark or very bright colors are ignored completely. Mid-range, colorful tones
-/// get the highest scores.
 fn vibrancy_weight(r: u8, g: u8, b: u8) -> f32 {
     let (rf, gf, bf) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
     let max = rf.max(gf).max(bf);
@@ -98,13 +88,9 @@ fn vibrancy_weight(r: u8, g: u8, b: u8) -> f32 {
     let saturation = if max <= 0.0 { 0.0 } else { (max - min) / max };
     let luminance = 0.299 * rf + 0.587 * gf + 0.114 * bf;
 
-    if !(0.15..=0.82).contains(&luminance) {
-        return 0.0;
-    }
+    let luma_weight = (1.0 - (luminance - 0.45).abs() / 0.45).max(0.1);
 
-    let luma_weight = (1.0 - (luminance - 0.45).abs() / 0.40).max(0.0);
-
-    0.1 + saturation * luma_weight
+    saturation * luma_weight
 }
 
 fn normalize(r: u8, g: u8, b: u8) -> Color {
