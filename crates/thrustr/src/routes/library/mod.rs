@@ -7,6 +7,7 @@ use crate::{
 use artwork::ArtworkReady;
 use config::paths;
 use domain::artwork::Color;
+use game::GameListItem;
 use gpui::{
     App, Bounds, Context, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement,
     ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString, Styled,
@@ -27,49 +28,6 @@ const CARD_INNER_GAP_REM: f32 = 0.75;
 const CARD_TEXT_SIZE_REM: f32 = 0.9;
 const CARD_ICON_SIZE_REM: f32 = 1.5;
 
-struct GridDims {
-    num_cols: usize,
-    num_rows: usize,
-    visible_rows: usize,
-}
-
-impl GridDims {
-    fn compute(
-        grid_width: Pixels,
-        game_count: usize,
-        window_height: Pixels,
-        rem_size: f32,
-    ) -> Self {
-        let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
-        let num_cols = num_cols.max(1);
-        let num_rows = (game_count as f32 / num_cols as f32).ceil() as usize;
-
-        let visible_rows =
-            (window_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
-
-        Self {
-            num_cols,
-            num_rows,
-            visible_rows,
-        }
-    }
-
-    /// Approximate full card height in pixels.
-    fn card_height_px(rem_size: f32) -> f32 {
-        let image_height = GAME_CARD_WIDTH.as_f32() / CARD_ASPECT_RATIO;
-        let chrome = (CARD_PADDING_REM * 2.
-            + CARD_INNER_GAP_REM * 2.
-            + CARD_TEXT_SIZE_REM
-            + CARD_ICON_SIZE_REM)
-            * rem_size;
-        image_height + chrome
-    }
-
-    fn cache_capacity(&self) -> usize {
-        self.num_cols * self.visible_rows
-    }
-}
-
 #[derive(Clone)]
 struct GameEntry {
     id: SharedString,
@@ -77,6 +35,33 @@ struct GameEntry {
     cover_path: Option<Arc<Path>>,
     accent_color: Option<Hsla>,
     source_icon: Option<Arc<Image>>,
+}
+
+impl GameEntry {
+    fn from_list_item(item: GameListItem, icons: &HashMap<String, Arc<Image>>) -> Self {
+        let (cover_path, accent_color) = match item.artwork {
+            Some(art) => (
+                Some(cover_path(&art.hash)),
+                art.accent_color.map(accent_hsla),
+            ),
+            None => (None, None),
+        };
+        Self {
+            id: item.id.to_string().into(),
+            name: item.name.into(),
+            source_icon: icons.get(&item.source_id).cloned(),
+            cover_path,
+            accent_color,
+        }
+    }
+}
+
+fn cover_path(hash: &str) -> Arc<Path> {
+    paths::artwork_path(hash, "webp").into()
+}
+
+fn accent_hsla(color: Color) -> Hsla {
+    rgb(color.to_hex()).into()
 }
 
 #[derive(IntoElement)]
@@ -209,8 +194,8 @@ impl Library {
         );
         let games = Rc::make_mut(&mut self.games);
         if let Some(entry) = games.iter_mut().find(|g| g.id.as_ref() == id_str) {
-            entry.cover_path = Some(paths::artwork_path(&update.hash, "webp").into());
-            entry.accent_color = update.accent_color.map(|c| rgb(c.to_hex()).into());
+            entry.cover_path = Some(cover_path(&update.hash));
+            entry.accent_color = update.accent_color.map(accent_hsla);
             cx.notify();
         }
     }
@@ -237,24 +222,8 @@ impl Library {
                         library.games = Rc::new(
                             games
                                 .into_iter()
-                                .map(|g| {
-                                    let (cover_path, accent_color) = match g.artwork {
-                                        Some(art) => (
-                                            Some(paths::artwork_path(&art.hash, "webp").into()),
-                                            art.accent_color.map(Color::to_hex),
-                                        ),
-                                        None => (None, None),
-                                    };
-                                    GameEntry {
-                                        id: g.id.to_string().into(),
-                                        source_icon: library
-                                            .component_icons
-                                            .get(&g.source_id)
-                                            .cloned(),
-                                        name: g.name.into(),
-                                        cover_path,
-                                        accent_color: accent_color.map(|c| rgb(c).into()),
-                                    }
+                                .map(|item| {
+                                    GameEntry::from_list_item(item, &library.component_icons)
                                 })
                                 .collect(),
                         );
@@ -275,6 +244,49 @@ impl Library {
             let entity_id = cx.entity_id();
             cx.defer(move |cx| cx.notify(entity_id));
         }
+    }
+}
+
+struct GridDims {
+    num_cols: usize,
+    num_rows: usize,
+    visible_rows: usize,
+}
+
+impl GridDims {
+    fn compute(
+        grid_width: Pixels,
+        game_count: usize,
+        window_height: Pixels,
+        rem_size: f32,
+    ) -> Self {
+        let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
+        let num_cols = num_cols.max(1);
+        let num_rows = (game_count as f32 / num_cols as f32).ceil() as usize;
+
+        let visible_rows =
+            (window_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
+
+        Self {
+            num_cols,
+            num_rows,
+            visible_rows,
+        }
+    }
+
+    /// Approximate full card height in pixels.
+    fn card_height_px(rem_size: f32) -> f32 {
+        let image_height = GAME_CARD_WIDTH.as_f32() / CARD_ASPECT_RATIO;
+        let chrome = (CARD_PADDING_REM * 2.
+            + CARD_INNER_GAP_REM * 2.
+            + CARD_TEXT_SIZE_REM
+            + CARD_ICON_SIZE_REM)
+            * rem_size;
+        image_height + chrome
+    }
+
+    fn cache_capacity(&self) -> usize {
+        self.num_cols * self.visible_rows
     }
 }
 
