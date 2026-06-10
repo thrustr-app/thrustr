@@ -1,5 +1,5 @@
 use crate::{
-    ArtworkTask,
+    ArtworkReady, ArtworkTask,
     processing::{ProcessedArtwork, process_task, write_file},
 };
 use config::paths::artwork_path;
@@ -14,7 +14,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
-    sync::{Notify, mpsc},
+    sync::{Notify, broadcast, mpsc},
     task::{JoinSet, spawn_blocking},
 };
 
@@ -32,6 +32,7 @@ struct Inner {
 pub struct ArtworkManager {
     sender: mpsc::UnboundedSender<ArtworkTask>,
     inner: Arc<Inner>,
+    updates: broadcast::Sender<ArtworkReady>,
 }
 
 impl ArtworkManager {
@@ -41,6 +42,7 @@ impl ArtworkManager {
         artwork: Arc<dyn ArtworkRepository>,
     ) -> Self {
         let (sender, mut receiver) = mpsc::unbounded_channel::<ArtworkTask>();
+        let (updates, _) = broadcast::channel(128);
 
         let inner = Arc::new(Inner {
             pending: AtomicUsize::new(0),
@@ -54,6 +56,7 @@ impl ArtworkManager {
 
         tokio::spawn({
             let inner = inner.clone();
+            let updates = updates.clone();
             let mut connectivity_rx = connectivity.subscribe();
 
             async move {
@@ -102,7 +105,7 @@ impl ArtworkManager {
                     tokio::select! {
                         task = receiver.recv() => match task {
                             Some(task) => {
-                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), artwork.clone()));
+                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), artwork.clone(), updates.clone()));
                                 inner.active.fetch_add(1, Ordering::Relaxed);
                             }
                             None => break,
@@ -118,7 +121,11 @@ impl ArtworkManager {
             }
         });
 
-        Self { sender, inner }
+        Self { sender, inner, updates }
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<ArtworkReady> {
+        self.updates.subscribe()
     }
 
     pub fn enqueue(&self, task: ArtworkTask) -> Result<(), mpsc::error::SendError<ArtworkTask>> {
@@ -164,13 +171,14 @@ async fn run_with_retry(
     client: Client,
     connectivity: ConnectivityManager,
     artwork: Arc<dyn ArtworkRepository>,
+    updates: broadcast::Sender<ArtworkReady>,
 ) {
     let mut attempts = 0;
     loop {
         match process_task(task.clone(), client.clone()).await {
             Ok(processed) => {
                 let game_id = task.game_id;
-                if let Err(e) = finalize(task, processed, artwork).await {
+                if let Err(e) = finalize(task, processed, artwork, &updates).await {
                     eprintln!("Failed to persist cover for game {}: {}", game_id, e);
                 }
                 return;
@@ -204,10 +212,13 @@ async fn finalize(
     task: ArtworkTask,
     processed: ProcessedArtwork,
     artwork: Arc<dyn ArtworkRepository>,
+    updates: &broadcast::Sender<ArtworkReady>,
 ) -> anyhow::Result<()> {
     let path = artwork_path(&processed.hash, "webp");
     write_file(&path, &processed.bytes).await?;
 
+    let hash = processed.hash.clone();
+    let accent_color = processed.color;
     let record = Artwork {
         hash: processed.hash,
         kind: task.kind,
@@ -216,7 +227,11 @@ async fn finalize(
     };
     spawn_blocking(move || artwork.insert(task.game_id.into(), &record)).await??;
 
-    event::emit("game");
+    let _ = updates.send(ArtworkReady {
+        game_id: task.game_id,
+        hash,
+        accent_color,
+    });
     Ok(())
 }
 

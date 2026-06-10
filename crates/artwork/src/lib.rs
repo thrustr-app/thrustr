@@ -1,10 +1,11 @@
 use crate::manager::ArtworkManager;
 use connectivity::ConnectivityManager;
 use domain::{
-    artwork::{ArtworkKind, ArtworkRepository},
+    artwork::{ArtworkKind, ArtworkRepository, Color},
     game::Game,
 };
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 const DEFAULT_QUALITY: f32 = 75.;
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
@@ -20,6 +21,13 @@ pub struct ArtworkTask {
     pub kind: ArtworkKind,
     pub position: u32,
     pub quality: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArtworkReady {
+    pub game_id: u64,
+    pub hash: String,
+    pub accent_color: Option<Color>,
 }
 
 #[derive(Clone)]
@@ -43,6 +51,10 @@ impl ArtworkService {
 
     pub fn set_max_concurrency(&self, max: usize) {
         self.manager.set_max_concurrent(max);
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<ArtworkReady> {
+        self.manager.subscribe()
     }
 
     pub fn enqueue_from_games(&self, games: &[Game]) {

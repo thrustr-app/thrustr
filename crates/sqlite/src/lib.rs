@@ -12,6 +12,7 @@ mod storage;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
+// TODO: handle database locks
 pub struct SqliteStorage {
     pool: Pool<ConnectionManager<SqliteConnection>>,
 }

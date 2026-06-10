@@ -1,9 +1,10 @@
 use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
-    globals::{ComponentRegistryExt, GameServiceExt},
+    globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
     routes::library::cache::lru_image_cache,
 };
+use artwork::ArtworkReady;
 use config::paths;
 use domain::artwork::Color;
 use gpui::{
@@ -13,6 +14,7 @@ use gpui::{
 };
 use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
+use tokio::sync::broadcast::error::RecvError;
 
 mod cache;
 
@@ -178,8 +180,39 @@ impl Library {
         let task = cx.listen("games", |page, cx| page.refresh_games(cx));
         page._tasks.push(task);
 
+        let mut artwork_rx = cx.artwork_service().subscribe();
+        let artwork_task = cx.spawn(async move |library, cx| {
+            loop {
+                match artwork_rx.recv().await {
+                    Ok(update) => {
+                        library
+                            .update(cx, |lib, cx| lib.apply_artwork_update(update, cx))
+                            .ok();
+                    }
+                    Err(RecvError::Lagged(_)) => {}
+                    Err(RecvError::Closed) => break,
+                }
+            }
+        });
+        page._tasks.push(artwork_task);
+
         page.refresh_games(cx);
         page
+    }
+
+    fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
+        let id_str = update.game_id.to_string();
+        debug_assert_eq!(
+            Rc::strong_count(&self.games),
+            1,
+            "render frame still holds Rc clone - make_mut will clone the entire games vec"
+        );
+        let games = Rc::make_mut(&mut self.games);
+        if let Some(entry) = games.iter_mut().find(|g| g.id.as_ref() == id_str) {
+            entry.cover_path = Some(paths::artwork_path(&update.hash, "webp").into());
+            entry.accent_color = update.accent_color.map(|c| rgb(c.to_hex()).into());
+            cx.notify();
+        }
     }
 
     fn refresh_games(&mut self, cx: &mut Context<Self>) {
