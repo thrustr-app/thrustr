@@ -1,4 +1,4 @@
-use crate::{game::Game, id::Id};
+use crate::game::GameId;
 use anyhow::Result;
 use strum::{AsRefStr, Display, EnumString};
 
@@ -40,5 +40,5 @@ impl Color {
 }
 
 pub trait ArtworkRepository: Send + Sync {
-    fn insert(&self, game_id: Id<Game>, artwork: &Artwork) -> Result<()>;
+    fn insert(&self, game_id: GameId, artwork: &Artwork) -> Result<()>;
 }

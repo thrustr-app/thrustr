@@ -3,12 +3,11 @@ use anyhow::Result;
 use diesel::{ExpressionMethods, RunQueryDsl};
 use domain::{
     artwork::{Artwork, ArtworkRepository},
-    game::Game,
-    id::Id,
+    game::GameId,
 };
 
 impl ArtworkRepository for SqliteStorage {
-    fn insert(&self, game_id: Id<Game>, artwork: &Artwork) -> Result<()> {
+    fn insert(&self, game_id: GameId, artwork: &Artwork) -> Result<()> {
         use crate::schema::artwork::dsl;
 
         let row = NewArtworkRow {

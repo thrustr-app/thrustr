@@ -6,8 +6,7 @@ use diesel::{
     SelectableHelper,
 };
 use domain::artwork::Artwork;
-use domain::game::{Game, GameRepository, NewGame};
-use game::{GameListItem, GameQuery};
+use domain::game::{Game, GameListItem, GameRepository, NewGame};
 
 impl GameRepository for SqliteStorage {
     fn insert(&self, game: &NewGame) -> Result<Option<Game>> {
@@ -43,9 +42,7 @@ impl GameRepository for SqliteStorage {
             Ok(inserted)
         })
     }
-}
 
-impl GameQuery for SqliteStorage {
     fn count(&self) -> Result<usize> {
         use crate::schema::games::dsl;
 

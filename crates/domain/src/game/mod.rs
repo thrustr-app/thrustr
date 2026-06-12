@@ -1,13 +1,17 @@
 use crate::{artwork::Artwork, id::Id, platform::Platform};
 use std::collections::HashMap;
 
+mod query;
 mod repository;
 
+pub use query::*;
 pub use repository::*;
+
+pub type GameId = Id<Game>;
 
 #[derive(Debug)]
 pub struct Game {
-    pub id: Id<Self>,
+    pub id: GameId,
     pub name: String,
     pub source: GameSource,
     /// The URL of the original cover art for the game, as provided by the storefront.

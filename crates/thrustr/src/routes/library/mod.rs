@@ -6,8 +6,7 @@ use crate::{
 };
 use artwork::ArtworkReady;
 use config::paths;
-use domain::artwork::Color;
-use game::GameListItem;
+use domain::{artwork::Color, game::GameListItem};
 use gpui::{
     App, Bounds, Context, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement,
     ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString, Styled,

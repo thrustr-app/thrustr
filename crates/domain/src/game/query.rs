@@ -1,8 +1,8 @@
-use domain::{artwork::Artwork, game::Game, id::Id};
+use crate::{artwork::Artwork, game::GameId};
 
 #[derive(Debug)]
 pub struct GameListItem {
-    pub id: Id<Game>,
+    pub id: GameId,
     pub name: String,
     pub source_id: String,
     pub artwork: Option<Artwork>,
