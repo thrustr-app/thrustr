@@ -24,6 +24,7 @@ anyhow = "1"
 async-broadcast = "0.7"
 async-trait = "0.1.89"
 blake3 = "1"
+chrono = "0.4"
 bytes = "1.11"
 dashmap = "6"
 futures = "0.3"
@@ -42,6 +43,9 @@ smol = "2"
 strum = { version = "0.28", features = ["derive"] }
 tokio = { version = "1.48", features = ["full"] }
 toml = "1"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [profile.release]

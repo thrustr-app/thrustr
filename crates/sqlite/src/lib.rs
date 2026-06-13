@@ -23,10 +23,10 @@ struct ConnectionOptions {
 impl CustomizeConnection<SqliteConnection, R2d2Error> for ConnectionOptions {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), R2d2Error> {
         conn.batch_execute(&format!(
-            "PRAGMA journal_mode = WAL;\n\
+            "PRAGMA busy_timeout = {};\n\
+             PRAGMA journal_mode = WAL;\n\
              PRAGMA synchronous = NORMAL;\n\
-             PRAGMA foreign_keys = ON;\n\
-             PRAGMA busy_timeout = {};",
+             PRAGMA foreign_keys = ON;",
             self.busy_timeout.as_millis()
         ))
         .map_err(R2d2Error::QueryError)

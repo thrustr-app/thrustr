@@ -23,6 +23,13 @@ pub fn artwork_dir() -> PathBuf {
     data_dir().join("artwork")
 }
 
+/// Path to the application logs directory, creating it if it doesn't exist.
+pub fn logs_dir() -> PathBuf {
+    let dir = data_dir().join("logs");
+    fs::create_dir_all(&dir).expect("Failed to create application logs directory");
+    dir
+}
+
 /// Path to the artwork image for a given content hash.
 pub fn artwork_path(hash: &str, extension: &str) -> PathBuf {
     artwork_dir()

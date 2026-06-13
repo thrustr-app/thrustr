@@ -27,5 +27,4 @@ lru.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 smol.workspace = true
-rustls.workspace = true
 tokio.workspace = true

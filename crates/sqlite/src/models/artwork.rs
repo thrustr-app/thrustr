@@ -1,8 +1,7 @@
-use std::str::FromStr;
-
 use crate::schema::artwork;
 use diesel::{Selectable, prelude::*, sqlite::Sqlite};
 use domain::artwork::{Artwork, ArtworkKind, Color};
+use std::str::FromStr;
 
 #[derive(Queryable, Selectable, Identifiable, Insertable, Debug)]
 #[diesel(table_name = artwork)]
