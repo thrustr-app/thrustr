@@ -139,6 +139,9 @@ impl InputState {
             if value != self.value {
                 self.value = value;
                 self.emitted_value = self.value.clone();
+                let len = self.value.len();
+                self.selected_range.start = self.selected_range.start.min(len);
+                self.selected_range.end = self.selected_range.end.min(len);
                 self.history.clear();
             }
         }
@@ -851,11 +854,11 @@ impl InputState {
             && !new_text.is_empty()
             && !self.ignore_history
         {
-            let total_len = self.value.grapheme_indices(true).count();
-            let range_len = self.value[range.clone()].grapheme_indices(true).count();
-            let new_len = new_text.grapheme_indices(true).count();
+            let before_len = self.value[..range.start].graphemes(true).count();
+            let after_len = self.value[range.end..].graphemes(true).count();
+            let new_len = new_text.graphemes(true).count();
 
-            let current_len = total_len - range_len;
+            let current_len = before_len + after_len;
 
             if current_len + new_len > max_length {
                 let available_space = max_length.saturating_sub(current_len);

@@ -1,4 +1,5 @@
 use gpui::SharedString;
+use std::collections::VecDeque;
 use std::ops::Range;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185,8 +186,8 @@ pub struct HistoryEntry {
 }
 
 pub struct History {
-    undo_stack: Vec<HistoryEntry>,
-    redo_stack: Vec<HistoryEntry>,
+    undo_stack: VecDeque<HistoryEntry>,
+    redo_stack: VecDeque<HistoryEntry>,
     max_size: usize,
     can_merge: bool,
 }
@@ -204,8 +205,8 @@ impl History {
 
     pub fn with_max_size(max_size: usize) -> Self {
         Self {
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            undo_stack: VecDeque::new(),
+            redo_stack: VecDeque::new(),
             max_size,
             can_merge: true,
         }
@@ -215,24 +216,24 @@ impl History {
         self.redo_stack.clear();
 
         if self.can_merge
-            && let Some(last_entry) = self.undo_stack.last_mut()
+            && let Some(last_entry) = self.undo_stack.back_mut()
             && let Some(merged_change) = last_entry.change.clone().merge_with(&change)
         {
             last_entry.change = merged_change;
             return;
         }
 
-        self.undo_stack.push(HistoryEntry { change });
+        self.undo_stack.push_back(HistoryEntry { change });
         if self.undo_stack.len() > self.max_size {
-            self.undo_stack.remove(0);
+            self.undo_stack.pop_front();
         }
         self.can_merge = true;
     }
 
     pub fn undo(&mut self) -> Option<Change> {
         self.prevent_merge();
-        if let Some(entry) = self.undo_stack.pop() {
-            self.redo_stack.push(entry.clone());
+        if let Some(entry) = self.undo_stack.pop_back() {
+            self.redo_stack.push_back(entry.clone());
             let inverse_change = entry.change.inverse();
             Some(inverse_change)
         } else {
@@ -242,8 +243,8 @@ impl History {
 
     pub fn redo(&mut self) -> Option<Change> {
         self.prevent_merge();
-        if let Some(entry) = self.redo_stack.pop() {
-            self.undo_stack.push(entry.clone());
+        if let Some(entry) = self.redo_stack.pop_back() {
+            self.undo_stack.push_back(entry.clone());
             Some(entry.change)
         } else {
             None

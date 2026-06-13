@@ -105,6 +105,16 @@ impl Input {
         self
     }
 
+    pub fn placeholder_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.placeholder_color = Some(color.into());
+        self
+    }
+
+    pub fn selection_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.selection_color = Some(color.into());
+        self
+    }
+
     pub fn masked(mut self) -> Self {
         self.masked = true;
         self
