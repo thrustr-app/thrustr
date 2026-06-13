@@ -1,17 +1,21 @@
 use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
-    globals::{ComponentRegistryExt, GameServiceExt},
-    routes::library::cache::lru_image_cache,
+    globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
+    routes::library::cache::{LruImageCache, lru_image_cache},
 };
+use artwork::ArtworkReady;
 use config::paths;
+use domain::{artwork::Color, game::GameListItem};
 use gpui::{
-    App, Bounds, Context, FontWeight, Image, ImageSource, InteractiveElement, IntoElement,
-    ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString, Styled,
-    StyledImage, Task, Window, div, img, px, rems, uniform_list,
+    App, AppContext, Bounds, Context, Entity, FontWeight, Hsla, Image, ImageSource,
+    InteractiveElement, IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce,
+    Resource, SharedString, Styled, StyledImage, Task, Window, div, img, px, rems, rgb,
+    uniform_list,
 };
 use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
+use tokio::sync::broadcast::error::RecvError;
 
 mod cache;
 
@@ -24,55 +28,42 @@ const CARD_INNER_GAP_REM: f32 = 0.75;
 const CARD_TEXT_SIZE_REM: f32 = 0.9;
 const CARD_ICON_SIZE_REM: f32 = 1.5;
 
-struct GridDims {
-    num_cols: usize,
-    num_rows: usize,
-    visible_rows: usize,
-}
-
-impl GridDims {
-    fn compute(
-        grid_width: Pixels,
-        game_count: usize,
-        window_height: Pixels,
-        rem_size: f32,
-    ) -> Self {
-        let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
-        let num_cols = num_cols.max(1);
-        let num_rows = (game_count as f32 / num_cols as f32).ceil() as usize;
-
-        let visible_rows =
-            (window_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
-
-        Self {
-            num_cols,
-            num_rows,
-            visible_rows,
-        }
-    }
-
-    /// Approximate full card height in pixels.
-    fn card_height_px(rem_size: f32) -> f32 {
-        let image_height = GAME_CARD_WIDTH.as_f32() / CARD_ASPECT_RATIO;
-        let chrome = (CARD_PADDING_REM * 2.
-            + CARD_INNER_GAP_REM * 2.
-            + CARD_TEXT_SIZE_REM
-            + CARD_ICON_SIZE_REM)
-            * rem_size;
-        image_height + chrome
-    }
-
-    fn cache_capacity(&self) -> usize {
-        self.num_cols * self.visible_rows
-    }
-}
-
 #[derive(Clone)]
 struct GameEntry {
     id: SharedString,
     name: SharedString,
-    cover_path: Arc<Path>,
+    cover_url: Option<SharedString>,
+    cover_path: Option<Arc<Path>>,
+    accent_color: Option<Hsla>,
     source_icon: Option<Arc<Image>>,
+}
+
+impl GameEntry {
+    fn from_list_item(item: GameListItem, icons: &HashMap<String, Arc<Image>>) -> Self {
+        let (cover_path, accent_color) = match item.artwork {
+            Some(art) => (
+                Some(cover_path(&art.hash)),
+                art.accent_color.map(accent_hsla),
+            ),
+            None => (None, None),
+        };
+        Self {
+            id: item.id.to_string().into(),
+            name: item.name.into(),
+            cover_url: item.cover_url.map(Into::into),
+            source_icon: icons.get(&item.source_id).cloned(),
+            cover_path,
+            accent_color,
+        }
+    }
+}
+
+fn cover_path(hash: &str) -> Arc<Path> {
+    paths::artwork_path(hash, "webp").into()
+}
+
+fn accent_hsla(color: Color) -> Hsla {
+    rgb(color.to_hex()).into()
 }
 
 #[derive(IntoElement)]
@@ -111,18 +102,29 @@ impl RenderOnce for GameCard {
             return base;
         };
 
-        let cover = div()
-            .aspect_ratio(2. / 3.)
+        let mut cover = div()
+            .aspect_ratio(CARD_ASPECT_RATIO)
             .w_full()
             .bg(theme.colors.card_background)
-            .rounded(theme.radius.md)
-            .child(
-                img(ImageSource::Resource(Resource::Path(game.cover_path)))
-                    .object_fit(ObjectFit::Contain)
-                    .w_full()
-                    .h_full()
-                    .rounded(theme.radius.md),
-            );
+            .rounded(theme.radius.md);
+
+        if let Some(path) = game.cover_path {
+            let mut cover_img = img(ImageSource::Resource(Resource::Path(path)))
+                .object_fit(ObjectFit::Contain)
+                .w_full()
+                .h_full()
+                .rounded(theme.radius.md);
+
+            if let (Some(url), Ok(game_id)) = (game.cover_url, game.id.parse::<u64>()) {
+                let artwork_service = cx.artwork_service();
+                cover_img = cover_img.with_fallback(move || {
+                    artwork_service.enqueue_cover(game_id.into(), &url);
+                    div().into_any_element()
+                });
+            }
+
+            cover = cover.child(cover_img);
+        }
 
         let title = div()
             .overflow_hidden()
@@ -142,10 +144,15 @@ impl RenderOnce for GameCard {
             div().mb(rems(CARD_ICON_SIZE_REM)).into_any_element()
         };
 
-        base.hover(|style| style.bg(theme.colors.card_background))
-            .child(cover)
-            .child(title)
-            .child(icon_row)
+        base.hover(|style| {
+            style.bg(game
+                .accent_color
+                .unwrap_or(theme.colors.card_background)
+                .opacity(0.25))
+        })
+        .child(cover)
+        .child(title)
+        .child(icon_row)
     }
 }
 
@@ -153,6 +160,7 @@ pub struct Library {
     games: Rc<Vec<GameEntry>>,
     component_icons: HashMap<String, Arc<Image>>,
     grid_bounds: Bounds<Pixels>,
+    image_cache: Entity<LruImageCache>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -162,14 +170,51 @@ impl Library {
             games: Rc::new(Vec::new()),
             grid_bounds: Bounds::default(),
             component_icons: HashMap::new(),
+            image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             _tasks: Vec::new(),
         };
 
         let task = cx.listen("games", |page, cx| page.refresh_games(cx));
         page._tasks.push(task);
 
+        let mut artwork_rx = cx.artwork_service().subscribe();
+        let artwork_task = cx.spawn(async move |library, cx| {
+            loop {
+                match artwork_rx.recv().await {
+                    Ok(update) => {
+                        library
+                            .update(cx, |lib, cx| lib.apply_artwork_update(update, cx))
+                            .ok();
+                    }
+                    Err(RecvError::Lagged(_)) => {}
+                    Err(RecvError::Closed) => break,
+                }
+            }
+        });
+        page._tasks.push(artwork_task);
+
         page.refresh_games(cx);
         page
+    }
+
+    fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
+        let id_str = update.game_id.to_string();
+        debug_assert_eq!(
+            Rc::strong_count(&self.games),
+            1,
+            "render frame still holds Rc clone - make_mut will clone the entire games vec"
+        );
+        let games = Rc::make_mut(&mut self.games);
+        if let Some(entry) = games.iter_mut().find(|g| g.id.as_ref() == id_str) {
+            let path = cover_path(&update.hash);
+            entry.cover_path = Some(path.clone());
+            entry.accent_color = update.accent_color.map(accent_hsla);
+
+            let resource = Resource::Path(path);
+            self.image_cache
+                .update(cx, |cache, cx| cache.remove(&resource, cx));
+            cx.notify();
+        }
     }
 
     fn refresh_games(&mut self, cx: &mut Context<Self>) {
@@ -194,11 +239,8 @@ impl Library {
                         library.games = Rc::new(
                             games
                                 .into_iter()
-                                .map(|g| GameEntry {
-                                    id: g.id.to_string().into(),
-                                    source_icon: library.component_icons.get(&g.source_id).cloned(),
-                                    name: g.name.into(),
-                                    cover_path: paths::cover_path(g.id.into(), "webp").into(),
+                                .map(|item| {
+                                    GameEntry::from_list_item(item, &library.component_icons)
                                 })
                                 .collect(),
                         );
@@ -222,6 +264,49 @@ impl Library {
     }
 }
 
+struct GridDims {
+    num_cols: usize,
+    num_rows: usize,
+    visible_rows: usize,
+}
+
+impl GridDims {
+    fn compute(
+        grid_width: Pixels,
+        game_count: usize,
+        window_height: Pixels,
+        rem_size: f32,
+    ) -> Self {
+        let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
+        let num_cols = num_cols.max(1);
+        let num_rows = game_count.div_ceil(num_cols);
+
+        let visible_rows =
+            (window_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
+
+        Self {
+            num_cols,
+            num_rows,
+            visible_rows,
+        }
+    }
+
+    /// Approximate full card height in pixels.
+    fn card_height_px(rem_size: f32) -> f32 {
+        let image_height = GAME_CARD_WIDTH.as_f32() / CARD_ASPECT_RATIO;
+        let chrome = (CARD_PADDING_REM * 2.
+            + CARD_INNER_GAP_REM * 2.
+            + CARD_TEXT_SIZE_REM
+            + CARD_ICON_SIZE_REM)
+            * rem_size;
+        image_height + chrome
+    }
+
+    fn cache_capacity(&self) -> usize {
+        self.num_cols * self.visible_rows
+    }
+}
+
 impl Render for Library {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -238,10 +323,13 @@ impl Render for Library {
 
         div()
             .on_children_prepainted(cx.processor(Self::set_bounds))
-            .flex_grow()
+            .flex_grow_1()
             .px(rems(2. - CARD_PADDING_REM))
             .text_color(theme.colors.accent)
-            .image_cache(lru_image_cache("game-grid-cache", dims.cache_capacity()))
+            .image_cache(lru_image_cache(
+                self.image_cache.clone(),
+                dims.cache_capacity(),
+            ))
             .child(
                 uniform_list("game-grid", dims.num_rows, move |range, _, _| {
                     range

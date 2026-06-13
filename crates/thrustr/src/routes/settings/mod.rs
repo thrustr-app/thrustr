@@ -82,7 +82,7 @@ impl Render for Settings {
         div()
             .px(rems(1.5))
             .pb(rems(1.5))
-            .flex_grow()
+            .flex_grow_1()
             .flex()
             .child(
                 div()

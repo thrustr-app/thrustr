@@ -10,6 +10,6 @@ impl Plugins {
 
 impl Render for Plugins {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().flex_grow()
+        div().flex_grow_1()
     }
 }

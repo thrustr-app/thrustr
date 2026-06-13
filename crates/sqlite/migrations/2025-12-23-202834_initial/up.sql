@@ -22,4 +22,19 @@ CREATE TABLE component_config (
   PRIMARY KEY (component_id, field_id)
 );
 
+CREATE TABLE artwork (
+  game_id INTEGER NOT NULL REFERENCES games (id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  hash TEXT NOT NULL,
+  accent_color INTEGER,
+  PRIMARY KEY (game_id, kind, position),
+  CHECK (
+    kind = 'screenshot'
+    OR position = 0
+  )
+);
+
 CREATE INDEX idx_games_name ON games (name);
+
+CREATE INDEX idx_artwork_hash ON artwork (hash);

@@ -5,7 +5,17 @@ diesel::table! {
         source_id -> Text,
         lookup_id -> Text,
         external_ids -> Json,
-        cover_url -> Text,
+        cover_url -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    artwork (game_id, kind, position) {
+        game_id -> BigInt,
+        kind -> Text,
+        position -> Integer,
+        hash -> Text,
+        accent_color -> Nullable<Integer>,
     }
 }
 
@@ -24,3 +34,7 @@ diesel::table! {
         value -> Text,
     }
 }
+
+diesel::joinable!(artwork -> games (game_id));
+
+diesel::allow_tables_to_appear_in_same_query!(games, artwork);

@@ -10,6 +10,8 @@ use async_broadcast::{InactiveReceiver, Receiver, Sender, broadcast};
 use dashmap::DashMap;
 use std::sync::OnceLock;
 
+// TODO: investigate replacing with Tokio broadcast channel.
+
 struct EventChannel {
     tx: Sender<()>,
     _anchor: InactiveReceiver<()>,

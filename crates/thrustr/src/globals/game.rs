@@ -1,4 +1,5 @@
-use game::{GameQuery, GameService};
+use domain::game::GameRepository;
+use game::GameService;
 use gpui::{App, Global};
 use std::sync::Arc;
 
@@ -6,8 +7,8 @@ pub(super) struct GameServiceGlobal(GameService);
 
 impl Global for GameServiceGlobal {}
 
-pub(super) fn init(cx: &mut App, query: Arc<dyn GameQuery>) {
-    let service = GameService::new(query);
+pub(super) fn init(cx: &mut App, repo: Arc<dyn GameRepository>) {
+    let service = GameService::new(repo);
     cx.set_global(GameServiceGlobal(service));
 }
 

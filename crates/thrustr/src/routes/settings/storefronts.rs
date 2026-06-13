@@ -153,7 +153,7 @@ impl Render for Storefronts {
         });
 
         div()
-            .flex_grow()
+            .flex_grow_1()
             .flex()
             .flex_col()
             .px(rems(1.5))

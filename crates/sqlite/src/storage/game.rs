@@ -1,25 +1,20 @@
 use crate::SqliteStorage;
-use crate::models::{GameRow, NewGameRow};
+use crate::models::{ArtworkRow, GameRow, NewGameRow};
 use anyhow::Result;
 use diesel::{
-    Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
+    BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
+    RunQueryDsl, SelectableHelper,
 };
-use domain::game::{Game, GameRepository, NewGame};
-use game::{GameListItem, GameQuery};
+use domain::artwork::{Artwork, ArtworkKind};
+use domain::game::{Game, GameId, GameListItem, GameRepository, NewGame};
 
 impl GameRepository for SqliteStorage {
-    fn insert(&self, new_game: &NewGame) -> Result<Option<Game>> {
+    fn insert(&self, game: &NewGame) -> Result<Option<Game>> {
         use crate::schema::games::dsl;
 
         let mut conn = self.pool.get()?;
         let row = diesel::insert_or_ignore_into(dsl::games)
-            .values(NewGameRow {
-                name: &new_game.name,
-                source_id: &new_game.source.id,
-                lookup_id: &new_game.source.lookup_id,
-                external_ids: serde_json::to_value(&new_game.source.external_ids)?,
-                cover_url: &new_game.cover_url,
-            })
+            .values(NewGameRow::from(game))
             .returning(GameRow::as_returning())
             .get_result::<GameRow>(&mut conn)
             .optional()?;
@@ -35,13 +30,7 @@ impl GameRepository for SqliteStorage {
             let mut inserted = Vec::new();
             for game in games {
                 let row = diesel::insert_or_ignore_into(dsl::games)
-                    .values(NewGameRow {
-                        name: &game.name,
-                        source_id: &game.source.id,
-                        lookup_id: &game.source.lookup_id,
-                        external_ids: serde_json::to_value(&game.source.external_ids)?,
-                        cover_url: &game.cover_url,
-                    })
+                    .values(NewGameRow::from(game))
                     .returning(GameRow::as_returning())
                     .get_result::<GameRow>(conn)
                     .optional()?;
@@ -53,9 +42,7 @@ impl GameRepository for SqliteStorage {
             Ok(inserted)
         })
     }
-}
 
-impl GameQuery for SqliteStorage {
     fn count(&self) -> Result<usize> {
         use crate::schema::games::dsl;
 
@@ -65,23 +52,59 @@ impl GameQuery for SqliteStorage {
     }
 
     fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>> {
+        use crate::schema::artwork;
         use crate::schema::games::dsl;
 
         let mut conn = self.pool.get()?;
-        let rows: Vec<GameRow> = dsl::games
+        let rows: Vec<(GameRow, Option<ArtworkRow>)> = dsl::games
+            .left_join(artwork::table.on(artwork::game_id.eq(dsl::id)))
             .order(dsl::name.asc())
             .limit(limit as i64)
             .offset(offset as i64)
-            .select(GameRow::as_select())
+            .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
             .load(&mut conn)?;
         let items = rows
             .into_iter()
-            .map(|row| GameListItem {
-                id: (row.id as u64).into(),
-                name: row.name,
-                source_id: row.source_id,
+            .map(|(game, artwork)| GameListItem {
+                id: (game.id as u64).into(),
+                name: game.name,
+                source_id: game.source_id,
+                cover_url: game.cover_url,
+                artwork: artwork.map(Artwork::from),
             })
             .collect();
         Ok(items)
+    }
+
+    fn games_missing_artwork(
+        &self,
+        kind: ArtworkKind,
+        after: GameId,
+        limit: usize,
+    ) -> Result<Vec<(GameId, String)>> {
+        use crate::schema::artwork;
+        use crate::schema::games::dsl;
+
+        let after = u64::from(after) as i64;
+        let mut conn = self.pool.get()?;
+        let rows: Vec<(i64, Option<String>)> = dsl::games
+            .left_join(
+                artwork::table.on(artwork::game_id
+                    .eq(dsl::id)
+                    .and(artwork::kind.eq(kind.as_ref()))),
+            )
+            // TODO: when per-kind source URLs exist, filter on that
+            .filter(dsl::cover_url.is_not_null())
+            .filter(artwork::game_id.is_null())
+            .filter(dsl::id.gt(after))
+            .order(dsl::id.asc())
+            .limit(limit as i64)
+            .select((dsl::id, dsl::cover_url))
+            .load(&mut conn)?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|(id, url)| url.map(|url| ((id as u64).into(), url)))
+            .collect())
     }
 }

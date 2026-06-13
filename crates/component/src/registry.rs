@@ -1,17 +1,17 @@
 use crate::{ComponentHandle, StorefrontHandle};
+use artwork::ArtworkService;
 use dashmap::DashMap;
 use domain::{
     component::{Component, ComponentStorage},
     game::GameRepository,
 };
-use image::ImageService;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RegistryContext {
     pub component_storage: Arc<dyn ComponentStorage>,
     pub game_repository: Arc<dyn GameRepository>,
-    pub image_service: ImageService,
+    pub artwork_service: ArtworkService,
 }
 
 #[derive(Clone)]

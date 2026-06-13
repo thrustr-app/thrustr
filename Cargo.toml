@@ -5,6 +5,7 @@ default-members = ["crates/thrustr"]
 
 [workspace.dependencies]
 # Local
+artwork = { path = "crates/artwork" }
 assets = { path = "crates/assets" }
 component = { path = "crates/component" }
 config = { path = "crates/config" }
@@ -12,7 +13,6 @@ connectivity = { path = "crates/connectivity" }
 domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 game = { path = "crates/game" }
-image = { path = "crates/image" }
 pdk = { path = "crates/pdk" }
 plugin = { path = "crates/plugin" }
 sqlite = { path = "crates/sqlite" }
@@ -23,6 +23,7 @@ ui = { path = "crates/ui" }
 anyhow = "1"
 async-broadcast = "0.7"
 async-trait = "0.1.89"
+blake3 = "1"
 bytes = "1.11"
 dashmap = "6"
 futures = "0.3"
@@ -32,11 +33,13 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["fo
 lru = "0.18"
 paste = "1"
 reqwest = { version = "0.13", features = ["json"] }
+rustls = { version = "0.23", features = ["ring"] }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 smallvec = "1"
 smol = "2"
+strum = { version = "0.28", features = ["derive"] }
 tokio = { version = "1.48", features = ["full"] }
 toml = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }

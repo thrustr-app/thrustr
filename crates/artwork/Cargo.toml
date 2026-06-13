@@ -1,5 +1,5 @@
 [package]
-name = "image"
+name = "artwork"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,7 +11,9 @@ domain.workspace = true
 
 # External
 anyhow.workspace = true
+blake3.workspace = true
 bytes.workspace = true
+dashmap.workspace = true
 image = "0.25"
 reqwest.workspace = true
 tokio.workspace = true

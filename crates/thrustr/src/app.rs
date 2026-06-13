@@ -99,7 +99,7 @@ impl RenderOnce for Sidebar {
             .child(
                 div()
                     .flex()
-                    .flex_grow()
+                    .flex_grow_1()
                     .flex_col()
                     .items_center()
                     .justify_between()
@@ -202,7 +202,7 @@ impl Render for App {
             .child(
                 div().flex().size_full().child(Sidebar).child(
                     div()
-                        .flex_grow()
+                        .flex_grow_1()
                         .flex()
                         .flex_col()
                         .child(Topbar::new(self.current_page.label()))

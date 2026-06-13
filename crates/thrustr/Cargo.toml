@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Local
+artwork.workspace = true
 assets.workspace = true
 component.workspace = true
 config.workspace = true
@@ -13,7 +14,6 @@ domain.workspace = true
 event.workspace = true
 futures.workspace = true
 game.workspace = true
-image.workspace = true
 plugin.workspace = true
 sqlite.workspace = true
 theme.workspace = true
@@ -27,4 +27,5 @@ lru.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 smol.workspace = true
+rustls.workspace = true
 tokio.workspace = true
