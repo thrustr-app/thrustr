@@ -1,39 +1,29 @@
 use futures::FutureExt;
 use gpui::{
-    App, AppContext, Asset, AssetLogger, Context, ElementId, Entity, ImageAssetLoader, ImageCache,
+    App, AppContext, Asset, AssetLogger, Context, Entity, ImageAssetLoader, ImageCache,
     ImageCacheError, ImageCacheItem, ImageCacheProvider, RenderImage, Resource, WeakEntity, Window,
     hash,
 };
 use lru::LruCache;
 use std::{num::NonZeroUsize, sync::Arc};
 
-pub fn lru_image_cache(id: impl Into<ElementId>, max_items: usize) -> LruImageCacheProvider {
-    LruImageCacheProvider {
-        id: id.into(),
-        max_items,
-    }
+pub fn lru_image_cache(cache: Entity<LruImageCache>, max_items: usize) -> LruImageCacheProvider {
+    LruImageCacheProvider { cache, max_items }
 }
 
 pub struct LruImageCacheProvider {
-    id: ElementId,
+    cache: Entity<LruImageCache>,
     max_items: usize,
 }
 
 impl ImageCacheProvider for LruImageCacheProvider {
     fn provide(&mut self, window: &mut Window, cx: &mut App) -> gpui::AnyImageCache {
-        let max_items = self.max_items;
-        window
-            .with_global_id(self.id.clone(), |global_id, window| {
-                window.with_element_state::<Entity<LruImageCache>, _>(global_id, |cache, window| {
-                    let cache =
-                        cache.unwrap_or_else(|| cx.new(|cx| LruImageCache::new(max_items, cx)));
-                    if cache.read(cx).cap() != max_items {
-                        cache.update(cx, |c, cx| c.resize(max_items, window, cx));
-                    }
-                    (cache.clone(), cache)
-                })
-            })
-            .into()
+        if self.cache.read(cx).cap() != self.max_items {
+            let max_items = self.max_items;
+            self.cache
+                .update(cx, |cache, cx| cache.resize(max_items, window, cx));
+        }
+        self.cache.clone().into()
     }
 }
 
@@ -62,6 +52,15 @@ impl LruImageCache {
 
     pub fn cap(&self) -> usize {
         self.cache.cap().get()
+    }
+
+    pub fn remove(&mut self, resource: &Resource, cx: &mut Context<Self>) {
+        let key = hash(resource);
+        if let Some(mut item) = self.cache.pop(&key)
+            && let Some(Ok(image)) = item.get()
+        {
+            cx.drop_image(image, None);
+        }
     }
 
     fn resize(&mut self, new_cap: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -112,23 +111,9 @@ impl ImageCache for LruImageCache {
         cx: &mut App,
     ) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
         let key = hash(resource);
-
-        if let Some(result) = self.cache.peek_mut(&key).map(|item| item.get()) {
-            return match result {
-                None => None,
-
-                Some(Ok(image)) => {
-                    let _ = self.cache.get(&key);
-                    Some(Ok(image))
-                }
-
-                Some(Err(e)) => {
-                    let _ = self.cache.get(&key);
-                    Some(Err(e))
-                }
-            };
+        if let Some(item) = self.cache.get_mut(&key) {
+            return item.get();
         }
-
         self.start_load(key, resource, window, cx);
         None
     }

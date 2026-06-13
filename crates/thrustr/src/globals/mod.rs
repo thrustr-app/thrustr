@@ -17,13 +17,21 @@ pub use plugin::PluginServiceExt;
 
 pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
     let artwork_repo = storage.clone();
+    let game_repo = storage.clone();
     let artwork_service = block_on(Tokio::spawn(cx, async move {
         let connectivity = ConnectivityManager::builder().build_probing().await;
-        ArtworkService::new(connectivity, artwork_repo)
+        ArtworkService::new(connectivity, artwork_repo, game_repo)
     }))
     .expect("Error initializing connectivity manager");
 
     artwork_global::init(cx, artwork_service.clone());
+
+    Tokio::spawn(cx, {
+        let service = artwork_service.clone();
+        async move { service.backfill().await }
+    })
+    .detach();
+
     let registry = component::init(cx, storage.clone(), storage.clone(), artwork_service);
     plugin::init(cx, storage.clone(), registry);
     game::init(cx, storage);

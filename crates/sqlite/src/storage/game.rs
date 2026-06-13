@@ -2,11 +2,11 @@ use crate::SqliteStorage;
 use crate::models::{ArtworkRow, GameRow, NewGameRow};
 use anyhow::Result;
 use diesel::{
-    Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, RunQueryDsl,
-    SelectableHelper,
+    BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
+    RunQueryDsl, SelectableHelper,
 };
-use domain::artwork::Artwork;
-use domain::game::{Game, GameListItem, GameRepository, NewGame};
+use domain::artwork::{Artwork, ArtworkKind};
+use domain::game::{Game, GameId, GameListItem, GameRepository, NewGame};
 
 impl GameRepository for SqliteStorage {
     fn insert(&self, game: &NewGame) -> Result<Option<Game>> {
@@ -69,9 +69,42 @@ impl GameRepository for SqliteStorage {
                 id: (game.id as u64).into(),
                 name: game.name,
                 source_id: game.source_id,
+                cover_url: game.cover_url,
                 artwork: artwork.map(Artwork::from),
             })
             .collect();
         Ok(items)
+    }
+
+    fn games_missing_artwork(
+        &self,
+        kind: ArtworkKind,
+        after: GameId,
+        limit: usize,
+    ) -> Result<Vec<(GameId, String)>> {
+        use crate::schema::artwork;
+        use crate::schema::games::dsl;
+
+        let after = u64::from(after) as i64;
+        let mut conn = self.pool.get()?;
+        let rows: Vec<(i64, Option<String>)> = dsl::games
+            .left_join(
+                artwork::table.on(artwork::game_id
+                    .eq(dsl::id)
+                    .and(artwork::kind.eq(kind.as_ref()))),
+            )
+            // TODO: when per-kind source URLs exist, filter on that
+            .filter(dsl::cover_url.is_not_null())
+            .filter(artwork::game_id.is_null())
+            .filter(dsl::id.gt(after))
+            .order(dsl::id.asc())
+            .limit(limit as i64)
+            .select((dsl::id, dsl::cover_url))
+            .load(&mut conn)?;
+
+        Ok(rows
+            .into_iter()
+            .filter_map(|(id, url)| url.map(|url| ((id as u64).into(), url)))
+            .collect())
     }
 }

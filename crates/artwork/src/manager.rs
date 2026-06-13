@@ -4,12 +4,16 @@ use crate::{
 };
 use config::paths::artwork_path;
 use connectivity::ConnectivityManager;
-use domain::artwork::{Artwork, ArtworkRepository};
+use dashmap::DashSet;
+use domain::{
+    artwork::{Artwork, ArtworkKind, ArtworkRepository},
+    game::GameId,
+};
 use reqwest::Client;
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -21,12 +25,27 @@ use tokio::{
 const MAX_ATTEMPTS: u32 = 3;
 const RECOVERY_JITTER_MAX_MS: u64 = 500;
 
+type TaskKey = (GameId, ArtworkKind, u32);
+
+fn task_key(task: &ArtworkTask) -> TaskKey {
+    (task.game_id, task.kind, task.position)
+}
+
 struct Inner {
-    pending: AtomicUsize,
-    active: AtomicUsize,
+    inflight: DashSet<TaskKey>,
     max_concurrent: AtomicUsize,
-    paused: AtomicBool,
     wakeup: Notify,
+}
+
+struct InflightGuard {
+    inner: Arc<Inner>,
+    key: TaskKey,
+}
+
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        self.inner.inflight.remove(&self.key);
+    }
 }
 
 pub struct ArtworkManager {
@@ -45,11 +64,9 @@ impl ArtworkManager {
         let (updates, _) = broadcast::channel(128);
 
         let inner = Arc::new(Inner {
-            pending: AtomicUsize::new(0),
-            active: AtomicUsize::new(0),
             max_concurrent: AtomicUsize::new(max_concurrent),
-            paused: AtomicBool::new(false),
             wakeup: Notify::new(),
+            inflight: DashSet::new(),
         });
 
         let client = Client::new();
@@ -63,40 +80,18 @@ impl ArtworkManager {
                 let mut join_set = JoinSet::new();
 
                 loop {
-                    while join_set.try_join_next().is_some() {
-                        inner.pending.fetch_sub(1, Ordering::Relaxed);
-                        inner.active.fetch_sub(1, Ordering::Relaxed);
-                    }
+                    while join_set.try_join_next().is_some() {}
 
                     while connectivity_rx.borrow_and_update().is_offline() {
                         tokio::select! {
                             _ = connectivity_rx.changed() => {}
-                            Some(_) = join_set.join_next() => {
-                                inner.pending.fetch_sub(1, Ordering::Relaxed);
-                                inner.active.fetch_sub(1, Ordering::Relaxed);
-                            }
+                            Some(_) = join_set.join_next() => {}
                         }
                     }
 
-                    if inner.paused.load(Ordering::Acquire) {
+                    if join_set.len() >= inner.max_concurrent.load(Ordering::Acquire) {
                         tokio::select! {
-                            _ = inner.wakeup.notified() => {},
-                            Some(_) = join_set.join_next() => {
-                                inner.pending.fetch_sub(1, Ordering::Relaxed);
-                                inner.active.fetch_sub(1, Ordering::Relaxed);
-                            }
-                        }
-                        continue;
-                    }
-
-                    if inner.active.load(Ordering::Acquire)
-                        >= inner.max_concurrent.load(Ordering::Acquire)
-                    {
-                        tokio::select! {
-                            Some(_) = join_set.join_next() => {
-                                inner.pending.fetch_sub(1, Ordering::Relaxed);
-                                inner.active.fetch_sub(1, Ordering::Relaxed);
-                            }
+                            Some(_) = join_set.join_next() => {}
                             _ = inner.wakeup.notified() => {}
                         }
                         continue;
@@ -105,8 +100,7 @@ impl ArtworkManager {
                     tokio::select! {
                         task = receiver.recv() => match task {
                             Some(task) => {
-                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), artwork.clone(), updates.clone()));
-                                inner.active.fetch_add(1, Ordering::Relaxed);
+                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), artwork.clone(), updates.clone(), inner.clone()));
                             }
                             None => break,
                         },
@@ -114,14 +108,15 @@ impl ArtworkManager {
                     }
                 }
 
-                while join_set.join_next().await.is_some() {
-                    inner.pending.fetch_sub(1, Ordering::Relaxed);
-                    inner.active.fetch_sub(1, Ordering::Relaxed);
-                }
+                while join_set.join_next().await.is_some() {}
             }
         });
 
-        Self { sender, inner, updates }
+        Self {
+            sender,
+            inner,
+            updates,
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ArtworkReady> {
@@ -129,23 +124,14 @@ impl ArtworkManager {
     }
 
     pub fn enqueue(&self, task: ArtworkTask) -> Result<(), mpsc::error::SendError<ArtworkTask>> {
-        self.inner.pending.fetch_add(1, Ordering::Relaxed);
+        let key = task_key(&task);
+        if !self.inner.inflight.insert(key) {
+            return Ok(());
+        }
+
         self.sender.send(task).inspect_err(|_| {
-            self.inner.pending.fetch_sub(1, Ordering::Relaxed);
+            self.inner.inflight.remove(&key);
         })
-    }
-
-    pub fn _is_paused(&self) -> bool {
-        self.inner.paused.load(Ordering::Acquire)
-    }
-
-    pub fn _pause(&self) {
-        self.inner.paused.store(true, Ordering::Release);
-    }
-
-    pub fn _resume(&self) {
-        self.inner.paused.store(false, Ordering::Release);
-        self.inner.wakeup.notify_one();
     }
 
     pub fn max_concurrent(&self) -> usize {
@@ -157,12 +143,8 @@ impl ArtworkManager {
         self.inner.wakeup.notify_one();
     }
 
-    pub fn _active(&self) -> usize {
-        self.inner.active.load(Ordering::Acquire)
-    }
-
-    pub fn _pending(&self) -> usize {
-        self.inner.pending.load(Ordering::Acquire)
+    pub fn pending(&self) -> usize {
+        self.inner.inflight.len()
     }
 }
 
@@ -172,7 +154,13 @@ async fn run_with_retry(
     connectivity: ConnectivityManager,
     artwork: Arc<dyn ArtworkRepository>,
     updates: broadcast::Sender<ArtworkReady>,
+    inner: Arc<Inner>,
 ) {
+    let _guard = InflightGuard {
+        inner,
+        key: task_key(&task),
+    };
+
     let mut attempts = 0;
     loop {
         match process_task(task.clone(), client.clone()).await {
@@ -225,7 +213,7 @@ async fn finalize(
         position: task.position,
         accent_color: processed.color,
     };
-    spawn_blocking(move || artwork.insert(task.game_id.into(), &record)).await??;
+    spawn_blocking(move || artwork.insert(task.game_id, &record)).await??;
 
     let _ = updates.send(ArtworkReady {
         game_id: task.game_id,

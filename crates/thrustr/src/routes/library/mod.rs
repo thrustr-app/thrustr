@@ -2,15 +2,16 @@ use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
-    routes::library::cache::lru_image_cache,
+    routes::library::cache::{LruImageCache, lru_image_cache},
 };
 use artwork::ArtworkReady;
 use config::paths;
 use domain::{artwork::Color, game::GameListItem};
 use gpui::{
-    App, Bounds, Context, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement,
-    ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString, Styled,
-    StyledImage, Task, Window, div, img, px, rems, rgb, uniform_list,
+    App, AppContext, Bounds, Context, Entity, FontWeight, Hsla, Image, ImageSource,
+    InteractiveElement, IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce,
+    Resource, SharedString, Styled, StyledImage, Task, Window, div, img, px, rems, rgb,
+    uniform_list,
 };
 use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
@@ -31,6 +32,7 @@ const CARD_ICON_SIZE_REM: f32 = 1.5;
 struct GameEntry {
     id: SharedString,
     name: SharedString,
+    cover_url: Option<SharedString>,
     cover_path: Option<Arc<Path>>,
     accent_color: Option<Hsla>,
     source_icon: Option<Arc<Image>>,
@@ -48,6 +50,7 @@ impl GameEntry {
         Self {
             id: item.id.to_string().into(),
             name: item.name.into(),
+            cover_url: item.cover_url.map(Into::into),
             source_icon: icons.get(&item.source_id).cloned(),
             cover_path,
             accent_color,
@@ -100,19 +103,27 @@ impl RenderOnce for GameCard {
         };
 
         let mut cover = div()
-            .aspect_ratio(2. / 3.)
+            .aspect_ratio(CARD_ASPECT_RATIO)
             .w_full()
             .bg(theme.colors.card_background)
             .rounded(theme.radius.md);
 
         if let Some(path) = game.cover_path {
-            cover = cover.child(
-                img(ImageSource::Resource(Resource::Path(path)))
-                    .object_fit(ObjectFit::Contain)
-                    .w_full()
-                    .h_full()
-                    .rounded(theme.radius.md),
-            );
+            let mut cover_img = img(ImageSource::Resource(Resource::Path(path)))
+                .object_fit(ObjectFit::Contain)
+                .w_full()
+                .h_full()
+                .rounded(theme.radius.md);
+
+            if let (Some(url), Ok(game_id)) = (game.cover_url, game.id.parse::<u64>()) {
+                let artwork_service = cx.artwork_service();
+                cover_img = cover_img.with_fallback(move || {
+                    artwork_service.enqueue_cover(game_id.into(), &url);
+                    div().into_any_element()
+                });
+            }
+
+            cover = cover.child(cover_img);
         }
 
         let title = div()
@@ -149,6 +160,7 @@ pub struct Library {
     games: Rc<Vec<GameEntry>>,
     component_icons: HashMap<String, Arc<Image>>,
     grid_bounds: Bounds<Pixels>,
+    image_cache: Entity<LruImageCache>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -158,6 +170,7 @@ impl Library {
             games: Rc::new(Vec::new()),
             grid_bounds: Bounds::default(),
             component_icons: HashMap::new(),
+            image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             _tasks: Vec::new(),
         };
 
@@ -193,8 +206,13 @@ impl Library {
         );
         let games = Rc::make_mut(&mut self.games);
         if let Some(entry) = games.iter_mut().find(|g| g.id.as_ref() == id_str) {
-            entry.cover_path = Some(cover_path(&update.hash));
+            let path = cover_path(&update.hash);
+            entry.cover_path = Some(path.clone());
             entry.accent_color = update.accent_color.map(accent_hsla);
+
+            let resource = Resource::Path(path);
+            self.image_cache
+                .update(cx, |cache, cx| cache.remove(&resource, cx));
             cx.notify();
         }
     }
@@ -261,7 +279,7 @@ impl GridDims {
     ) -> Self {
         let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
         let num_cols = num_cols.max(1);
-        let num_rows = (game_count as f32 / num_cols as f32).ceil() as usize;
+        let num_rows = game_count.div_ceil(num_cols);
 
         let visible_rows =
             (window_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
@@ -308,7 +326,10 @@ impl Render for Library {
             .flex_grow_1()
             .px(rems(2. - CARD_PADDING_REM))
             .text_color(theme.colors.accent)
-            .image_cache(lru_image_cache("game-grid-cache", dims.cache_capacity()))
+            .image_cache(lru_image_cache(
+                self.image_cache.clone(),
+                dims.cache_capacity(),
+            ))
             .child(
                 uniform_list("game-grid", dims.num_rows, move |range, _, _| {
                     range

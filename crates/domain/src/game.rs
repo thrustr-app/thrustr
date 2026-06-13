@@ -1,11 +1,10 @@
-use crate::{artwork::Artwork, id::Id, platform::Platform};
+use crate::{
+    artwork::{Artwork, ArtworkKind},
+    id::Id,
+    platform::Platform,
+};
+use anyhow::Result;
 use std::collections::HashMap;
-
-mod query;
-mod repository;
-
-pub use query::*;
-pub use repository::*;
 
 pub type GameId = Id<Game>;
 
@@ -42,4 +41,30 @@ pub struct NewGame {
     pub name: String,
     pub source: GameSource,
     pub cover_url: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct GameListItem {
+    pub id: GameId,
+    pub name: String,
+    pub source_id: String,
+    pub cover_url: Option<String>,
+    pub artwork: Option<Artwork>,
+}
+
+pub trait GameRepository: Send + Sync {
+    fn insert(&self, game: &NewGame) -> Result<Option<Game>>;
+
+    fn insert_many(&self, games: &[NewGame]) -> Result<Vec<Game>>;
+
+    fn count(&self) -> Result<usize>;
+
+    fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>>;
+
+    fn games_missing_artwork(
+        &self,
+        kind: ArtworkKind,
+        after: GameId,
+        limit: usize,
+    ) -> Result<Vec<(GameId, String)>>;
 }

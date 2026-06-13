@@ -2,13 +2,17 @@ use crate::manager::ArtworkManager;
 use connectivity::ConnectivityManager;
 use domain::{
     artwork::{ArtworkKind, ArtworkRepository, Color},
-    game::Game,
+    game::{Game, GameId, GameRepository},
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
 
 const DEFAULT_QUALITY: f32 = 75.;
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
+
+const BACKFILL_PAGE: usize = 500;
+const BACKFILL_PENDING_HIGH: usize = 1_000;
+const BACKFILL_BACKOFF: Duration = Duration::from_millis(250);
 
 mod color;
 mod manager;
@@ -16,7 +20,7 @@ mod processing;
 
 #[derive(Debug, Clone)]
 pub struct ArtworkTask {
-    pub game_id: u64,
+    pub game_id: GameId,
     pub url: String,
     pub kind: ArtworkKind,
     pub position: u32,
@@ -25,7 +29,7 @@ pub struct ArtworkTask {
 
 #[derive(Debug, Clone)]
 pub struct ArtworkReady {
-    pub game_id: u64,
+    pub game_id: GameId,
     pub hash: String,
     pub accent_color: Option<Color>,
 }
@@ -33,16 +37,21 @@ pub struct ArtworkReady {
 #[derive(Clone)]
 pub struct ArtworkService {
     manager: Arc<ArtworkManager>,
+    games: Arc<dyn GameRepository>,
 }
 
 impl ArtworkService {
-    pub fn new(connectivity: ConnectivityManager, artwork: Arc<dyn ArtworkRepository>) -> Self {
+    pub fn new(
+        connectivity: ConnectivityManager,
+        artwork: Arc<dyn ArtworkRepository>,
+        games: Arc<dyn GameRepository>,
+    ) -> Self {
         let manager = Arc::new(ArtworkManager::new(
             DEFAULT_MAX_CONCURRENCY,
             connectivity,
             artwork,
         ));
-        Self { manager }
+        Self { manager, games }
     }
 
     pub fn max_concurrent(&self) -> usize {
@@ -64,12 +73,52 @@ impl ArtworkService {
             }
 
             if let Some(cover_url) = &game.cover_url {
-                self.enqueue_cover(game.id.into(), cover_url);
+                self.enqueue_cover(game.id, cover_url);
             }
         }
     }
 
-    fn enqueue_cover(&self, game_id: u64, url: &str) {
+    pub fn pending(&self) -> usize {
+        self.manager.pending()
+    }
+
+    pub async fn backfill(&self) {
+        let mut after = GameId::from(0);
+        loop {
+            let repo = self.games.clone();
+            let cursor = after;
+            let batch = match tokio::task::spawn_blocking(move || {
+                repo.games_missing_artwork(ArtworkKind::Cover, cursor, BACKFILL_PAGE)
+            })
+            .await
+            {
+                Ok(Ok(batch)) => batch,
+                Ok(Err(e)) => {
+                    eprintln!("Artwork backfill query failed: {e}");
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("Artwork backfill task failed: {e}");
+                    return;
+                }
+            };
+
+            if batch.is_empty() {
+                return;
+            }
+
+            for (id, url) in &batch {
+                self.enqueue_cover(*id, url);
+                after = *id;
+            }
+
+            while self.pending() >= BACKFILL_PENDING_HIGH {
+                tokio::time::sleep(BACKFILL_BACKOFF).await;
+            }
+        }
+    }
+
+    pub fn enqueue_cover(&self, game_id: GameId, url: &str) {
         if url.is_empty() {
             return;
         }

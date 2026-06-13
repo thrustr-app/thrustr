@@ -15,6 +15,7 @@ const MAX_LIGHTNESS: f32 = 0.62;
 // so it looks good as an accent color.
 const MIN_SATURATION: f32 = 0.55;
 
+#[derive(Default, Clone)]
 struct Bucket {
     count: u64,
     r: u64,
@@ -34,14 +35,7 @@ pub fn extract_accent(img: &DynamicImage) -> Option<Color> {
         .resize(SAMPLE_SIZE, SAMPLE_SIZE, FilterType::Triangle)
         .to_rgb8();
 
-    let mut buckets: Vec<Bucket> = (0..QUANT_LEVELS.pow(3))
-        .map(|_| Bucket {
-            count: 0,
-            r: 0,
-            g: 0,
-            b: 0,
-        })
-        .collect();
+    let mut buckets = vec![Bucket::default(); QUANT_LEVELS.pow(3)];
 
     for pixel in sample.pixels() {
         let [r, g, b] = pixel.0;
