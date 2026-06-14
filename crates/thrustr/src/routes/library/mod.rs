@@ -2,6 +2,7 @@ use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
+    navigation::{NavigatorExt, Page},
     routes::library::cache::{LruImageCache, lru_image_cache},
 };
 use artwork::ArtworkReady;
@@ -10,8 +11,8 @@ use domain::{artwork::Color, game::GameListItem};
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FontWeight, Hsla, Image, ImageSource,
     InteractiveElement, IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce,
-    Resource, SharedString, Styled, StyledImage, Task, Window, div, img, px, rems, rgb,
-    uniform_list,
+    Resource, SharedString, StatefulInteractiveElement, Styled, StyledImage, Task, Window, div,
+    img, px, rems, rgb, uniform_list,
 };
 use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
@@ -86,7 +87,7 @@ impl RenderOnce for GameCard {
         let theme = cx.theme();
         let group_name = self.game.as_ref().map(|g| g.id.clone()).unwrap_or_default();
 
-        let base = div()
+        let mut base = div()
             .id(group_name.clone())
             .flex_shrink_0()
             .flex()
@@ -101,6 +102,13 @@ impl RenderOnce for GameCard {
         let Some(game) = self.game else {
             return base;
         };
+
+        let game_id = game.id.parse::<u64>().ok();
+        base = base.on_click(move |_, _, cx| {
+            if let Some(id) = game_id {
+                cx.navigate(Page::Game(id.into()));
+            }
+        });
 
         let mut cover = div()
             .aspect_ratio(CARD_ASPECT_RATIO)

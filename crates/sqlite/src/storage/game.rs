@@ -51,6 +51,20 @@ impl GameRepository for SqliteStorage {
         Ok(count as usize)
     }
 
+    fn get(&self, id: GameId) -> Result<Option<Game>> {
+        use crate::schema::games::dsl;
+
+        let id = u64::from(id) as i64;
+        let mut conn = self.pool.get()?;
+        let row = dsl::games
+            .find(id)
+            .select(GameRow::as_select())
+            .first::<GameRow>(&mut conn)
+            .optional()?;
+
+        Ok(row.map(Game::from))
+    }
+
     fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>> {
         use crate::schema::artwork;
         use crate::schema::games::dsl;

@@ -3,7 +3,7 @@
 use crate::app::App;
 use assets::Assets;
 use config::{logging, paths, tls};
-use gpui::{AppContext, TitlebarOptions, WindowOptions};
+use gpui::{AppContext, CursorHideMode, TitlebarOptions, WindowOptions};
 use sqlite::SqliteStorage;
 use std::sync::Arc;
 use ui::UiProvider;
@@ -32,6 +32,8 @@ fn main() {
             Assets
                 .load_fonts(cx)
                 .expect("Failed to load embedded fonts");
+
+            cx.set_cursor_hide_mode(CursorHideMode::Never);
 
             theme::init(cx);
             navigation::init(cx);

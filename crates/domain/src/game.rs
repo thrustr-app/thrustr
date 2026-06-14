@@ -59,6 +59,8 @@ pub trait GameRepository: Send + Sync {
 
     fn count(&self) -> Result<usize>;
 
+    fn get(&self, id: GameId) -> Result<Option<Game>>;
+
     fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>>;
 
     fn games_missing_artwork(

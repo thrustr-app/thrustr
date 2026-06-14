@@ -1,4 +1,5 @@
 use crate::routes;
+use domain::game::GameId;
 use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString};
 use std::{collections::VecDeque, mem::replace};
 
@@ -13,6 +14,7 @@ pub enum Page {
     Home,
     Library,
     Collections,
+    Game(GameId),
     Settings(Option<SettingsPage>),
 }
 
@@ -22,6 +24,7 @@ impl Page {
             Self::Home => "Home",
             Self::Library => "Library",
             Self::Collections => "Collections",
+            Self::Game(_) => "Game",
             Self::Settings(None) => "Settings",
             Self::Settings(Some(sub)) => sub.label(),
         }
@@ -32,6 +35,7 @@ impl Page {
             Self::Home => "icons/home.svg",
             Self::Library => "icons/library.svg",
             Self::Collections => "icons/collections.svg",
+            Self::Game(_) => "icons/library.svg",
             Self::Settings(_) => "icons/settings.svg",
         }
     }
@@ -41,6 +45,7 @@ impl Page {
             Self::Home => cx.new(|_| routes::Home).into(),
             Self::Library => cx.new(routes::Library::new).into(),
             Self::Collections => cx.new(|_| routes::Collections).into(),
+            Self::Game(id) => cx.new(|_| routes::Game::new(*id)).into(),
             Self::Settings(Some(sub)) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
             _ => cx.new(|_| EmptyView).into(),
         }
