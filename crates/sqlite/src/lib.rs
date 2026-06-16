@@ -24,7 +24,6 @@ impl CustomizeConnection<SqliteConnection, R2d2Error> for ConnectionOptions {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), R2d2Error> {
         conn.batch_execute(&format!(
             "PRAGMA busy_timeout = {};\n\
-             PRAGMA journal_mode = WAL;\n\
              PRAGMA synchronous = NORMAL;\n\
              PRAGMA foreign_keys = ON;",
             self.busy_timeout.as_millis()
@@ -56,6 +55,10 @@ impl SqliteStorage {
             .build(manager)?;
 
         let mut connection = pool.get()?;
+
+        connection
+            .batch_execute("PRAGMA journal_mode = WAL;")
+            .map_err(|e| anyhow!("failed to enable WAL: {e}"))?;
         connection
             .run_pending_migrations(MIGRATIONS)
             .expect("Failed to run migrations");
