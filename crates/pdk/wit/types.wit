@@ -18,6 +18,7 @@ interface types {
         lookup-id: string,
         external-ids: list<tuple<string, string>>,
         cover-url: option<string>,
+        description: option<string>,
     }
 
     record game-version {

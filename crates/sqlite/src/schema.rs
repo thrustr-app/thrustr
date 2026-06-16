@@ -6,6 +6,7 @@ diesel::table! {
         lookup_id -> Text,
         external_ids -> Json,
         cover_url -> Nullable<Text>,
+        description -> Nullable<Text>,
     }
 }
 

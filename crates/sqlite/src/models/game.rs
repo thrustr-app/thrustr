@@ -17,6 +17,7 @@ pub struct GameRow {
     pub lookup_id: String,
     pub external_ids: Value,
     pub cover_url: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Insertable, Debug)]
@@ -28,6 +29,7 @@ pub struct NewGameRow<'a> {
     pub lookup_id: &'a str,
     pub external_ids: Value,
     pub cover_url: Option<&'a str>,
+    pub description: Option<&'a str>,
 }
 
 impl From<GameRow> for Game {
@@ -41,6 +43,7 @@ impl From<GameRow> for Game {
                 external_ids: serde_json::from_value(row.external_ids).unwrap_or_default(),
             },
             cover_url: row.cover_url,
+            description: row.description,
             cover: None,
         }
     }
@@ -54,6 +57,7 @@ impl<'a> From<&'a NewGame> for NewGameRow<'a> {
             lookup_id: &game.source.lookup_id,
             external_ids: serde_json::to_value(&game.source.external_ids).unwrap_or_default(),
             cover_url: game.cover_url.as_deref(),
+            description: game.description.as_deref(),
         }
     }
 }
