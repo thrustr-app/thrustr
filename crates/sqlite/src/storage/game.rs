@@ -22,22 +22,16 @@ impl GameRepository for SqliteStorage {
         Ok(row.map(Game::from))
     }
 
-    fn insert_many(&self, games: &[NewGame]) -> Result<Vec<Game>> {
+    fn insert_many(&self, games: &[NewGame]) -> Result<usize> {
         use crate::schema::games::dsl;
 
         let mut conn = self.pool.get()?;
         conn.transaction(|conn| {
-            let mut inserted = Vec::new();
+            let mut inserted = 0;
             for game in games {
-                let row = diesel::insert_or_ignore_into(dsl::games)
+                inserted += diesel::insert_or_ignore_into(dsl::games)
                     .values(NewGameRow::from(game))
-                    .returning(GameRow::as_returning())
-                    .get_result::<GameRow>(conn)
-                    .optional()?;
-
-                if let Some(row) = row {
-                    inserted.push(Game::from(row));
-                }
+                    .execute(conn)?;
             }
             Ok(inserted)
         })

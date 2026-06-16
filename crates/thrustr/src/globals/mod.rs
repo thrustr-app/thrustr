@@ -25,12 +25,7 @@ pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
     .expect("Error initializing connectivity manager");
 
     artwork_global::init(cx, artwork_service.clone());
-
-    Tokio::spawn(cx, {
-        let service = artwork_service.clone();
-        async move { service.backfill().await }
-    })
-    .detach();
+    artwork_service.trigger_backfill();
 
     let registry = component::init(cx, storage.clone(), storage.clone(), artwork_service);
     plugin::init(cx, storage.clone(), registry);

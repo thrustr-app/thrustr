@@ -35,19 +35,20 @@ impl StorefrontHandle {
             return Ok(());
         }
 
-        let games = self
+        let inserted = self
             .component
             .context
             .game_repository
             .insert_many(&new_games)
             .map_err(|err| err.to_string())?;
 
+        if inserted == 0 {
+            return Ok(());
+        }
+
         event::emit("games");
 
-        self.component
-            .context
-            .artwork_service
-            .enqueue_from_games(&games);
+        self.component.context.artwork_service.trigger_backfill();
 
         Ok(())
     }

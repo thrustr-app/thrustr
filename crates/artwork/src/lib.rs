@@ -2,10 +2,10 @@ use crate::manager::ArtworkManager;
 use connectivity::ConnectivityManager;
 use domain::{
     artwork::{ArtworkKind, ArtworkRepository, Color},
-    game::{Game, GameId, GameRepository},
+    game::{GameId, GameRepository},
 };
 use std::{sync::Arc, time::Duration};
-use tokio::sync::broadcast;
+use tokio::sync::{Notify, broadcast};
 
 const DEFAULT_QUALITY: f32 = 75.;
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
@@ -34,11 +34,14 @@ pub struct ArtworkReady {
     pub accent_color: Option<Color>,
 }
 
-#[derive(Clone)]
-pub struct ArtworkService {
-    manager: Arc<ArtworkManager>,
+struct Inner {
+    manager: ArtworkManager,
     games: Arc<dyn GameRepository>,
+    wakeup: Notify,
 }
+
+#[derive(Clone)]
+pub struct ArtworkService(Arc<Inner>);
 
 impl ArtworkService {
     pub fn new(
@@ -46,46 +49,50 @@ impl ArtworkService {
         artwork: Arc<dyn ArtworkRepository>,
         games: Arc<dyn GameRepository>,
     ) -> Self {
-        let manager = Arc::new(ArtworkManager::new(
-            DEFAULT_MAX_CONCURRENCY,
-            connectivity,
-            artwork,
-        ));
-        Self { manager, games }
+        let manager = ArtworkManager::new(DEFAULT_MAX_CONCURRENCY, connectivity, artwork);
+        let service = Self(Arc::new(Inner {
+            manager,
+            games,
+            wakeup: Notify::new(),
+        }));
+
+        tokio::spawn({
+            let this = service.clone();
+            async move {
+                loop {
+                    this.0.wakeup.notified().await;
+                    this.backfill().await;
+                }
+            }
+        });
+
+        service
     }
 
     pub fn max_concurrent(&self) -> usize {
-        self.manager.max_concurrent()
+        self.0.manager.max_concurrent()
     }
 
     pub fn set_max_concurrency(&self, max: usize) {
-        self.manager.set_max_concurrent(max);
+        self.0.manager.set_max_concurrent(max);
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ArtworkReady> {
-        self.manager.subscribe()
-    }
-
-    pub fn enqueue_from_games(&self, games: &[Game]) {
-        for game in games {
-            if game.cover.is_some() {
-                continue;
-            }
-
-            if let Some(cover_url) = &game.cover_url {
-                self.enqueue_cover(game.id, cover_url);
-            }
-        }
+        self.0.manager.subscribe()
     }
 
     pub fn pending(&self) -> usize {
-        self.manager.pending()
+        self.0.manager.pending()
     }
 
-    pub async fn backfill(&self) {
+    pub fn trigger_backfill(&self) {
+        self.0.wakeup.notify_one();
+    }
+
+    async fn backfill(&self) {
         let mut after = GameId::from(0);
         loop {
-            let repo = self.games.clone();
+            let repo = self.0.games.clone();
             let cursor = after;
             let batch = match tokio::task::spawn_blocking(move || {
                 repo.games_missing_artwork(ArtworkKind::Cover, cursor, BACKFILL_PAGE)
@@ -131,7 +138,7 @@ impl ArtworkService {
             quality: DEFAULT_QUALITY,
         };
 
-        if let Err(e) = self.manager.enqueue(task) {
+        if let Err(e) = self.0.manager.enqueue(task) {
             eprintln!("Failed to enqueue cover for game {}: {}", game_id, e);
         }
     }
