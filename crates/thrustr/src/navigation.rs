@@ -24,7 +24,7 @@ impl Page {
             Self::Home => "Home",
             Self::Library => "Library",
             Self::Collections => "Collections",
-            Self::Game(_) => "Game",
+            Self::Game(_) => "",
             Self::Settings(None) => "Settings",
             Self::Settings(Some(sub)) => sub.label(),
         }
@@ -45,7 +45,7 @@ impl Page {
             Self::Home => cx.new(|_| routes::Home).into(),
             Self::Library => cx.new(routes::Library::new).into(),
             Self::Collections => cx.new(|_| routes::Collections).into(),
-            Self::Game(id) => cx.new(|_| routes::Game::new(*id)).into(),
+            Self::Game(id) => cx.new(|cx| routes::Game::new(*id, cx)).into(),
             Self::Settings(Some(sub)) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
             _ => cx.new(|_| EmptyView).into(),
         }
