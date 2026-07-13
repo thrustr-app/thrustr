@@ -1,3 +1,4 @@
+use crate::tokio::Tokio;
 use component::ComponentRegistry;
 use domain::component::ComponentStorage;
 use gpui::{App, Global};
@@ -13,9 +14,12 @@ pub fn init(
     storage: Arc<dyn ComponentStorage>,
     component_registry: ComponentRegistry,
 ) {
+    let handle = Tokio::handle(cx);
+
     cx.set_global(PluginServiceGlobal(PluginService::new(
         storage,
         component_registry,
+        handle,
     )));
 }
 

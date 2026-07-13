@@ -10,7 +10,5 @@ mod wit {
     bindgen!({
         path: "../pdk/wit",
         world: "storefront-plugin",
-        imports: { default: async },
-        exports: { default: async }
     });
 }

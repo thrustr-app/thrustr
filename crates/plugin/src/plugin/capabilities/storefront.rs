@@ -9,33 +9,39 @@ use domain::{
 #[async_trait]
 impl Storefront for Plugin {
     async fn get_games(&self) -> Result<Vec<NewGame>, Error> {
-        let (instance, mut store) = self
-            .instantiate_storefront()
-            .await
-            .map_err(|e| Error::Other(format!("{e:?}")))?;
+        let games = self
+            .call(|instance, mut store| async move {
+                store
+                    .run_concurrent(async |accessor| {
+                        instance
+                            .thrustr_plugin_storefront()
+                            .call_get_games(accessor)
+                            .await
+                    })
+                    .await
+                    .and_then(|result| result)
+            })
+            .await?;
 
-        instance
-            .thrustr_plugin_storefront()
-            .call_get_games(&mut store)
-            .await
-            .map_err(|e| Error::Other(format!("Wasm call failed: {e}")))?
-            .map_err(Error::from)
-            .map(|games| games.into_iter().map(|g| self.to_new_game(g)).collect())
+        Ok(games.into_iter().map(|g| self.to_new_game(g)).collect())
     }
 
     async fn get_game_versions(&self, game: Game) -> Result<Vec<GameVersion>, Error> {
-        let (instance, mut store) = self
-            .instantiate_storefront()
-            .await
-            .map_err(|e| Error::Other(format!("{e:?}")))?;
+        let versions = self
+            .call(|instance, mut store| async move {
+                store
+                    .run_concurrent(async |accessor| {
+                        instance
+                            .thrustr_plugin_storefront()
+                            .call_get_game_versions(accessor, game.into())
+                            .await
+                    })
+                    .await
+                    .and_then(|result| result)
+            })
+            .await?;
 
-        instance
-            .thrustr_plugin_storefront()
-            .call_get_game_versions(&mut store, &game.into())
-            .await
-            .map_err(|e| Error::Other(format!("Wasm call failed: {e}")))?
-            .map_err(Error::from)
-            .map(|versions| versions.into_iter().map(Into::into).collect())
+        Ok(versions.into_iter().map(Into::into).collect())
     }
 }
 

@@ -18,8 +18,9 @@ semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 smol.workspace = true
+tokio.workspace = true
 toml.workspace = true
-wasmtime = "44"
-wasmtime-wasi = "44"
-wasmtime-wasi-http = "44"
+wasmtime = "46"
+wasmtime-wasi = { version = "46", features = ["p3"] }
+wasmtime-wasi-http = { version = "46", features = ["p3"] }
 zip.workspace = true

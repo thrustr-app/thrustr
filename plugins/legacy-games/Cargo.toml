@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-base64 = "0.22.1"
+base64.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 pdk.workspace = true
-thiserror = "2"
-wstd = "0.6"
+thiserror.workspace = true
+wasi-fetch.workspace = true
 
 [lib]
 crate-type = ["cdylib"]

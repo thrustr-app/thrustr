@@ -8,12 +8,12 @@ interface base {
         target: string,
     }
 
-    init: func() -> result<_, error>;
-    get-login-flow: func() -> result<option<auth-flow>, error>;
-    get-logout-flow: func() -> result<option<auth-flow>, error>;
-    login: func(url: option<string>, body: option<string>, fields: option<list<tuple<string, string>>>) -> result<_, error>;
-    logout: func() -> result<_, error>;
-    validate-config: func(fields: list<tuple<string, string>>) -> result<_, error>;
+    init: async func() -> result<_, error>;
+    get-login-flow: async func() -> result<option<auth-flow>, error>;
+    get-logout-flow: async func() -> result<option<auth-flow>, error>;
+    login: async func(url: option<string>, body: option<string>, fields: option<list<tuple<string, string>>>) -> result<_, error>;
+    logout: async func() -> result<_, error>;
+    validate-config: async func(fields: list<tuple<string, string>>) -> result<_, error>;
 }
 
 world base-plugin {

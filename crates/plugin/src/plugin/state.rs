@@ -5,7 +5,7 @@ use wasmtime::component::HasData;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{
     WasiHttpCtx,
-    p2::{WasiHttpCtxView, WasiHttpView},
+    p3::{WasiHttpCtxView, WasiHttpView, default_hooks},
 };
 
 pub struct PluginState {
@@ -53,7 +53,7 @@ impl WasiHttpView for PluginState {
         WasiHttpCtxView {
             ctx: &mut self.http_ctx,
             table: &mut self.table,
-            hooks: Default::default(),
+            hooks: default_hooks(),
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::api::{
 };
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
-use wstd::http::{Client, Request, request::Builder};
+use wasi_fetch::{Client, RequestBuilder};
 
 pub async fn giveaway_login(email: &str) -> Result<IsExistsByEmailResponse, Error> {
     send(base_request(&endpoints::is_exists_by_email(email))).await
@@ -84,24 +84,19 @@ async fn get_giveaway_catalog(email: &str) -> Result<ProductsResponse, Error> {
     .await
 }
 
-async fn send<T: DeserializeOwned>(builder: Builder) -> Result<T, Error> {
-    Ok(Client::new()
-        .send(builder.body(()).unwrap())
-        .await?
-        .into_body()
-        .json()
-        .await?)
+async fn send<T: DeserializeOwned>(request: RequestBuilder) -> Result<T, Error> {
+    Ok(request.send().await?.into_body().json().await?)
 }
 
-fn base_request(url: &str) -> Builder {
-    Request::builder()
-        .uri(url)
+fn base_request(url: &str) -> RequestBuilder {
+    Client::new()
+        .get(url)
         .header("Authorization", "?token?")
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
         .header("Cache-Control", "no-cache")
 }
 
-fn authenticated_request(url: &str, token: &str) -> Builder {
+fn authenticated_request(url: &str, token: &str) -> RequestBuilder {
     base_request(url).header("UserToken", format!("Basic {token}"))
 }

@@ -10,6 +10,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
+use tokio::runtime::Handle;
 use wasmtime::{
     Config, Engine,
     component::{Component as WasmComponent, Linker},
@@ -21,18 +22,24 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
+    handle: Handle,
 }
 
 impl PluginManager {
-    pub fn new(storage: Arc<dyn ComponentStorage>) -> Self {
-        let config = Config::new();
+    pub fn new(storage: Arc<dyn ComponentStorage>, handle: Handle) -> Self {
+        let mut config = Config::new();
+        config.wasm_component_model_async(true);
+
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
 
-        wasmtime_wasi::p2::add_to_linker_async(&mut linker).expect("Failed to add WASI to linker");
+        wasmtime_wasi::p2::add_to_linker_async(&mut linker)
+            .expect("Failed to add WASIp2 to linker");
 
-        wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker)
-            .expect("Failed to add WASI HTTP to linker");
+        wasmtime_wasi::p3::add_to_linker(&mut linker).expect("Failed to add WASIp3 to linker");
+
+        wasmtime_wasi_http::p3::add_to_linker(&mut linker)
+            .expect("Failed to add WASIp3 HTTP to linker");
 
         StorefrontPlugin::add_to_linker::<_, PluginState>(&mut linker, |state| state)
             .expect("Failed to add Storefront imports to linker");
@@ -41,6 +48,7 @@ impl PluginManager {
             engine,
             linker: Arc::new(linker),
             storage,
+            handle,
         }
     }
 
@@ -62,6 +70,7 @@ impl PluginManager {
             engine: self.engine.clone(),
             storage: self.storage.clone(),
             storefront_pre: storefront,
+            handle: self.handle.clone(),
         };
 
         Ok(plugin)

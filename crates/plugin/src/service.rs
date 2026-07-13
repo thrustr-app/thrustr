@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tokio::runtime::Handle;
 
 #[derive(Clone)]
 pub struct PluginService {
@@ -16,9 +17,13 @@ pub struct PluginService {
 }
 
 impl PluginService {
-    pub fn new(storage: Arc<dyn ComponentStorage>, component_registry: ComponentRegistry) -> Self {
+    pub fn new(
+        storage: Arc<dyn ComponentStorage>,
+        component_registry: ComponentRegistry,
+        handle: Handle,
+    ) -> Self {
         Self {
-            manager: PluginManager::new(storage),
+            manager: PluginManager::new(storage, handle),
             component_registry,
         }
     }
