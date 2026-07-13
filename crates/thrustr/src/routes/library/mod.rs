@@ -9,10 +9,10 @@ use artwork::ArtworkReady;
 use config::paths;
 use domain::{artwork::Color, game::GameListItem};
 use gpui::{
-    App, AppContext, Bounds, Context, Entity, FontWeight, Hsla, Image, ImageSource,
-    InteractiveElement, IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce,
-    Resource, SharedString, StatefulInteractiveElement, Styled, StyledImage, Task, Window, div,
-    img, px, rems, rgb, uniform_list,
+    App, AppContext, Context, Entity, FontWeight, Hsla, Image, ImageSource, InteractiveElement,
+    IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString,
+    StatefulInteractiveElement, Styled, StyledImage, Task, Window, container_query, div, img, px,
+    rems, rgb, uniform_list,
 };
 use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
 use theme::ThemeExt;
@@ -167,7 +167,6 @@ impl RenderOnce for GameCard {
 pub struct Library {
     games: Rc<Vec<GameEntry>>,
     component_icons: HashMap<String, Arc<Image>>,
-    grid_bounds: Bounds<Pixels>,
     image_cache: Entity<LruImageCache>,
     _tasks: Vec<Task<()>>,
 }
@@ -176,7 +175,6 @@ impl Library {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut page = Self {
             games: Rc::new(Vec::new()),
-            grid_bounds: Bounds::default(),
             component_icons: HashMap::new(),
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             _tasks: Vec::new(),
@@ -260,16 +258,6 @@ impl Library {
             },
         );
     }
-
-    fn set_bounds(&mut self, bounds: Vec<Bounds<Pixels>>, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(&new_bounds) = bounds.first()
-            && self.grid_bounds != new_bounds
-        {
-            self.grid_bounds = new_bounds;
-            let entity_id = cx.entity_id();
-            cx.defer(move |cx| cx.notify(entity_id));
-        }
-    }
 }
 
 struct GridDims {
@@ -316,48 +304,49 @@ impl GridDims {
 }
 
 impl Render for Library {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let rem_size = window.rem_size().as_f32();
-
-        let dims = GridDims::compute(
-            self.grid_bounds.size.width,
-            self.games.len(),
-            window.bounds().size.height,
-            rem_size,
-        );
-
         let games = self.games.clone();
+        let image_cache = self.image_cache.clone();
 
         div()
-            .on_children_prepainted(cx.processor(Self::set_bounds))
             .flex_grow_1()
             .px(rems(2. - CARD_PADDING_REM))
             .text_color(theme.colors.accent)
-            .image_cache(lru_image_cache(
-                self.image_cache.clone(),
-                dims.cache_capacity(),
-            ))
-            .child(
-                uniform_list("game-grid", dims.num_rows, move |range, _, _| {
-                    range
-                        .map(|row_idx| {
-                            let start = row_idx * dims.num_cols;
-                            let end = (start + dims.num_cols).min(games.len());
-                            let row = &games[start..end];
-                            let blanks = dims.num_cols - row.len();
+            .child(container_query(move |size, window, _cx| {
+                let dims = GridDims::compute(
+                    size.width,
+                    games.len(),
+                    size.height,
+                    window.rem_size().as_f32(),
+                );
 
-                            div()
-                                .w_full()
-                                .flex()
-                                .justify_between()
-                                .pb(rems(1.5))
-                                .children(row.iter().map(|game| GameCard::new(game.clone())))
-                                .children((0..blanks).map(|_| GameCard::blank()))
+                div()
+                    .size_full()
+                    .image_cache(lru_image_cache(image_cache, dims.cache_capacity()))
+                    .child(
+                        uniform_list("game-grid", dims.num_rows, move |range, _, _| {
+                            range
+                                .map(|row_idx| {
+                                    let start = row_idx * dims.num_cols;
+                                    let end = (start + dims.num_cols).min(games.len());
+                                    let row = &games[start..end];
+                                    let blanks = dims.num_cols - row.len();
+
+                                    div()
+                                        .w_full()
+                                        .flex()
+                                        .justify_between()
+                                        .pb(rems(1.5))
+                                        .children(
+                                            row.iter().map(|game| GameCard::new(game.clone())),
+                                        )
+                                        .children((0..blanks).map(|_| GameCard::blank()))
+                                })
+                                .collect()
                         })
-                        .collect()
-                })
-                .size_full(),
-            )
+                        .size_full(),
+                    )
+            }))
     }
 }

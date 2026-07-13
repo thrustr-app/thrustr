@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 anyhow.workspace = true
 gpui.workspace = true
-rust-embed = "8.9"
+rust-embed = { version = "8.12", features = ["include-exclude"] }
