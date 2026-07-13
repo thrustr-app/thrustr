@@ -49,6 +49,7 @@ impl Plugin {
                 external_ids: game.external_ids.into_iter().collect(),
             },
             cover_url: game.cover_url,
+            summary: game.summary,
             description: game.description,
         }
     }
@@ -81,6 +82,7 @@ impl From<Game> for types::Game {
             lookup_id: value.source.lookup_id,
             external_ids: value.source.external_ids.into_iter().collect(),
             cover_url: value.cover_url,
+            summary: value.summary,
             description: value.description,
         }
     }

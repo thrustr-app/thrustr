@@ -11,21 +11,21 @@ const BANNER_HEIGHT_REM: f32 = 28.;
 pub struct Game {
     _id: GameId,
     name: SharedString,
-    description: Option<SharedString>,
+    summary: Option<SharedString>,
 }
 
 impl Game {
     pub fn new(id: GameId, cx: &mut App) -> Self {
         let game = cx.game_service().get(id).ok().flatten();
-        let (name, description) = match game {
-            Some(game) => (game.name.into(), game.description.map(Into::into)),
+        let (name, summary) = match game {
+            Some(game) => (game.name.into(), game.summary.map(Into::into)),
             None => (SharedString::default(), None),
         };
 
         Self {
             _id: id,
             name,
-            description,
+            summary,
         }
     }
 }
@@ -64,8 +64,12 @@ impl Render for Game {
                                 .truncate()
                                 .child(self.name.clone()),
                         )
-                        .children(self.description.clone().map(|desc| {
-                            div().w_full().text_size(rems(1.)).line_clamp(3).child(desc)
+                        .children(self.summary.clone().map(|summary| {
+                            div()
+                                .w_full()
+                                .text_size(rems(1.))
+                                .line_clamp(3)
+                                .child(summary)
                         })),
                 ),
         )

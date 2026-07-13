@@ -14,7 +14,8 @@ impl From<Product> for Vec<Game> {
                     ("product_id".into(), product.id.to_string()),
                 ],
                 cover_url: Some(g.game_coverart),
-                description: Some(g.game_description),
+                summary: Some(g.game_description),
+                description: None,
             })
             .collect()
     }

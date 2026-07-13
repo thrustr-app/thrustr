@@ -18,6 +18,7 @@ interface types {
         lookup-id: string,
         external-ids: list<tuple<string, string>>,
         cover-url: option<string>,
+        summary: option<string>,
         description: option<string>,
     }
 

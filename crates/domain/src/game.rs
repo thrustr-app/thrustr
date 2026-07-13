@@ -16,6 +16,7 @@ pub struct Game {
     /// The URL of the original cover art for the game, as provided by the storefront.
     pub cover_url: Option<String>,
     pub cover: Option<Artwork>,
+    pub summary: Option<String>,
     pub description: Option<String>,
 }
 
@@ -42,6 +43,7 @@ pub struct NewGame {
     pub name: String,
     pub source: GameSource,
     pub cover_url: Option<String>,
+    pub summary: Option<String>,
     pub description: Option<String>,
 }
 
