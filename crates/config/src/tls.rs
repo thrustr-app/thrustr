@@ -1,5 +1,7 @@
+use rustls::crypto::{CryptoProvider, ring};
+
 pub fn init() {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("Failed to set default TLS provider");
+    if CryptoProvider::get_default().is_none() {
+        let _ = ring::default_provider().install_default();
+    }
 }

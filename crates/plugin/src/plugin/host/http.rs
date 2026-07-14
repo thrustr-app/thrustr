@@ -6,7 +6,7 @@ use std::{
     error::Error,
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
     task::{Context, Poll},
     time::Duration,
 };
@@ -106,7 +106,7 @@ struct SyncBody(Mutex<UnsyncBoxBody<Bytes, ErrorCode>>);
 
 impl SyncBody {
     fn get(&self) -> impl std::ops::Deref<Target = UnsyncBoxBody<Bytes, ErrorCode>> + '_ {
-        self.0.lock().expect("Plugin request body poisoned")
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -122,7 +122,7 @@ impl Body for SyncBody {
             .get_mut()
             .0
             .get_mut()
-            .expect("Plugin request body poisoned");
+            .unwrap_or_else(PoisonError::into_inner);
 
         Pin::new(body).poll_frame(cx)
     }
