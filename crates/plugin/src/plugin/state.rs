@@ -3,17 +3,21 @@ use domain::component::ComponentStorage;
 use reqwest::Client;
 use std::sync::Arc;
 use wasmtime::component::HasData;
+use wasmtime::{StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{
     WasiHttpCtx,
     p3::{WasiHttpCtxView, WasiHttpView},
 };
 
+const MAX_MEMORY: usize = 256 * 1024 * 1024;
+
 pub struct PluginState {
     ctx: WasiCtx,
     http_ctx: WasiHttpCtx,
     hooks: OutboundHttp,
     table: ResourceTable,
+    limits: StoreLimits,
     pub(crate) id: String,
     pub(crate) storage: Arc<dyn ComponentStorage>,
 }
@@ -32,9 +36,14 @@ impl PluginState {
             http_ctx: WasiHttpCtx::new(),
             hooks: OutboundHttp::new(http_client, allowed_hosts),
             table: ResourceTable::new(),
+            limits: StoreLimitsBuilder::new().memory_size(MAX_MEMORY).build(),
             id: id.to_owned(),
             storage,
         }
+    }
+
+    pub(crate) fn limits(&mut self) -> &mut StoreLimits {
+        &mut self.limits
     }
 }
 

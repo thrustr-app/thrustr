@@ -31,6 +31,7 @@ impl PluginManager {
     pub fn new(storage: Arc<dyn ComponentStorage>, handle: Handle) -> Self {
         let mut config = Config::new();
         config.wasm_component_model_async(true);
+        config.consume_fuel(true);
 
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);

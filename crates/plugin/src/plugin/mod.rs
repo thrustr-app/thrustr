@@ -11,7 +11,7 @@ use domain::component::{
 use reqwest::Client;
 use std::sync::Arc;
 use tokio::runtime::Handle;
-use wasmtime::{Engine, Store};
+use wasmtime::{Engine, ResourceLimiter, Store};
 
 mod capabilities;
 mod host;
@@ -35,6 +35,9 @@ pub struct Plugin {
 
 type CallResult<R> = wasmtime::Result<Result<R, PluginError>>;
 
+const MAX_FUEL: u64 = 10_000_000_000;
+const FUEL_YIELD_INTERVAL: u64 = 10_000_000;
+
 impl Plugin {
     async fn call<R, F, Fut>(&self, f: F) -> Result<R, ComponentError>
     where
@@ -57,6 +60,13 @@ impl Plugin {
             .spawn(async move {
                 let state = PluginState::new(&id, storage, http_client, allowed_hosts);
                 let mut store = Store::new(&engine, state);
+
+                store.limiter(|state| state.limits() as &mut dyn ResourceLimiter);
+
+                store
+                    .set_fuel(MAX_FUEL)
+                    .and_then(|()| store.fuel_async_yield_interval(Some(FUEL_YIELD_INTERVAL)))
+                    .map_err(|e| ComponentError::Other(format!("Fuel setup failed: {e}")))?;
 
                 let instance = pre
                     .instantiate_async(&mut store)
