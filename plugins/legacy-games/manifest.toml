@@ -4,6 +4,7 @@ name = "Legacy Games"
 version = "0.0.1"
 authors = ["Jorge Pardo"]
 description = "Plugin to interact with Legacy Games."
+allowed-hosts = ["api.legacygames.com"]
 
 [[auth.field]]
 type = "text"

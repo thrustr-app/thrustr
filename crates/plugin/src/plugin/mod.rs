@@ -27,6 +27,7 @@ pub struct Plugin {
     pub storage: Arc<dyn ComponentStorage>,
     pub storefront_pre: Option<StorefrontPluginPre<PluginState>>,
     pub handle: Handle,
+    pub allowed_hosts: Arc<[String]>,
 }
 
 type CallResult<R> = wasmtime::Result<Result<R, PluginError>>;
@@ -46,10 +47,11 @@ impl Plugin {
         let engine = self.engine.clone();
         let storage = self.storage.clone();
         let id = self.manifest.plugin.id.clone();
+        let allowed_hosts = self.allowed_hosts.clone();
 
         self.handle
             .spawn(async move {
-                let mut store = Store::new(&engine, PluginState::new(&id, storage));
+                let mut store = Store::new(&engine, PluginState::new(&id, storage, allowed_hosts));
 
                 let instance = pre
                     .instantiate_async(&mut store)

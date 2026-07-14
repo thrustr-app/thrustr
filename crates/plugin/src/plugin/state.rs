@@ -1,31 +1,30 @@
-use crate::wit::thrustr::plugin::types::Host;
+use crate::{plugin::host::AllowedHosts, wit::thrustr::plugin::types::Host};
 use domain::component::ComponentStorage;
 use std::sync::Arc;
 use wasmtime::component::HasData;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{
     WasiHttpCtx,
-    p3::{WasiHttpCtxView, WasiHttpView, default_hooks},
+    p3::{WasiHttpCtxView, WasiHttpView},
 };
 
 pub struct PluginState {
     ctx: WasiCtx,
     http_ctx: WasiHttpCtx,
+    hooks: AllowedHosts,
     table: ResourceTable,
     pub(crate) id: String,
     pub(crate) storage: Arc<dyn ComponentStorage>,
 }
 
 impl PluginState {
-    pub fn new(id: &str, storage: Arc<dyn ComponentStorage>) -> Self {
-        let ctx = WasiCtx::builder()
-            .inherit_network()
-            .inherit_stdout()
-            .build();
+    pub fn new(id: &str, storage: Arc<dyn ComponentStorage>, allowed_hosts: Arc<[String]>) -> Self {
+        let ctx = WasiCtx::builder().inherit_stdout().build();
 
         Self {
             ctx,
             http_ctx: WasiHttpCtx::new(),
+            hooks: AllowedHosts::new(allowed_hosts),
             table: ResourceTable::new(),
             id: id.to_owned(),
             storage,
@@ -53,7 +52,7 @@ impl WasiHttpView for PluginState {
         WasiHttpCtxView {
             ctx: &mut self.http_ctx,
             table: &mut self.table,
-            hooks: default_hooks(),
+            hooks: &mut self.hooks,
         }
     }
 }

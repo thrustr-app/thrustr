@@ -12,8 +12,11 @@ event.workspace = true
 # External
 anyhow.workspace = true
 async-trait.workspace = true
+bytes.workspace = true
 dashmap.workspace = true
 futures.workspace = true
+http = "1"
+http-body-util = "0.1"
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -65,6 +65,7 @@ impl PluginManager {
         let storefront = StorefrontPluginPre::new(instance_pre).ok();
 
         let plugin = Plugin {
+            allowed_hosts: manifest.plugin.allowed_hosts.as_slice().into(),
             manifest,
             icon,
             engine: self.engine.clone(),

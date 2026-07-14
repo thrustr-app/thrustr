@@ -10,6 +10,8 @@ pub struct PluginInfo {
     pub authors: Vec<String>,
     pub version: Version,
     pub description: Option<String>,
+    #[serde(default, rename = "allowed-hosts")]
+    pub allowed_hosts: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
