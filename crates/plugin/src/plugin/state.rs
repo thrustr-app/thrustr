@@ -1,5 +1,6 @@
-use crate::{plugin::host::AllowedHosts, wit::thrustr::plugin::types::Host};
+use crate::{plugin::host::OutboundHttp, wit::thrustr::plugin::types::Host};
 use domain::component::ComponentStorage;
+use reqwest::Client;
 use std::sync::Arc;
 use wasmtime::component::HasData;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
@@ -11,20 +12,25 @@ use wasmtime_wasi_http::{
 pub struct PluginState {
     ctx: WasiCtx,
     http_ctx: WasiHttpCtx,
-    hooks: AllowedHosts,
+    hooks: OutboundHttp,
     table: ResourceTable,
     pub(crate) id: String,
     pub(crate) storage: Arc<dyn ComponentStorage>,
 }
 
 impl PluginState {
-    pub fn new(id: &str, storage: Arc<dyn ComponentStorage>, allowed_hosts: Arc<[String]>) -> Self {
+    pub fn new(
+        id: &str,
+        storage: Arc<dyn ComponentStorage>,
+        http_client: Client,
+        allowed_hosts: Arc<[String]>,
+    ) -> Self {
         let ctx = WasiCtx::builder().inherit_stdout().build();
 
         Self {
             ctx,
             http_ctx: WasiHttpCtx::new(),
-            hooks: AllowedHosts::new(allowed_hosts),
+            hooks: OutboundHttp::new(http_client, allowed_hosts),
             table: ResourceTable::new(),
             id: id.to_owned(),
             storage,

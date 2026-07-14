@@ -17,6 +17,7 @@ fn main() {
         ("test", "Adding or updating tests"),
         ("style", "Formatting, whitespace, missing semicolons, etc."),
         ("ci", "CI/CD configuration and scripts"),
+        ("perf", "Performance improvements"),
     ];
 
     let is_valid = valid_types.iter().any(|(t, _)| {

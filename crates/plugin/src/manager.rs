@@ -1,9 +1,10 @@
 use crate::{
-    plugin::{Plugin, PluginManifest, PluginState},
+    plugin::{Plugin, PluginManifest, PluginState, http_client},
     wit::{StorefrontPlugin, StorefrontPluginPre},
 };
 use anyhow::Result;
 use domain::component::{ComponentStorage, Image, ImageFormat};
+use reqwest::Client;
 use std::{
     fs::File,
     io::{Read, Seek},
@@ -23,6 +24,7 @@ pub struct PluginManager {
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
     handle: Handle,
+    http_client: Client,
 }
 
 impl PluginManager {
@@ -49,6 +51,7 @@ impl PluginManager {
             linker: Arc::new(linker),
             storage,
             handle,
+            http_client: http_client(),
         }
     }
 
@@ -72,6 +75,7 @@ impl PluginManager {
             storage: self.storage.clone(),
             storefront_pre: storefront,
             handle: self.handle.clone(),
+            http_client: self.http_client.clone(),
         };
 
         Ok(plugin)

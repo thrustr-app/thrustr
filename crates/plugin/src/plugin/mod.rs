@@ -8,6 +8,7 @@ use domain::component::{
     AuthFlow, Component, ComponentConfig, ComponentStorage, Error as ComponentError, Image,
     LoginMethod, Metadata, Origin,
 };
+use reqwest::Client;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use wasmtime::{Engine, Store};
@@ -17,6 +18,7 @@ mod host;
 mod manifest;
 mod state;
 
+pub use host::http_client;
 pub use manifest::*;
 pub use state::PluginState;
 
@@ -27,6 +29,7 @@ pub struct Plugin {
     pub storage: Arc<dyn ComponentStorage>,
     pub storefront_pre: Option<StorefrontPluginPre<PluginState>>,
     pub handle: Handle,
+    pub http_client: Client,
     pub allowed_hosts: Arc<[String]>,
 }
 
@@ -47,11 +50,13 @@ impl Plugin {
         let engine = self.engine.clone();
         let storage = self.storage.clone();
         let id = self.manifest.plugin.id.clone();
+        let http_client = self.http_client.clone();
         let allowed_hosts = self.allowed_hosts.clone();
 
         self.handle
             .spawn(async move {
-                let mut store = Store::new(&engine, PluginState::new(&id, storage, allowed_hosts));
+                let state = PluginState::new(&id, storage, http_client, allowed_hosts);
+                let mut store = Store::new(&engine, state);
 
                 let instance = pre
                     .instantiate_async(&mut store)

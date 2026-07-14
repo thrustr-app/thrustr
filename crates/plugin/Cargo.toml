@@ -16,7 +16,9 @@ bytes.workspace = true
 dashmap.workspace = true
 futures.workspace = true
 http = "1"
+http-body = "1"
 http-body-util = "0.1"
+reqwest.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -27,3 +29,7 @@ wasmtime = "46"
 wasmtime-wasi = { version = "46", features = ["p3"] }
 wasmtime-wasi-http = { version = "46", features = ["p3"] }
 zip.workspace = true
+
+[dev-dependencies]
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
