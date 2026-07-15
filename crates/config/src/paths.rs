@@ -49,6 +49,24 @@ pub fn plugins_dir() -> PathBuf {
     dir
 }
 
+/// Path to the application cache directory, creating it if it doesn't exist.
+pub fn cache_dir() -> PathBuf {
+    let dir = if cfg!(debug_assertions) {
+        workspace_dir().join("target").join("cache")
+    } else {
+        project_dirs().cache_dir().to_path_buf()
+    };
+    fs::create_dir_all(&dir).expect("Failed to create application cache directory");
+    dir
+}
+
+/// Path to the compiled-plugin cache directory, creating it if it doesn't exist.
+pub fn plugins_cache_dir() -> PathBuf {
+    let dir = cache_dir().join("plugins");
+    fs::create_dir_all(&dir).expect("Failed to create plugins cache directory");
+    dir
+}
+
 fn project_dirs() -> &'static ProjectDirs {
     PROJECT_DIRS.get_or_init(|| {
         ProjectDirs::from("com", "thrustr", "thrustr")

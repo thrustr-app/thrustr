@@ -3,12 +3,13 @@ use crate::{
     wit::{StorefrontPlugin, StorefrontPluginPre},
 };
 use anyhow::Result;
+use config::paths::plugins_cache_dir;
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use reqwest::Client;
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{Read, Seek},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 use tokio::runtime::Handle;
@@ -61,7 +62,8 @@ impl PluginManager {
 
         let component = smol::unblock({
             let engine = self.engine.clone();
-            move || WasmComponent::from_binary(&engine, &wasm_bytes)
+            let plugin_id = manifest.plugin.id.clone();
+            move || load_component(&engine, &plugin_id, &wasm_bytes)
         })
         .await?;
 
@@ -80,6 +82,39 @@ impl PluginManager {
         };
 
         Ok(plugin)
+    }
+}
+
+fn load_component(engine: &Engine, plugin_id: &str, wasm_bytes: &[u8]) -> Result<WasmComponent> {
+    let hash = blake3::hash(wasm_bytes).to_hex();
+    let cache_dir = plugins_cache_dir().join(plugin_id);
+    let cache_path = cache_dir.join(format!("{hash}.cwasm"));
+
+    if cache_path.exists() {
+        match unsafe { WasmComponent::deserialize_file(engine, &cache_path) } {
+            Ok(component) => return Ok(component),
+            Err(_) => {
+                let _ = fs::remove_file(&cache_path);
+            }
+        }
+    }
+
+    let component = WasmComponent::from_binary(engine, wasm_bytes)?;
+
+    if let Ok(serialized) = component.serialize() {
+        let _ = fs::remove_dir_all(&cache_dir);
+        if fs::create_dir_all(&cache_dir).is_ok() {
+            write_cache_atomic(&cache_path, &serialized);
+        }
+    }
+
+    Ok(component)
+}
+
+fn write_cache_atomic(cache_path: &Path, bytes: &[u8]) {
+    let tmp_path = cache_path.with_extension(format!("cwasm.{}.tmp", std::process::id()));
+    if fs::write(&tmp_path, bytes).is_ok() && fs::rename(&tmp_path, cache_path).is_err() {
+        let _ = fs::remove_file(&tmp_path);
     }
 }
 

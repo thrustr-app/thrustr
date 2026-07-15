@@ -6,12 +6,14 @@ edition = "2024"
 [dependencies]
 # Local
 component.workspace = true
+config.workspace = true
 domain.workspace = true
 event.workspace = true
 
 # External
 anyhow.workspace = true
 async-trait.workspace = true
+blake3.workspace = true
 bytes.workspace = true
 dashmap.workspace = true
 futures.workspace = true
