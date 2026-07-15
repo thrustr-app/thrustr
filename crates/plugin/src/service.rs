@@ -20,10 +20,10 @@ impl PluginService {
     pub fn new(
         storage: Arc<dyn ComponentStorage>,
         component_registry: ComponentRegistry,
-        handle: Handle,
+        tokio_handle: Handle,
     ) -> Self {
         Self {
-            manager: PluginManager::new(storage, handle),
+            manager: PluginManager::new(storage, tokio_handle),
             component_registry,
         }
     }

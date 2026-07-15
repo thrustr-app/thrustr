@@ -24,12 +24,12 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
-    handle: Handle,
+    tokio_handle: Handle,
     http_client: Client,
 }
 
 impl PluginManager {
-    pub fn new(storage: Arc<dyn ComponentStorage>, handle: Handle) -> Self {
+    pub fn new(storage: Arc<dyn ComponentStorage>, tokio_handle: Handle) -> Self {
         let mut config = Config::new();
         config.wasm_component_model_async(true);
         config.consume_fuel(true);
@@ -52,7 +52,7 @@ impl PluginManager {
             engine,
             linker: Arc::new(linker),
             storage,
-            handle,
+            tokio_handle,
             http_client: http_client(),
         }
     }
@@ -77,7 +77,7 @@ impl PluginManager {
             engine: self.engine.clone(),
             storage: self.storage.clone(),
             storefront_pre: storefront,
-            handle: self.handle.clone(),
+            tokio_handle: self.tokio_handle.clone(),
             http_client: self.http_client.clone(),
         };
 

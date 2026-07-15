@@ -28,7 +28,7 @@ pub struct Plugin {
     pub engine: Engine,
     pub storage: Arc<dyn ComponentStorage>,
     pub storefront_pre: Option<StorefrontPluginPre<PluginState>>,
-    pub handle: Handle,
+    pub tokio_handle: Handle,
     pub http_client: Client,
     pub allowed_hosts: Arc<[String]>,
 }
@@ -56,7 +56,7 @@ impl Plugin {
         let http_client = self.http_client.clone();
         let allowed_hosts = self.allowed_hosts.clone();
 
-        self.handle
+        self.tokio_handle
             .spawn(async move {
                 let state = PluginState::new(&id, storage, http_client, allowed_hosts);
                 let mut store = Store::new(&engine, state);
