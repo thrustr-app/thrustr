@@ -15,6 +15,7 @@ event.workspace = true
 futures.workspace = true
 game.workspace = true
 plugin.workspace = true
+runtime.workspace = true
 sqlite.workspace = true
 theme.workspace = true
 ui.workspace = true

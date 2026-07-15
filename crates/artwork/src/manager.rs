@@ -10,6 +10,7 @@ use domain::{
     game::GameId,
 };
 use reqwest::Client;
+use runtime::TokioHandle;
 use std::{
     sync::{
         Arc,
@@ -56,6 +57,7 @@ pub struct ArtworkManager {
 
 impl ArtworkManager {
     pub fn new(
+        tokio_handle: TokioHandle,
         max_concurrent: usize,
         connectivity: ConnectivityManager,
         artwork: Arc<dyn ArtworkRepository>,
@@ -71,7 +73,7 @@ impl ArtworkManager {
 
         let client = Client::new();
 
-        tokio::spawn({
+        tokio_handle.spawn({
             let inner = inner.clone();
             let updates = updates.clone();
             let mut connectivity_rx = connectivity.subscribe();

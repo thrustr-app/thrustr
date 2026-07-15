@@ -4,6 +4,7 @@ use domain::{
     artwork::{ArtworkKind, ArtworkRepository, Color},
     game::{GameId, GameRepository},
 };
+use runtime::TokioHandle;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Notify, broadcast};
 
@@ -45,18 +46,24 @@ pub struct ArtworkService(Arc<Inner>);
 
 impl ArtworkService {
     pub fn new(
+        tokio_handle: TokioHandle,
         connectivity: ConnectivityManager,
         artwork: Arc<dyn ArtworkRepository>,
         games: Arc<dyn GameRepository>,
     ) -> Self {
-        let manager = ArtworkManager::new(DEFAULT_MAX_CONCURRENCY, connectivity, artwork);
+        let manager = ArtworkManager::new(
+            tokio_handle.clone(),
+            DEFAULT_MAX_CONCURRENCY,
+            connectivity,
+            artwork,
+        );
         let service = Self(Arc::new(Inner {
             manager,
             games,
             wakeup: Notify::new(),
         }));
 
-        tokio::spawn({
+        tokio_handle.spawn({
             let this = service.clone();
             async move {
                 loop {

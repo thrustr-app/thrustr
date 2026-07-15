@@ -16,13 +16,12 @@ pub use game::GameServiceExt;
 pub use plugin::PluginServiceExt;
 
 pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
+    let tokio_handle = Tokio::handle(cx);
     let artwork_repo = storage.clone();
     let game_repo = storage.clone();
-    let artwork_service = block_on(Tokio::spawn(cx, async move {
-        let connectivity = ConnectivityManager::builder().build_probing().await;
-        ArtworkService::new(connectivity, artwork_repo, game_repo)
-    }))
-    .expect("Error initializing connectivity manager");
+
+    let connectivity = block_on(ConnectivityManager::builder(tokio_handle.clone()).build_probing());
+    let artwork_service = ArtworkService::new(tokio_handle, connectivity, artwork_repo, game_repo);
 
     artwork_global::init(cx, artwork_service.clone());
     artwork_service.trigger_backfill();

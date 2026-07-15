@@ -3,7 +3,6 @@ use crate::{
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::ComponentRegistryExt,
     navigation::NavigatorExt,
-    tokio::Tokio,
     webview::{WebviewError, open_auth_webview},
 };
 use component::ComponentHandle;
@@ -94,7 +93,7 @@ impl Config {
 
     fn get_login_method(&mut self, cx: &mut Context<Self>) {
         let component = self.component.clone();
-        cx.spawn_and_update_tokio(
+        cx.spawn_and_update(
             async move { component.get_login_method().await },
             |config, result, _| {
                 config.login_method = match result {
@@ -117,7 +116,7 @@ impl Config {
 
         let component = self.component.clone();
 
-        cx.spawn_and_update_tokio(
+        cx.spawn_and_update(
             async move { component.save_config(&fields).await },
             |config, result, _| {
                 config.local_error = result.err().map(|e| e.to_string().into());
@@ -147,7 +146,7 @@ impl Config {
         };
         let component = self.component.clone();
 
-        cx.spawn_and_update_tokio(
+        cx.spawn_and_update(
             async move {
                 let result =
                     unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
@@ -192,7 +191,7 @@ impl Config {
                     let component = component.clone();
                     let config_entity = config_entity_for_ok.clone();
 
-                    let task = Tokio::spawn(cx, async move {
+                    let task = cx.background_spawn(async move {
                         component.login(None, None, Some(fields)).await
                     });
 
@@ -203,8 +202,7 @@ impl Config {
                                 config.authenticating = false;
                                 config.login_form_view = None;
                                 config.local_error = match result {
-                                    Ok(Ok(())) => None,
-                                    Ok(Err(e)) => Some(e.to_string().into()),
+                                    Ok(()) => None,
                                     Err(e) => Some(e.to_string().into()),
                                 };
                                 cx.notify();
@@ -233,7 +231,7 @@ impl Config {
         self.authenticating = true;
 
         let component = self.component.clone();
-        cx.spawn_and_update_tokio(
+        cx.spawn_and_update(
             async move {
                 if let Some(flow) = component.get_logout_flow().await? {
                     match unblock(move || open_auth_webview(&flow.url, &flow.target)).await {

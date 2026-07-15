@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 use gpui::{App, AppContext, Global, ReadGlobal, Task};
+use runtime::TokioHandle;
 use std::future::Future;
 
 pub use tokio::task::JoinError;
@@ -43,7 +44,6 @@ pub fn defer<F: FnOnce()>(f: F) -> Deferred<F> {
 /// yourself and pass a Handle to `init_from_handle`.
 pub fn init(cx: &mut App) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        // Since we now have two executors, let's try to keep our footprint small
         .worker_threads(2)
         .enable_all()
         .build()
@@ -52,14 +52,6 @@ pub fn init(cx: &mut App) {
     let handle = runtime.handle().clone();
     cx.set_global(GlobalTokio {
         owned_runtime: Some(runtime),
-        handle,
-    });
-}
-
-/// Initializes the Tokio wrapper using a Tokio runtime handle.
-pub fn init_from_handle(cx: &mut App, handle: tokio::runtime::Handle) {
-    cx.set_global(GlobalTokio {
-        owned_runtime: None,
         handle,
     });
 }
@@ -126,7 +118,7 @@ impl Tokio {
         })
     }
 
-    pub fn handle(cx: &App) -> tokio::runtime::Handle {
-        GlobalTokio::global(cx).handle.clone()
+    pub fn handle(cx: &App) -> TokioHandle {
+        TokioHandle::new(GlobalTokio::global(cx).handle.clone())
     }
 }

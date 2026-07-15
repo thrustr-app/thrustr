@@ -10,7 +10,7 @@ use domain::component::{
 };
 use reqwest::Client;
 use std::sync::Arc;
-use tokio::runtime::Handle;
+use runtime::TokioHandle;
 use wasmtime::{Engine, ResourceLimiter, Store};
 
 mod capabilities;
@@ -28,7 +28,7 @@ pub struct Plugin {
     pub engine: Engine,
     pub storage: Arc<dyn ComponentStorage>,
     pub storefront_pre: Option<StorefrontPluginPre<PluginState>>,
-    pub tokio_handle: Handle,
+    pub tokio_handle: TokioHandle,
     pub http_client: Client,
     pub allowed_hosts: Arc<[String]>,
 }

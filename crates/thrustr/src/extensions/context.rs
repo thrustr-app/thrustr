@@ -1,4 +1,3 @@
-use crate::tokio::Tokio;
 use gpui::{AppContext, Context, Task};
 use std::future::Future;
 
@@ -7,16 +6,6 @@ pub trait SpawnTaskExt<T: 'static> {
     /// Spawns a future in the background and updates the entity with the given handler.
     /// Calls `notify()` after the handler is called.
     fn spawn_and_update<F, V>(
-        &mut self,
-        future: F,
-        handler: impl Fn(&mut T, V, &mut Context<T>) + Send + 'static,
-    ) where
-        F: Future<Output = V> + Send + 'static,
-        V: Send + 'static;
-
-    /// Spawns a future in the background using Tokio and updates the entity with the given handler.
-    /// Calls `notify()` after the handler is called.
-    fn spawn_and_update_tokio<F, V>(
         &mut self,
         future: F,
         handler: impl Fn(&mut T, V, &mut Context<T>) + Send + 'static,
@@ -37,25 +26,6 @@ impl<'a, T: 'static> SpawnTaskExt<T> for Context<'a, T> {
         let task = self.background_spawn(future);
         self.spawn(async move |entity, cx| {
             let result = task.await;
-            let _ = entity.update(cx, |entity, cx| {
-                handler(entity, result, cx);
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    fn spawn_and_update_tokio<F, V>(
-        &mut self,
-        future: F,
-        handler: impl Fn(&mut T, V, &mut Context<T>) + Send + 'static,
-    ) where
-        F: Future<Output = V> + Send + 'static,
-        V: Send + 'static,
-    {
-        let task = Tokio::spawn(self, future);
-        self.spawn(async move |entity, cx| {
-            let result = task.await.unwrap();
             let _ = entity.update(cx, |entity, cx| {
                 handler(entity, result, cx);
                 cx.notify();

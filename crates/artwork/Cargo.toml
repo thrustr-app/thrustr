@@ -8,6 +8,7 @@ edition = "2024"
 config.workspace = true
 connectivity.workspace = true
 domain.workspace = true
+runtime.workspace = true
 
 # External
 anyhow.workspace = true

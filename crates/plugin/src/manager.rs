@@ -6,13 +6,13 @@ use anyhow::Result;
 use config::paths::plugins_cache_dir;
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use reqwest::Client;
+use runtime::TokioHandle;
 use std::{
     fs::{self, File},
     io::{Read, Seek},
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::runtime::Handle;
 use wasmtime::{
     Config, Engine,
     component::{Component as WasmComponent, Linker},
@@ -24,12 +24,12 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
-    tokio_handle: Handle,
+    tokio_handle: TokioHandle,
     http_client: Client,
 }
 
 impl PluginManager {
-    pub fn new(storage: Arc<dyn ComponentStorage>, tokio_handle: Handle) -> Self {
+    pub fn new(storage: Arc<dyn ComponentStorage>, tokio_handle: TokioHandle) -> Self {
         let mut config = Config::new();
         config.wasm_component_model_async(true);
         config.consume_fuel(true);
@@ -57,15 +57,24 @@ impl PluginManager {
         }
     }
 
-    pub async fn load_plugin(&self, path: PathBuf) -> Result<Plugin> {
-        let (manifest, wasm_bytes, icon) = smol::unblock(move || read_plugin_archive(path)).await?;
+    pub(crate) fn tokio_handle(&self) -> &TokioHandle {
+        &self.tokio_handle
+    }
 
-        let component = smol::unblock({
-            let engine = self.engine.clone();
-            let plugin_id = manifest.plugin.id.clone();
-            move || load_component(&engine, &plugin_id, &wasm_bytes)
-        })
-        .await?;
+    pub async fn load_plugin(&self, path: PathBuf) -> Result<Plugin> {
+        let (manifest, wasm_bytes, icon) = self
+            .tokio_handle
+            .spawn_blocking(move || read_plugin_archive(path))
+            .await??;
+
+        let component = self
+            .tokio_handle
+            .spawn_blocking({
+                let engine = self.engine.clone();
+                let plugin_id = manifest.plugin.id.clone();
+                move || load_component(&engine, &plugin_id, &wasm_bytes)
+            })
+            .await??;
 
         let instance_pre = self.linker.instantiate_pre(&component)?;
         let storefront = StorefrontPluginPre::new(instance_pre).ok();

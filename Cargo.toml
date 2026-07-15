@@ -15,6 +15,7 @@ event = { path = "crates/event" }
 game = { path = "crates/game" }
 pdk = { path = "crates/pdk" }
 plugin = { path = "crates/plugin" }
+runtime = { path = "crates/runtime" }
 sqlite = { path = "crates/sqlite" }
 theme = { path = "crates/theme" }
 ui = { path = "crates/ui" }

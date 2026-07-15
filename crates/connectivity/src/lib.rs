@@ -1,3 +1,4 @@
+use runtime::TokioHandle;
 use std::{fmt, sync::Arc, time::Duration};
 use tokio::{
     net::TcpStream,
@@ -32,6 +33,7 @@ impl fmt::Display for ConnectivityState {
 }
 
 struct Inner {
+    tokio_handle: TokioHandle,
     tx: watch::Sender<ConnectivityState>,
     probe_sem: Arc<Semaphore>,
     last_probe: Mutex<Option<Instant>>,
@@ -80,14 +82,14 @@ pub struct ConnectivityManager {
 }
 
 impl ConnectivityManager {
-    pub fn new(min_probe_interval: Duration) -> Self {
-        Self::builder()
+    pub fn new(tokio_handle: TokioHandle, min_probe_interval: Duration) -> Self {
+        Self::builder(tokio_handle)
             .min_probe_interval(min_probe_interval)
             .build()
     }
 
-    pub fn builder() -> ConnectivityManagerBuilder {
-        ConnectivityManagerBuilder::default()
+    pub fn builder(tokio_handle: TokioHandle) -> ConnectivityManagerBuilder {
+        ConnectivityManagerBuilder::new(tokio_handle)
     }
 
     /// Instant snapshot of the current connectivity state.
@@ -129,7 +131,7 @@ impl ConnectivityManager {
         };
 
         let inner = Arc::clone(&self.inner);
-        tokio::spawn(async move {
+        self.inner.tokio_handle.spawn(async move {
             let _permit = permit;
 
             if inner.within_interval().await {
@@ -157,7 +159,7 @@ impl ConnectivityManager {
     pub fn start_polling(&self, interval: Duration) -> PollerHandle {
         let manager = self.clone();
 
-        let handle = tokio::spawn(async move {
+        let handle = self.inner.tokio_handle.spawn(async move {
             let mut ticker = tokio::time::interval(interval);
             ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -180,24 +182,24 @@ impl Drop for PollerHandle {
 }
 
 pub struct ConnectivityManagerBuilder {
+    tokio_handle: TokioHandle,
     min_probe_interval: Duration,
     probe_endpoints: Vec<&'static str>,
     probe_timeout: Duration,
     initial_state: ConnectivityState,
 }
 
-impl Default for ConnectivityManagerBuilder {
-    fn default() -> Self {
+impl ConnectivityManagerBuilder {
+    pub fn new(tokio_handle: TokioHandle) -> Self {
         Self {
+            tokio_handle,
             min_probe_interval: Duration::from_secs(5),
             probe_endpoints: vec!["1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"],
             probe_timeout: Duration::from_secs(3),
             initial_state: ConnectivityState::Online,
         }
     }
-}
 
-impl ConnectivityManagerBuilder {
     pub fn min_probe_interval(mut self, duration: Duration) -> Self {
         self.min_probe_interval = duration;
         self
@@ -223,6 +225,7 @@ impl ConnectivityManagerBuilder {
 
         ConnectivityManager {
             inner: Arc::new(Inner {
+                tokio_handle: self.tokio_handle,
                 tx,
                 probe_sem: Arc::new(Semaphore::new(1)),
                 last_probe: Mutex::new(None),
@@ -234,7 +237,13 @@ impl ConnectivityManagerBuilder {
     }
 
     pub async fn build_probing(self) -> ConnectivityManager {
-        let state = probe_all(&self.probe_endpoints, self.probe_timeout).await;
+        let endpoints = self.probe_endpoints.clone();
+        let timeout = self.probe_timeout;
+        let state = self
+            .tokio_handle
+            .spawn(async move { probe_all(&endpoints, timeout).await })
+            .await
+            .expect("connectivity probe task panicked");
         self.initial_state(state).build()
     }
 }
@@ -266,7 +275,7 @@ mod tests {
     use std::time::Duration;
 
     fn offline_manager() -> ConnectivityManager {
-        ConnectivityManagerBuilder::default()
+        ConnectivityManager::builder(TokioHandle::current())
             .initial_state(ConnectivityState::Offline)
             .probe_endpoints(vec!["127.0.0.1:1"])
             .probe_timeout(Duration::from_millis(100))
@@ -275,7 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn starts_with_given_state() {
-        let m = ConnectivityManagerBuilder::default()
+        let m = ConnectivityManager::builder(TokioHandle::current())
             .initial_state(ConnectivityState::Offline)
             .build();
         assert!(m.state().is_offline());
@@ -283,7 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn wait_until_online_returns_immediately_when_online() {
-        let m = ConnectivityManagerBuilder::default()
+        let m = ConnectivityManager::builder(TokioHandle::current())
             .initial_state(ConnectivityState::Online)
             .build();
 
@@ -311,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn report_error_deduplicated_within_interval() {
-        let m = ConnectivityManagerBuilder::default()
+        let m = ConnectivityManager::builder(TokioHandle::current())
             .initial_state(ConnectivityState::Online)
             .min_probe_interval(Duration::from_secs(60))
             .probe_endpoints(vec!["127.0.0.1:1"])
