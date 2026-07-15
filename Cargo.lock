@@ -1251,6 +1251,7 @@ dependencies = [
  "dashmap",
  "domain",
  "event",
+ "tracing",
 ]
 
 [[package]]
@@ -5661,6 +5662,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
+ "tracing",
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-http",
@@ -7920,6 +7922,7 @@ dependencies = [
  "sqlite",
  "theme",
  "tokio",
+ "tracing",
  "ui",
 ]
 

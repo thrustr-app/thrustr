@@ -178,7 +178,11 @@ impl RenderOnce for Dialog {
                         })
                         .on_action({
                             let on_ok_handler = on_ok_handler.clone();
+                            let disabled = self.disabled;
                             move |_: &ConfirmDialog, window, cx| {
+                                if disabled {
+                                    return;
+                                }
                                 on_ok_handler(&ClickEvent::default(), window, cx);
                                 window.close_dialog(cx);
                             }

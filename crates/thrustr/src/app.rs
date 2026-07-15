@@ -8,6 +8,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, div, rems, svg, transparent_black,
 };
 use theme::ThemeExt;
+use tracing::error;
 use ui::UiProvider;
 
 #[derive(IntoElement)]
@@ -176,9 +177,12 @@ impl App {
     fn load_plugins(cx: &mut Context<Self>) {
         let plugin_manager = cx.plugin_service();
         cx.background_spawn(async move {
-            let _ = plugin_manager
+            if let Err(err) = plugin_manager
                 .load_and_init(paths::plugins_dir().as_path())
-                .await;
+                .await
+            {
+                error!("failed to load plugins: {err:#}");
+            }
         })
         .detach();
     }

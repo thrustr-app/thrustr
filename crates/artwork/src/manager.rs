@@ -173,11 +173,6 @@ async fn run_with_retry(
                 }
                 return;
             }
-            Err(ref e) if is_network_error(e) => {
-                connectivity.report_error();
-                connectivity.wait_until_online().await;
-                jitter().await;
-            }
             Err(e) => {
                 attempts += 1;
                 if attempts >= MAX_ATTEMPTS {
@@ -187,12 +182,19 @@ async fn run_with_retry(
                     );
                     return;
                 }
+
+                if is_network_error(&e) {
+                    connectivity.report_error();
+                    connectivity.wait_until_online().await;
+                }
+
                 let delay = Duration::from_secs(2u64.pow(attempts - 1));
                 eprintln!(
                     "Task {} attempt {}/{} failed, retrying in {:?}: {}",
                     task.url, attempts, MAX_ATTEMPTS, delay, e
                 );
                 tokio::time::sleep(delay).await;
+                jitter().await;
             }
         }
     }

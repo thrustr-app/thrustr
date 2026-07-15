@@ -2,13 +2,14 @@ use crate::manager::PluginManager;
 use anyhow::{Result, anyhow};
 use component::ComponentRegistry;
 use domain::component::ComponentStorage;
-use futures::TryStreamExt;
+use futures::StreamExt;
 use runtime::TokioHandle;
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tracing::error;
 
 #[derive(Clone)]
 pub struct PluginService {
@@ -48,17 +49,23 @@ impl PluginService {
             }
         }
 
-        futures::stream::iter(paths.into_iter().map(Ok::<PathBuf, anyhow::Error>))
-            .try_for_each_concurrent(None, |path| async move {
-                let plugin = self.manager.load_plugin(path).await?;
-                event::emit("plugin");
-
-                let handle = self.component_registry.register(Arc::new(plugin));
-                handle.init().await.map_err(|err| anyhow!(err))?;
-
-                Ok(())
+        futures::stream::iter(paths)
+            .for_each_concurrent(None, |path| async move {
+                if let Err(err) = self.load_and_init_plugin(&path).await {
+                    error!("failed to load plugin {}: {err:#}", path.display());
+                }
             })
-            .await?;
+            .await;
+
+        Ok(())
+    }
+
+    async fn load_and_init_plugin(&self, path: &Path) -> Result<()> {
+        let plugin = self.manager.load_plugin(path.to_path_buf()).await?;
+        event::emit("plugin");
+
+        let handle = self.component_registry.register(Arc::new(plugin));
+        handle.init().await.map_err(|err| anyhow!(err))?;
 
         Ok(())
     }

@@ -51,9 +51,6 @@ impl Storefronts {
             .into_iter()
             .map(|storefront| {
                 let component = storefront.component();
-                if component.status().is_error() {
-                    self.has_errors = true;
-                }
                 Storefront {
                     id: component.id().to_owned().into(),
                     name: component.metadata().name.to_owned().into(),
@@ -69,6 +66,7 @@ impl Storefronts {
             .collect();
 
         storefronts.sort_by(|a, b| a.name.cmp(&b.name));
+        self.has_errors = storefronts.iter().any(|s| s.status.is_error());
         self.storefronts = storefronts;
         cx.notify();
     }
@@ -104,7 +102,7 @@ impl Render for Storefronts {
                 }
             }
 
-            let sorefront_id = storefront.id.clone();
+            let storefront_id = storefront.id.clone();
             let is_plugin = storefront.plugin.is_some();
 
             Card::new(storefront.id)
@@ -116,9 +114,9 @@ impl Render for Storefronts {
                 })
                 .on_click(move |_, _, cx| {
                     let route = if is_plugin {
-                        SettingsPage::Plugins(Some(sorefront_id.clone()))
+                        SettingsPage::Plugins(Some(storefront_id.clone()))
                     } else {
-                        SettingsPage::Storefronts(Some(sorefront_id.clone()))
+                        SettingsPage::Storefronts(Some(storefront_id.clone()))
                     };
 
                     cx.navigate(route);

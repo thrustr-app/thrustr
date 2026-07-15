@@ -1,6 +1,7 @@
 use crate::RegistryContext;
 use domain::component::{AuthFlow, Component, ComponentConfig, LoginMethod, Metadata, Status};
 use std::sync::{Arc, RwLock};
+use tracing::warn;
 
 mod storefront;
 
@@ -56,8 +57,11 @@ impl ComponentHandle {
         });
         result.map_err(|e| e.to_string())?;
 
-        // TODO: temporal
-        self.storefront().unwrap().get_games().await.unwrap();
+        if let Some(storefront) = self.storefront()
+            && let Err(err) = storefront.get_games().await
+        {
+            warn!(component = self.id(), "initial game sync failed: {err}");
+        }
         Ok(())
     }
 
