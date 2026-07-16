@@ -76,7 +76,7 @@ impl ArtworkManager {
         tokio_handle.spawn({
             let inner = inner.clone();
             let updates = updates.clone();
-            let mut connectivity_rx = connectivity.subscribe();
+            let mut connectivity_watcher = connectivity.subscribe();
 
             async move {
                 let mut join_set = JoinSet::new();
@@ -84,9 +84,9 @@ impl ArtworkManager {
                 loop {
                     while join_set.try_join_next().is_some() {}
 
-                    while connectivity_rx.borrow_and_update().is_offline() {
+                    while connectivity_watcher.current().is_offline() {
                         tokio::select! {
-                            _ = connectivity_rx.changed() => {}
+                            _ = connectivity_watcher.changed() => {}
                             Some(_) = join_set.join_next() => {}
                         }
                     }
