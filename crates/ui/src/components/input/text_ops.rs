@@ -138,6 +138,20 @@ impl TextOps {
         }
     }
 
+    /// Snap a byte offset to the closest grapheme boundary at or before it
+    ///
+    /// Offsets past the end of the text are clamped to `text.len()`.
+    pub fn snap_to_grapheme_boundary(text: &str, offset: usize) -> usize {
+        if offset >= text.len() {
+            return text.len();
+        }
+        text.grapheme_indices(true)
+            .take_while(|(i, _)| *i <= offset)
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(0)
+    }
+
     /// Convert a grapheme offset to a byte offset
     pub fn grapheme_offset_to_byte_offset(text: &str, grapheme_offset: usize) -> usize {
         text.grapheme_indices(true)
@@ -186,5 +200,39 @@ impl TextOps {
     /// Convert a UTF-16 range to byte range
     pub fn range_from_utf16(text: &str, range: &Range<usize>) -> Range<usize> {
         Self::offset_from_utf16(text, range.start)..Self::offset_from_utf16(text, range.end)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snap_to_grapheme_boundary_ascii() {
+        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 0), 0);
+        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 2), 2);
+        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 3), 3);
+        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 10), 3);
+    }
+
+    #[test]
+    fn snap_to_grapheme_boundary_multibyte() {
+        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 1), 0);
+        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 3), 3);
+        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 4), 3);
+        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 6), 6);
+    }
+
+    #[test]
+    fn snap_to_grapheme_boundary_combining() {
+        let s = "e\u{301}x";
+        assert_eq!(TextOps::snap_to_grapheme_boundary(s, 1), 0);
+        assert_eq!(TextOps::snap_to_grapheme_boundary(s, 2), 0);
+        assert_eq!(TextOps::snap_to_grapheme_boundary(s, 3), 3);
+    }
+
+    #[test]
+    fn snap_to_grapheme_boundary_empty() {
+        assert_eq!(TextOps::snap_to_grapheme_boundary("", 5), 0);
     }
 }

@@ -27,13 +27,15 @@ pub struct NewArtworkRow<'a> {
     pub accent_color: Option<i32>,
 }
 
-impl From<ArtworkRow> for Artwork {
-    fn from(row: ArtworkRow) -> Self {
-        Self {
+impl TryFrom<ArtworkRow> for Artwork {
+    type Error = <ArtworkKind as FromStr>::Err;
+
+    fn try_from(row: ArtworkRow) -> Result<Self, Self::Error> {
+        Ok(Self {
+            kind: ArtworkKind::from_str(&row.kind)?,
             hash: row.hash,
-            kind: ArtworkKind::from_str(&row.kind).unwrap(),
             position: row.position as u32,
             accent_color: row.accent_color.map(|c| Color::from_hex(c as u32)),
-        }
+        })
     }
 }

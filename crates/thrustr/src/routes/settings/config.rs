@@ -1,7 +1,6 @@
 use crate::{
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
-    globals::ComponentRegistryExt,
     navigation::NavigatorExt,
     webview::{WebviewError, open_auth_webview},
 };
@@ -46,16 +45,18 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(cx: &mut Context<Self>, component_id: &str) -> Self {
-        let component = cx.component(component_id).unwrap();
+    pub fn new(cx: &mut Context<Self>, component: ComponentHandle) -> Self {
         let metadata = component.metadata();
         let icon = metadata.icon.to_owned().map(image_to_gpui);
 
-        let values: HashMap<SharedString, SharedString> = component
-            .get_config_values()
-            .into_iter()
-            .map(|(k, v)| (k.into(), v.into()))
-            .collect();
+        let mut local_error = None;
+        let values: HashMap<SharedString, SharedString> = match component.get_config_values() {
+            Ok(values) => values.into_iter().map(|(k, v)| (k.into(), v.into())).collect(),
+            Err(err) => {
+                local_error = Some(err.into());
+                HashMap::new()
+            }
+        };
 
         let sections = component
             .config()
@@ -73,7 +74,7 @@ impl Config {
             component,
             sections,
             values,
-            local_error: None,
+            local_error,
             login_method: None,
             authenticating: false,
             login_form_view: None,

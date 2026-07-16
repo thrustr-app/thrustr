@@ -1,4 +1,4 @@
-use crate::routes;
+use crate::{globals::ComponentRegistryExt, routes};
 use domain::game::GameId;
 use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString};
 use std::{collections::VecDeque, mem::replace};
@@ -102,9 +102,13 @@ impl SettingsPage {
         match self {
             Self::Storefronts(None) => cx.new(routes::Storefronts::new).into(),
             Self::Plugins(None) => cx.new(routes::Plugins::new).into(),
-            Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => {
-                cx.new(|cx| routes::Config::new(cx, id)).into()
-            }
+            Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => match cx.component(id) {
+                Some(component) => cx.new(|cx| routes::Config::new(cx, component)).into(),
+                None => {
+                    cx.navigate_back();
+                    cx.new(|_| EmptyView).into()
+                }
+            },
             Self::Appearance => cx.new(|_| routes::Appearance).into(),
         }
     }
@@ -191,6 +195,10 @@ impl NavigatorExt for App {
     }
 
     fn navigate_back(&mut self) {
+        // Check first so observers are not notified when there is nothing to pop.
+        if self.global::<Navigator>().history.is_empty() {
+            return;
+        }
         self.global_mut::<Navigator>().navigate_back();
     }
 }

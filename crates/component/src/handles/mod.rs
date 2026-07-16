@@ -120,11 +120,11 @@ impl ComponentHandle {
             .map_err(|e| e.to_string())
     }
 
-    pub fn get_config_values(&self) -> Vec<(String, String)> {
+    pub fn get_config_values(&self) -> Result<Vec<(String, String)>, String> {
         self.context
             .component_storage
             .get_config_values(self.id())
-            .unwrap()
+            .map_err(|e| e.to_string())
     }
 
     pub async fn save_config(&self, fields: &[(String, String)]) -> Result<(), String> {

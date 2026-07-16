@@ -205,6 +205,11 @@ impl Library {
 
     fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
         let id_str = update.game_id.to_string();
+        // Render clones this Rc into frame closures, but gpui drops the element
+        // arena right after each draw and this runs between frames, so we should
+        // be the sole owner here and make_mut mutates in place. If this fires,
+        // something started holding the Rc across frames and make_mut is
+        // silently cloning the whole vec.
         debug_assert_eq!(
             Rc::strong_count(&self.games),
             1,

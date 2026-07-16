@@ -7,6 +7,7 @@ use diesel::{
 };
 use domain::artwork::{Artwork, ArtworkKind};
 use domain::game::{Game, GameId, GameListItem, GameRepository, NewGame};
+use tracing::warn;
 
 impl GameRepository for SqliteStorage {
     fn insert(&self, game: &NewGame) -> Result<Option<Game>> {
@@ -78,7 +79,13 @@ impl GameRepository for SqliteStorage {
                 name: game.name,
                 source_id: game.source_id,
                 cover_url: game.cover_url,
-                artwork: artwork.map(Artwork::from),
+                artwork: artwork.and_then(|row| {
+                    Artwork::try_from(row)
+                        .inspect_err(|err| {
+                            warn!(game_id = game.id, "skipping artwork row: {err}")
+                        })
+                        .ok()
+                }),
             })
             .collect();
         Ok(items)

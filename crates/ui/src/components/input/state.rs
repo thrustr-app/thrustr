@@ -139,9 +139,11 @@ impl InputState {
             if value != self.value {
                 self.value = value;
                 self.emitted_value = self.value.clone();
-                let len = self.value.len();
-                self.selected_range.start = self.selected_range.start.min(len);
-                self.selected_range.end = self.selected_range.end.min(len);
+                self.selected_range.start =
+                    TextOps::snap_to_grapheme_boundary(&self.value, self.selected_range.start);
+                self.selected_range.end =
+                    TextOps::snap_to_grapheme_boundary(&self.value, self.selected_range.end);
+                self.marked_range = None;
                 self.history.clear();
             }
         }
