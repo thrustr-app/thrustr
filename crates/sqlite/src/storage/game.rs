@@ -81,9 +81,7 @@ impl GameRepository for SqliteStorage {
                 cover_url: game.cover_url,
                 artwork: artwork.and_then(|row| {
                     Artwork::try_from(row)
-                        .inspect_err(|err| {
-                            warn!(game_id = game.id, "skipping artwork row: {err}")
-                        })
+                        .inspect_err(|err| warn!(game_id = game.id, "skipping artwork row: {err}"))
                         .ok()
                 }),
             })

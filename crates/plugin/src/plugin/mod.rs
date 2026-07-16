@@ -9,8 +9,8 @@ use domain::component::{
     LoginMethod, Metadata, Origin,
 };
 use reqwest::Client;
-use std::sync::Arc;
 use runtime::TokioHandle;
+use std::sync::Arc;
 use wasmtime::{Engine, ResourceLimiter, Store};
 
 mod capabilities;

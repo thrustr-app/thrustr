@@ -51,7 +51,10 @@ impl Config {
 
         let mut local_error = None;
         let values: HashMap<SharedString, SharedString> = match component.get_config_values() {
-            Ok(values) => values.into_iter().map(|(k, v)| (k.into(), v.into())).collect(),
+            Ok(values) => values
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
             Err(err) => {
                 local_error = Some(err.into());
                 HashMap::new()
