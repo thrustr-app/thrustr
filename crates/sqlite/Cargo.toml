@@ -12,7 +12,5 @@ anyhow.workspace = true
 diesel = { version = "2.3", features = ["sqlite", "serde_json", "r2d2", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = "2.3"
 libsqlite3-sys = { version = "0.37", features = ["bundled"] }
-serde.workspace = true
 serde_json.workspace = true
-smallvec.workspace = true
 tracing.workspace = true

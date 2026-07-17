@@ -9,9 +9,9 @@ use std::str::FromStr;
 #[diesel(check_for_backend(Sqlite))]
 pub struct ArtworkRow {
     pub game_id: i64,
-    pub hash: String,
     pub kind: String,
     pub position: i32,
+    pub hash: String,
     pub accent_color: Option<i32>,
 }
 
@@ -21,9 +21,9 @@ pub struct ArtworkRow {
 #[diesel(check_for_backend(Sqlite))]
 pub struct NewArtworkRow<'a> {
     pub game_id: i64,
-    pub hash: &'a str,
     pub kind: &'a str,
     pub position: i32,
+    pub hash: &'a str,
     pub accent_color: Option<i32>,
 }
 

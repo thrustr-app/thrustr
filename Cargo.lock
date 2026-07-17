@@ -7343,9 +7343,7 @@ dependencies = [
  "diesel_migrations",
  "domain",
  "libsqlite3-sys",
- "serde",
  "serde_json",
- "smallvec",
  "tracing",
 ]
 

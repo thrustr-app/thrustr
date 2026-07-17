@@ -11,18 +11,18 @@ CREATE TABLE games (
 );
 
 CREATE TABLE component_data (
-  component_id TEXT,
-  key TEXT,
+  component_id TEXT NOT NULL,
+  key TEXT NOT NULL,
   value BLOB NOT NULL,
   PRIMARY KEY (component_id, key)
-);
+) WITHOUT ROWID;
 
 CREATE TABLE component_config (
-  component_id TEXT,
-  field_id TEXT,
+  component_id TEXT NOT NULL,
+  field_id TEXT NOT NULL,
   value TEXT NOT NULL,
   PRIMARY KEY (component_id, field_id)
-);
+) WITHOUT ROWID;
 
 CREATE TABLE artwork (
   game_id INTEGER NOT NULL REFERENCES games (id) ON DELETE CASCADE,
@@ -37,6 +37,6 @@ CREATE TABLE artwork (
   )
 );
 
-CREATE INDEX idx_games_name ON games (name);
+CREATE INDEX idx_games_name ON games (name, id);
 
 CREATE INDEX idx_artwork_hash ON artwork (hash);

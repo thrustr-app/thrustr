@@ -27,12 +27,15 @@ impl GameRepository for SqliteStorage {
     fn insert_many(&self, games: &[NewGame]) -> Result<usize> {
         use crate::schema::games::dsl;
 
+        const CHUNK_SIZE: usize = 1000;
+
         let mut conn = self.pool.get()?;
         conn.transaction(|conn| {
             let mut inserted = 0;
-            for game in games {
+            for chunk in games.chunks(CHUNK_SIZE) {
+                let rows: Vec<NewGameRow> = chunk.iter().map(NewGameRow::from).collect();
                 inserted += diesel::insert_or_ignore_into(dsl::games)
-                    .values(NewGameRow::from(game))
+                    .values(rows)
                     .execute(conn)?;
             }
             Ok(inserted)
@@ -67,8 +70,12 @@ impl GameRepository for SqliteStorage {
 
         let mut conn = self.pool.get()?;
         let rows: Vec<(GameRow, Option<ArtworkRow>)> = dsl::games
-            .left_join(artwork::table.on(artwork::game_id.eq(dsl::id)))
-            .order(dsl::name.asc())
+            .left_join(
+                artwork::table.on(artwork::game_id
+                    .eq(dsl::id)
+                    .and(artwork::kind.eq(ArtworkKind::Cover.as_ref()))),
+            )
+            .order((dsl::name.asc(), dsl::id.asc()))
             .limit(limit as i64)
             .offset(offset as i64)
             .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
