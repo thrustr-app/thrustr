@@ -1,4 +1,5 @@
 use crate::SqliteStorage;
+use crate::id::{from_row_id, to_row_id};
 use crate::models::{ArtworkRow, GameRow, NewGameRow};
 use anyhow::Result;
 use diesel::{
@@ -49,7 +50,7 @@ impl GameRepository for SqliteStorage {
     fn get(&self, id: GameId) -> Result<Option<Game>> {
         use crate::schema::games::dsl;
 
-        let id = u64::from(id) as i64;
+        let id = to_row_id(id);
         let mut conn = self.pool.get()?;
         let row = dsl::games
             .find(id)
@@ -75,7 +76,7 @@ impl GameRepository for SqliteStorage {
         let items = rows
             .into_iter()
             .map(|(game, artwork)| GameListItem {
-                id: (game.id as u64).into(),
+                id: from_row_id(game.id),
                 name: game.name,
                 source_id: game.source_id,
                 cover_url: game.cover_url,
@@ -98,7 +99,7 @@ impl GameRepository for SqliteStorage {
         use crate::schema::artwork;
         use crate::schema::games::dsl;
 
-        let after = u64::from(after) as i64;
+        let after = to_row_id(after);
         let mut conn = self.pool.get()?;
         let rows: Vec<(i64, Option<String>)> = dsl::games
             .left_join(
@@ -117,7 +118,7 @@ impl GameRepository for SqliteStorage {
 
         Ok(rows
             .into_iter()
-            .filter_map(|(id, url)| url.map(|url| ((id as u64).into(), url)))
+            .filter_map(|(id, url)| url.map(|url| (from_row_id(id), url)))
             .collect())
     }
 }

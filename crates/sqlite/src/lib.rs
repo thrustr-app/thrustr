@@ -7,6 +7,7 @@ use diesel::{
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use std::{path::Path, time::Duration};
 
+mod id;
 mod models;
 mod schema;
 mod storage;

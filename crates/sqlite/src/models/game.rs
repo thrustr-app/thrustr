@@ -1,3 +1,4 @@
+use crate::id::from_row_id;
 use crate::schema::games;
 use diesel::{
     Selectable,
@@ -37,7 +38,7 @@ pub struct NewGameRow<'a> {
 impl From<GameRow> for Game {
     fn from(row: GameRow) -> Self {
         Self {
-            id: (row.id as u64).into(),
+            id: from_row_id(row.id),
             name: row.name,
             source: GameSource {
                 id: row.source_id,

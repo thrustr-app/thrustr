@@ -1,4 +1,4 @@
-use crate::{SqliteStorage, models::NewArtworkRow};
+use crate::{SqliteStorage, id::to_row_id, models::NewArtworkRow};
 use anyhow::Result;
 use diesel::{ExpressionMethods, RunQueryDsl};
 use domain::{
@@ -11,7 +11,7 @@ impl ArtworkRepository for SqliteStorage {
         use crate::schema::artwork::dsl;
 
         let row = NewArtworkRow {
-            game_id: u64::from(game_id) as i64,
+            game_id: to_row_id(game_id),
             hash: &artwork.hash,
             accent_color: artwork.accent_color.map(|c| c.to_hex() as i32),
             kind: artwork.kind.as_ref(),
