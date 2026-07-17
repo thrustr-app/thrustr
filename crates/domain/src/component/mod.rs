@@ -2,8 +2,8 @@ use crate::component::capabilities::Storefront;
 use async_trait::async_trait;
 use std::sync::Arc;
 
-pub mod capabilities;
 mod auth;
+pub mod capabilities;
 mod config;
 mod error;
 mod image;

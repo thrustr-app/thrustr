@@ -7,7 +7,10 @@ use crate::{
 };
 use artwork::ArtworkReady;
 use config::paths;
-use domain::{artwork::Color, game::GameListItem};
+use domain::{
+    artwork::Color,
+    game::{GameId, GameListItem},
+};
 use gpui::{
     App, AppContext, Context, Entity, FontWeight, Hsla, Image, ImageSource, InteractiveElement,
     IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString,
@@ -31,7 +34,8 @@ const CARD_ICON_SIZE_REM: f32 = 1.5;
 
 #[derive(Clone)]
 struct GameEntry {
-    id: SharedString,
+    id: GameId,
+    element_id: SharedString,
     name: SharedString,
     cover_url: Option<SharedString>,
     cover_path: Option<Arc<Path>>,
@@ -49,7 +53,8 @@ impl GameEntry {
             None => (None, None),
         };
         Self {
-            id: item.id.to_string().into(),
+            id: item.id,
+            element_id: item.id.to_string().into(),
             name: item.name.into(),
             cover_url: item.cover_url.map(Into::into),
             source_icon: icons.get(&item.source_id).cloned(),
@@ -85,7 +90,11 @@ impl GameCard {
 impl RenderOnce for GameCard {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let group_name = self.game.as_ref().map(|g| g.id.clone()).unwrap_or_default();
+        let group_name = self
+            .game
+            .as_ref()
+            .map(|g| g.element_id.clone())
+            .unwrap_or_default();
 
         let mut base = div()
             .id(group_name.clone())
@@ -103,11 +112,8 @@ impl RenderOnce for GameCard {
             return base;
         };
 
-        let game_id = game.id.parse::<u64>().ok();
         base = base.on_click(move |_, _, cx| {
-            if let Some(id) = game_id {
-                cx.navigate(Page::Game(id.into()));
-            }
+            cx.navigate(Page::Game(game.id));
         });
 
         let mut cover = div()
@@ -123,10 +129,10 @@ impl RenderOnce for GameCard {
                 .h_full()
                 .rounded(theme.radius.md);
 
-            if let (Some(url), Ok(game_id)) = (game.cover_url, game.id.parse::<u64>()) {
+            if let Some(url) = game.cover_url {
                 let artwork_service = cx.artwork_service();
                 cover_img = cover_img.with_fallback(move || {
-                    artwork_service.enqueue_cover(game_id.into(), &url);
+                    artwork_service.enqueue_cover(game.id, &url);
                     div().into_any_element()
                 });
             }
@@ -204,7 +210,6 @@ impl Library {
     }
 
     fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
-        let id_str = update.game_id.to_string();
         // Render clones this Rc into frame closures, but gpui drops the element
         // arena right after each draw and this runs between frames, so we should
         // be the sole owner here and make_mut mutates in place. If this fires,
@@ -216,7 +221,7 @@ impl Library {
             "render frame still holds Rc clone - make_mut will clone the entire games vec"
         );
         let games = Rc::make_mut(&mut self.games);
-        if let Some(entry) = games.iter_mut().find(|g| g.id.as_ref() == id_str) {
+        if let Some(entry) = games.iter_mut().find(|g| g.id == update.game_id) {
             let path = cover_path(&update.hash);
             entry.cover_path = Some(path.clone());
             entry.accent_color = update.accent_color.map(accent_hsla);
