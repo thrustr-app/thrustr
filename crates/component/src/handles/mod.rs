@@ -1,5 +1,7 @@
 use crate::RegistryContext;
-use domain::component::{AuthFlow, Component, ComponentConfig, LoginMethod, Metadata, Status};
+use domain::component::{
+    AuthFlow, Component, ComponentConfig, LoginMethod, Metadata, Status, StatusEvent,
+};
 use std::sync::{Arc, RwLock};
 use tracing::warn;
 
@@ -49,11 +51,11 @@ impl ComponentHandle {
         if !self.status().can_init() {
             return Err("Cannot initialize from current state".into());
         }
-        self.set_status(Status::Initializing);
+        self.transition(StatusEvent::InitStarted);
         let result = self.component.init().await;
-        self.set_status(match &result {
-            Ok(_) => Status::Active,
-            Err(e) => Status::InitError(e.clone()),
+        self.transition(match &result {
+            Ok(_) => StatusEvent::InitSucceeded,
+            Err(e) => StatusEvent::InitFailed(e.clone()),
         });
         result.map_err(|e| e.to_string())?;
 
@@ -74,16 +76,9 @@ impl ComponentHandle {
         if !self.status().can_login() {
             return Err("Cannot login from current state".into());
         }
-        let prior = self.status();
         let result = self.component.login(url, body, fields).await;
-        if result.is_ok() {
-            self.set_status(match prior {
-                Status::Unauthenticated => Status::Active,
-                _ => Status::Inactive,
-            });
-            if self.status().can_init() {
-                return self.init().await;
-            }
+        if result.is_ok() && self.transition(StatusEvent::LoggedIn).can_init() {
+            return self.init().await;
         }
         result.map_err(|e| e.to_string())
     }
@@ -94,7 +89,7 @@ impl ComponentHandle {
         }
         let result = self.component.logout().await;
         if result.is_ok() {
-            self.set_status(Status::Unauthenticated);
+            self.transition(StatusEvent::LoggedOut);
         }
         result.map_err(|e| e.to_string())
     }
@@ -144,8 +139,13 @@ impl ComponentHandle {
         Ok(())
     }
 
-    fn set_status(&self, status: Status) {
-        *self.status.write().unwrap() = status;
+    fn transition(&self, event: StatusEvent) -> Status {
+        let status = {
+            let mut guard = self.status.write().unwrap();
+            *guard = guard.apply(event);
+            guard.clone()
+        };
         event::emit("component");
+        status
     }
 }

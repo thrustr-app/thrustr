@@ -3,15 +3,21 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 pub mod capabilities;
+mod auth;
 mod config;
 mod error;
+mod image;
+mod metadata;
+mod status;
 mod storage;
-mod value_objects;
 
+pub use auth::*;
 pub use config::*;
 pub use error::*;
+pub use image::*;
+pub use metadata::*;
+pub use status::*;
 pub use storage::*;
-pub use value_objects::*;
 
 /// A component is a unit of functionality provided by the core application or by a plugin.
 /// A component may expose one or more capabilities.
