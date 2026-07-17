@@ -20,7 +20,7 @@ impl StorefrontHandle {
         &self.component
     }
 
-    pub async fn get_games(&self) -> Result<(), String> {
+    pub async fn sync_games(&self) -> Result<(), String> {
         if !self.component.status().is_active() {
             return Err("Storefront is not active.".into());
         }

@@ -60,7 +60,7 @@ impl ComponentHandle {
         result.map_err(|e| e.to_string())?;
 
         if let Some(storefront) = self.storefront()
-            && let Err(err) = storefront.get_games().await
+            && let Err(err) = storefront.sync_games().await
         {
             warn!(component = self.id(), "initial game sync failed: {err}");
         }
