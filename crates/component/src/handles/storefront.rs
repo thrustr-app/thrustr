@@ -27,7 +27,7 @@ impl StorefrontHandle {
 
         let new_games = self.storefront.get_games().await.map_err(|e| {
             let error = e.to_string();
-            self.component.transition(StatusEvent::SyncFailed(e));
+            self.component.transition(StatusEvent::OperationFailed(e));
             error
         })?;
 

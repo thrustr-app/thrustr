@@ -64,8 +64,8 @@ impl PluginService {
         let plugin = self.manager.load_plugin(path.to_path_buf()).await?;
         event::emit("plugin");
 
-        let handle = self.component_registry.register(Arc::new(plugin));
-        handle.init().await.map_err(|err| anyhow!(err))?;
+        let component = self.component_registry.register(Arc::new(plugin));
+        component.init().await.map_err(|err| anyhow!(err))?;
 
         Ok(())
     }

@@ -130,7 +130,7 @@ impl ComponentHandle {
             .set_config_values(self.id(), &fields)
             .map_err(|e| e.to_string())?;
 
-        if self.status().can_init() {
+        if self.transition(StatusEvent::ConfigSaved).can_init() {
             return self.init().await;
         }
 
@@ -138,12 +138,29 @@ impl ComponentHandle {
     }
 
     fn transition(&self, event: StatusEvent) -> Status {
-        let status = {
+        let (status, changed) = {
             let mut guard = self.status.write().unwrap();
-            *guard = guard.apply(event);
-            guard.clone()
+            let event_debug = format!("{event:?}");
+            match guard.apply(event) {
+                Some(next) => {
+                    let changed = next != *guard;
+                    *guard = next;
+                    (guard.clone(), changed)
+                }
+                None => {
+                    warn!(
+                        component = self.id(),
+                        status = ?*guard,
+                        event = event_debug,
+                        "ignoring invalid status transition"
+                    );
+                    (guard.clone(), false)
+                }
+            }
         };
-        event::emit("component");
+        if changed {
+            event::emit("component");
+        }
         status
     }
 }
