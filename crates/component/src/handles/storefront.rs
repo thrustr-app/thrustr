@@ -35,11 +35,14 @@ impl StorefrontHandle {
             return Ok(());
         }
 
+        let repository = self.component.context.game_repository.clone();
         let inserted = self
             .component
             .context
-            .game_repository
-            .insert_many(&new_games)
+            .tokio_handle
+            .spawn_blocking(move || repository.insert_many(&new_games))
+            .await
+            .map_err(|err| err.to_string())?
             .map_err(|err| err.to_string())?;
 
         if inserted == 0 {

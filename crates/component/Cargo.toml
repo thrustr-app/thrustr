@@ -8,4 +8,5 @@ artwork.workspace = true
 dashmap.workspace = true
 domain.workspace = true
 event.workspace = true
+runtime.workspace = true
 tracing.workspace = true

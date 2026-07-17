@@ -2,6 +2,7 @@ use artwork::ArtworkService;
 use component::{ComponentHandle, ComponentRegistry, RegistryContext, StorefrontHandle};
 use domain::{component::ComponentStorage, game::GameRepository};
 use gpui::{App, Global};
+use runtime::TokioHandle;
 use std::sync::Arc;
 
 pub(super) struct ComponentRegistryGlobal(ComponentRegistry);
@@ -10,11 +11,13 @@ impl Global for ComponentRegistryGlobal {}
 
 pub(super) fn init(
     cx: &mut App,
+    tokio_handle: TokioHandle,
     component_storage: Arc<dyn ComponentStorage>,
     game_repository: Arc<dyn GameRepository>,
     artwork_service: ArtworkService,
 ) -> ComponentRegistry {
     let registry = ComponentRegistry::new(RegistryContext {
+        tokio_handle,
         component_storage,
         game_repository,
         artwork_service,

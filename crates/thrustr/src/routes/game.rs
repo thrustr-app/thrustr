@@ -1,8 +1,9 @@
+use crate::extensions::SpawnTaskExt;
 use crate::globals::GameServiceExt;
 use domain::game::GameId;
 use gpui::{
-    App, Context, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Window,
-    div, linear_color_stop, linear_gradient, relative, rems, rgb,
+    Context, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
+    linear_color_stop, linear_gradient, relative, rems, rgb,
 };
 use theme::ThemeExt;
 
@@ -15,17 +16,26 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new(id: GameId, cx: &mut App) -> Self {
-        let game = cx.game_service().get(id).ok().flatten();
-        let (name, summary) = match game {
-            Some(game) => (game.name.into(), game.summary.map(Into::into)),
-            None => (SharedString::default(), None),
-        };
+    pub fn new(id: GameId, cx: &mut Context<Self>) -> Self {
+        let game_service = cx.game_service();
+        cx.spawn_and_update(
+            async move { game_service.get(id) },
+            |game, result, _| match result {
+                Ok(Some(loaded)) => {
+                    game.name = loaded.name.into();
+                    game.summary = loaded.summary.map(Into::into);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    println!("{:?}", e);
+                }
+            },
+        );
 
         Self {
             _id: id,
-            name,
-            summary,
+            name: SharedString::default(),
+            summary: None,
         }
     }
 }

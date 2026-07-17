@@ -5,10 +5,12 @@ use domain::{
     component::{Component, ComponentStorage},
     game::GameRepository,
 };
+use runtime::TokioHandle;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RegistryContext {
+    pub tokio_handle: TokioHandle,
     pub component_storage: Arc<dyn ComponentStorage>,
     pub game_repository: Arc<dyn GameRepository>,
     pub artwork_service: ArtworkService,

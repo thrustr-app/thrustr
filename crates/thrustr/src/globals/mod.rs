@@ -21,12 +21,19 @@ pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
     let game_repo = storage.clone();
 
     let connectivity = ConnectivityManager::builder(tokio_handle.clone()).build_probing();
-    let artwork_service = ArtworkService::new(tokio_handle, connectivity, artwork_repo, game_repo);
+    let artwork_service =
+        ArtworkService::new(tokio_handle.clone(), connectivity, artwork_repo, game_repo);
 
     artwork_global::init(cx, artwork_service.clone());
     artwork_service.trigger_backfill();
 
-    let registry = component::init(cx, storage.clone(), storage.clone(), artwork_service);
+    let registry = component::init(
+        cx,
+        tokio_handle,
+        storage.clone(),
+        storage.clone(),
+        artwork_service,
+    );
     plugin::init(cx, storage.clone(), registry);
     game::init(cx, storage);
 }
