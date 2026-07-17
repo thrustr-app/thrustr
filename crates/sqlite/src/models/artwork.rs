@@ -35,7 +35,7 @@ impl TryFrom<ArtworkRow> for Artwork {
             kind: ArtworkKind::from_str(&row.kind)?,
             hash: row.hash,
             position: row.position as u32,
-            accent_color: row.accent_color.map(|c| Color::from_hex(c as u32)),
+            accent_color: row.accent_color.map(|c| Color::from(c as u32)),
         })
     }
 }

@@ -11,7 +11,7 @@ pub mod wit {
     });
 }
 
-pub use wit::exports::thrustr::plugin::base::AuthFlow;
+pub use wit::exports::thrustr::plugin::base::{AuthFlow, LoginRequest};
 pub use wit::exports::thrustr::plugin::storefront::Guest as Storefront;
 pub use wit::thrustr::plugin::types::{Error, Game, GameVersion, Platform};
 
@@ -41,11 +41,7 @@ pub trait Plugin {
         async { Ok(None) }
     }
 
-    fn login(
-        url: Option<String>,
-        body: Option<String>,
-        fields: Option<HashMap<String, String>>,
-    ) -> impl Future<Output = Result<(), Error>> {
+    fn login(request: LoginRequest) -> impl Future<Output = Result<(), Error>> {
         async { Ok(()) }
     }
 
@@ -73,12 +69,9 @@ macro_rules! register_storefront {
                 <$plugin_type as $crate::Plugin>::get_logout_flow().await
             }
             async fn login(
-                url: Option<String>,
-                body: Option<String>,
-                fields: Option<Vec<(String, String)>>,
+                request: $crate::LoginRequest,
             ) -> Result<(), $crate::Error> {
-                let fields = fields.map(|v| v.into_iter().collect::<std::collections::HashMap<_, _>>());
-                <$plugin_type as $crate::Plugin>::login(url, body, fields).await
+                <$plugin_type as $crate::Plugin>::login(request).await
             }
             async fn logout() -> Result<(), $crate::Error> {
                 <$plugin_type as $crate::Plugin>::logout().await

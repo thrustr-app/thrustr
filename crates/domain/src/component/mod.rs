@@ -40,12 +40,7 @@ pub trait Component: Send + Sync {
 
     async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
 
-    async fn login(
-        &self,
-        url: Option<String>,
-        body: Option<String>,
-        fields: Option<Vec<(String, String)>>,
-    ) -> Result<(), Error>;
+    async fn login(&self, request: LoginRequest) -> Result<(), Error>;
 
     async fn logout(&self) -> Result<(), Error>;
 

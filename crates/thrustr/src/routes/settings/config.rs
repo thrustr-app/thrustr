@@ -6,7 +6,7 @@ use crate::{
 };
 use component::ComponentHandle;
 use domain::component::{
-    Field as ConfigField, LoginForm, LoginMethod, Section as ConfigSection, Status,
+    Field as ConfigField, LoginForm, LoginMethod, LoginRequest, Section as ConfigSection, Status,
 };
 use gpui::{
     AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
@@ -155,7 +155,7 @@ impl Config {
                 let result =
                     unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
                 match result {
-                    Ok((url, body)) => component.login(Some(url), Some(body), None).await,
+                    Ok((url, body)) => component.login(LoginRequest::Flow { url, body }).await,
                     Err(WebviewError::UserCancelled) => Ok(()),
                     Err(WebviewError::Internal(e)) => Err(e),
                 }
@@ -196,7 +196,7 @@ impl Config {
                     let config_entity = config_entity_for_ok.clone();
 
                     let task = cx.background_spawn(async move {
-                        component.login(None, None, Some(fields)).await
+                        component.login(LoginRequest::Form { fields }).await
                     });
 
                     cx.spawn(async move |cx| {

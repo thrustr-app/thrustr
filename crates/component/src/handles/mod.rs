@@ -1,6 +1,6 @@
 use crate::RegistryContext;
 use domain::component::{
-    AuthFlow, Component, ComponentConfig, LoginMethod, Metadata, Status, StatusEvent,
+    AuthFlow, Component, ComponentConfig, LoginMethod, LoginRequest, Metadata, Status, StatusEvent,
 };
 use std::sync::{Arc, RwLock};
 use tracing::warn;
@@ -67,16 +67,11 @@ impl ComponentHandle {
         Ok(())
     }
 
-    pub async fn login(
-        &self,
-        url: Option<String>,
-        body: Option<String>,
-        fields: Option<Vec<(String, String)>>,
-    ) -> Result<(), String> {
+    pub async fn login(&self, request: LoginRequest) -> Result<(), String> {
         if !self.status().can_login() {
             return Err("Cannot login from current state".into());
         }
-        let result = self.component.login(url, body, fields).await;
+        let result = self.component.login(request).await;
         if result.is_ok() && self.transition(StatusEvent::LoggedIn).can_init() {
             return self.init().await;
         }

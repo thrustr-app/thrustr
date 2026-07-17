@@ -45,7 +45,7 @@ struct GameEntry {
 
 impl GameEntry {
     fn from_list_item(item: GameListItem, icons: &HashMap<String, Arc<Image>>) -> Self {
-        let (cover_path, accent_color) = match item.artwork {
+        let (cover_path, accent_color) = match item.cover {
             Some(art) => (
                 Some(cover_path(&art.hash)),
                 art.accent_color.map(accent_hsla),
@@ -69,7 +69,7 @@ fn cover_path(hash: &str) -> Arc<Path> {
 }
 
 fn accent_hsla(color: Color) -> Hsla {
-    rgb(color.to_hex()).into()
+    rgb(color.into()).into()
 }
 
 #[derive(IntoElement)]

@@ -2153,8 +2153,8 @@ dependencies = [
  "async-trait",
  "semver",
  "serde",
- "smallvec",
  "strum 0.28.0",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2294,16 +2294,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
-]
-
-[[package]]
-name = "epic-games"
-version = "0.1.0"
-dependencies = [
- "pdk",
- "serde",
- "serde_json",
- "url",
 ]
 
 [[package]]

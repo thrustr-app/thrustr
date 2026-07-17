@@ -1,9 +1,9 @@
 use crate::api::{get_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use pdk::{
-    Error, Game, GameVersion, Platform, Plugin, Storefront, kv_store::KvStore, register_storefront,
+    Error, Game, GameVersion, LoginRequest, Platform, Plugin, Storefront, kv_store::KvStore,
+    register_storefront,
 };
-use std::collections::HashMap;
 
 mod api;
 mod error;
@@ -26,30 +26,37 @@ impl Plugin for LegacyGames {
         Ok(())
     }
 
-    async fn login(
-        _url: Option<String>,
-        _body: Option<String>,
-        fields: Option<HashMap<String, String>>,
-    ) -> Result<(), Error> {
-        let fields = fields.ok_or(Error::auth("fields should not be None"))?;
-        let email = fields
-            .get("email")
-            .ok_or(Error::auth("email is mandatory"))?;
-        let password = fields.get("password");
+    async fn login(request: LoginRequest) -> Result<(), Error> {
+        if let LoginRequest::Form(form) = request {
+            let email = form
+                .fields
+                .iter()
+                .find(|(key, _)| key == "email")
+                .map(|(_, value)| value)
+                .ok_or(Error::auth("email is mandatory"))?;
 
-        if let Some(password) = password {
-            let token = STANDARD.encode(format!("{email}:{password}"));
-            let user_id = login(&token).await?.into_result()?.user_id;
+            let password = form
+                .fields
+                .iter()
+                .find(|(key, _)| key == "password")
+                .map(|(_, value)| value);
 
-            KvStore::set("user_id", &user_id)?;
-            KvStore::set("token", &token)?;
+            if let Some(password) = password {
+                let token = STANDARD.encode(format!("{email}:{password}"));
+                let user_id = login(&token).await?.into_result()?.user_id;
+
+                KvStore::set("user_id", &user_id)?;
+                KvStore::set("token", &token)?;
+            } else {
+                giveaway_login(email).await?.into_result()?;
+            }
+
+            KvStore::set("email", email)?;
+
+            Ok(())
         } else {
-            giveaway_login(email).await?.into_result()?;
+            Err(Error::auth("fields should not be None"))
         }
-
-        KvStore::set("email", email)?;
-
-        Ok(())
     }
 
     async fn logout() -> Result<(), Error> {

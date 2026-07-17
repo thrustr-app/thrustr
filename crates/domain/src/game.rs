@@ -53,7 +53,7 @@ pub struct GameListItem {
     pub name: String,
     pub source_id: String,
     pub cover_url: Option<String>,
-    pub artwork: Option<Artwork>,
+    pub cover: Option<Artwork>,
 }
 
 pub trait GameRepository: Send + Sync {

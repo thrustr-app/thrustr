@@ -1,20 +1,13 @@
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Error {
+    #[error("Authentication error: {0}")]
     Auth(String),
+
+    #[error("Configuration error: {0}")]
     Config(String),
+
+    #[error("Error: {0}")]
     Other(String),
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Config(msg) => write!(f, "Configuration error: {msg}"),
-            Error::Auth(msg) => write!(f, "Authentication error: {msg}"),
-            Error::Other(msg) => write!(f, "Error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}

@@ -1,12 +1,13 @@
 use crate::wit::exports::thrustr::plugin::base::{
-    AuthFlow as PluginAuthFlow, Error as PluginError,
+    AuthFlow as PluginAuthFlow, Error as PluginError, LoginFlow, LoginForm,
+    LoginRequest as PluginLoginRequest,
 };
 use crate::wit::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
 use domain::component::capabilities::Storefront;
 use domain::component::{
     AuthFlow, Component, ComponentConfig, ComponentStorage, Error as ComponentError, Image,
-    LoginMethod, Metadata, Origin,
+    LoginMethod, LoginRequest, Metadata, Origin,
 };
 use reqwest::Client;
 use runtime::TokioHandle;
@@ -156,18 +157,13 @@ impl Component for Plugin {
         Ok(flow.map(Into::into))
     }
 
-    async fn login(
-        &self,
-        url: Option<String>,
-        body: Option<String>,
-        fields: Option<Vec<(String, String)>>,
-    ) -> Result<(), ComponentError> {
+    async fn login(&self, request: LoginRequest) -> Result<(), ComponentError> {
         self.call(|instance, mut store| async move {
             store
                 .run_concurrent(async |accessor| {
                     instance
                         .thrustr_plugin_base()
-                        .call_login(accessor, url, body, fields)
+                        .call_login(accessor, request.into())
                         .await
                 })
                 .await
@@ -221,6 +217,15 @@ impl From<PluginError> for ComponentError {
             PluginError::Auth(msg) => ComponentError::Auth(msg),
             PluginError::Config(msg) => ComponentError::Config(msg),
             PluginError::Other(msg) => ComponentError::Other(msg),
+        }
+    }
+}
+
+impl From<LoginRequest> for PluginLoginRequest {
+    fn from(value: LoginRequest) -> Self {
+        match value {
+            LoginRequest::Flow { url, body } => PluginLoginRequest::Flow(LoginFlow { url, body }),
+            LoginRequest::Form { fields } => PluginLoginRequest::Form(LoginForm { fields }),
         }
     }
 }

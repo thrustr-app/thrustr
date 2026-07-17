@@ -2,6 +2,12 @@ use crate::component::Field;
 use serde::Deserialize;
 
 #[derive(Debug, Clone)]
+pub enum LoginRequest {
+    Flow { url: String, body: String },
+    Form { fields: Vec<(String, String)> },
+}
+
+#[derive(Debug, Clone)]
 pub enum LoginMethod {
     Flow(AuthFlow),
     Form(LoginForm),

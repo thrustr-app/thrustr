@@ -75,12 +75,12 @@ impl GameRepository for SqliteStorage {
             .load(&mut conn)?;
         let items = rows
             .into_iter()
-            .map(|(game, artwork)| GameListItem {
+            .map(|(game, cover)| GameListItem {
                 id: from_row_id(game.id),
                 name: game.name,
                 source_id: game.source_id,
                 cover_url: game.cover_url,
-                artwork: artwork.and_then(|row| {
+                cover: cover.and_then(|row| {
                     Artwork::try_from(row)
                         .inspect_err(|err| warn!(game_id = game.id, "skipping artwork row: {err}"))
                         .ok()

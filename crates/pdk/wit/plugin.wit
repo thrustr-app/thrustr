@@ -8,10 +8,24 @@ interface base {
         target: string,
     }
 
+    record login-flow {
+        url: string,
+        body: string,
+    }
+
+    record login-form {
+        fields: list<tuple<string, string>>,
+    }
+
+    variant login-request {
+        flow(login-flow),
+        form(login-form),
+    }
+
     init: async func() -> result<_, error>;
     get-login-flow: async func() -> result<option<auth-flow>, error>;
     get-logout-flow: async func() -> result<option<auth-flow>, error>;
-    login: async func(url: option<string>, body: option<string>, fields: option<list<tuple<string, string>>>) -> result<_, error>;
+    login: async func(request: login-request) -> result<_, error>;
     logout: async func() -> result<_, error>;
     validate-config: async func(fields: list<tuple<string, string>>) -> result<_, error>;
 }

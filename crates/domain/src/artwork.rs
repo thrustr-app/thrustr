@@ -25,17 +25,19 @@ pub struct Color {
     pub b: u8,
 }
 
-impl Color {
-    pub fn to_hex(self) -> u32 {
-        ((self.r as u32) << 16) | ((self.g as u32) << 8) | self.b as u32
-    }
-
-    pub fn from_hex(value: u32) -> Self {
+impl From<u32> for Color {
+    fn from(value: u32) -> Self {
         Self {
             r: ((value >> 16) & 0xFF) as u8,
             g: ((value >> 8) & 0xFF) as u8,
             b: (value & 0xFF) as u8,
         }
+    }
+}
+
+impl From<Color> for u32 {
+    fn from(color: Color) -> Self {
+        ((color.r as u32) << 16) | ((color.g as u32) << 8) | color.b as u32
     }
 }
 
