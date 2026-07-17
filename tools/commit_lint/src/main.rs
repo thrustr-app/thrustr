@@ -18,6 +18,7 @@ fn main() {
         ("style", "Formatting, whitespace, missing semicolons, etc."),
         ("ci", "CI/CD configuration and scripts"),
         ("perf", "Performance improvements"),
+        ("revert", "Revert a previous commit"),
     ];
 
     let is_valid = valid_types.iter().any(|(t, _)| {
