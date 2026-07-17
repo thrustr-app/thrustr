@@ -1,12 +1,13 @@
 use crate::{ComponentHandle, StorefrontHandle};
 use artwork::ArtworkService;
-use dashmap::DashMap;
+use dashmap::{DashMap, Entry};
 use domain::{
     component::{Component, ComponentStorage},
     game::GameRepository,
 };
 use runtime::TokioHandle;
 use std::sync::Arc;
+use thiserror::Error;
 
 #[derive(Clone)]
 pub struct RegistryContext {
@@ -14,6 +15,12 @@ pub struct RegistryContext {
     pub component_storage: Arc<dyn ComponentStorage>,
     pub game_repository: Arc<dyn GameRepository>,
     pub artwork_service: ArtworkService,
+}
+
+#[derive(Debug, Error)]
+#[error("component `{id}` is already registered")]
+pub struct DuplicateComponentError {
+    pub id: String,
 }
 
 #[derive(Clone)]
@@ -30,11 +37,21 @@ impl ComponentRegistry {
         }
     }
 
-    pub fn register(&self, component: Arc<dyn Component>) -> ComponentHandle {
+    pub fn register(
+        &self,
+        component: Arc<dyn Component>,
+    ) -> Result<ComponentHandle, DuplicateComponentError> {
         let id = component.metadata().id.to_owned();
-        let handle = ComponentHandle::new(component, self.context.clone());
-        self.components.insert(id, handle.clone());
-        handle
+        match self.components.entry(id) {
+            Entry::Occupied(entry) => Err(DuplicateComponentError {
+                id: entry.key().clone(),
+            }),
+            Entry::Vacant(entry) => {
+                let handle = ComponentHandle::new(component, self.context.clone());
+                entry.insert(handle.clone());
+                Ok(handle)
+            }
+        }
     }
 
     pub fn component(&self, id: &str) -> Option<ComponentHandle> {
