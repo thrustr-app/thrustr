@@ -18,4 +18,5 @@ dashmap.workspace = true
 image = "0.25"
 reqwest.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 webp = "0.3"

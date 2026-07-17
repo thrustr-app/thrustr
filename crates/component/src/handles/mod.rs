@@ -92,16 +92,16 @@ impl ComponentHandle {
         result.map_err(|e| e.to_string())
     }
 
-    pub async fn get_login_method(&self) -> Result<Option<LoginMethod>, String> {
+    pub async fn login_method(&self) -> Result<Option<LoginMethod>, String> {
         self.component
-            .get_login_method()
+            .login_method()
             .await
             .map_err(|e| e.to_string())
     }
 
-    pub async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, String> {
+    pub async fn logout_flow(&self) -> Result<Option<AuthFlow>, String> {
         self.component
-            .get_logout_flow()
+            .logout_flow()
             .await
             .map_err(|e| e.to_string())
     }
@@ -113,7 +113,7 @@ impl ComponentHandle {
             .map_err(|e| e.to_string())
     }
 
-    pub fn get_config_values(&self) -> Result<HashMap<String, String>, String> {
+    pub fn config_values(&self) -> Result<HashMap<String, String>, String> {
         self.context
             .component_storage
             .get_config_values(self.id())

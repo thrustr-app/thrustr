@@ -90,7 +90,7 @@ impl GameRepository for SqliteStorage {
         Ok(items)
     }
 
-    fn games_missing_artwork(
+    fn list_missing_artwork(
         &self,
         kind: ArtworkKind,
         after: GameId,

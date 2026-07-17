@@ -36,9 +36,9 @@ pub trait Component: Send + Sync {
 
     async fn init(&self) -> Result<(), Error>;
 
-    async fn get_login_method(&self) -> Result<Option<LoginMethod>, Error>;
+    async fn login_method(&self) -> Result<Option<LoginMethod>, Error>;
 
-    async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
+    async fn logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
 
     async fn login(&self, request: LoginRequest) -> Result<(), Error>;
 

@@ -12,7 +12,6 @@ pub mod wit {
 }
 
 pub use wit::exports::thrustr::plugin::base::{AuthFlow, LoginRequest};
-pub use wit::exports::thrustr::plugin::storefront::Guest as Storefront;
 pub use wit::thrustr::plugin::types::{Error, Game, GameVersion, Platform};
 
 impl Error {
@@ -33,11 +32,11 @@ impl Error {
 pub trait Plugin {
     fn init() -> impl Future<Output = Result<(), Error>>;
 
-    fn get_login_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
+    fn login_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
         async { Ok(None) }
     }
 
-    fn get_logout_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
+    fn logout_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
         async { Ok(None) }
     }
 
@@ -56,6 +55,12 @@ pub trait Plugin {
     }
 }
 
+pub trait Storefront {
+    fn list_games() -> impl Future<Output = Result<Vec<Game>, Error>>;
+
+    fn list_game_versions(game: Game) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
+}
+
 #[macro_export]
 macro_rules! register_storefront {
     ($plugin_type:ty) => {
@@ -67,10 +72,10 @@ macro_rules! register_storefront {
                 <$plugin_type as $crate::Plugin>::init().await
             }
             async fn get_login_flow() -> Result<Option<$crate::AuthFlow>, $crate::Error> {
-                <$plugin_type as $crate::Plugin>::get_login_flow().await
+                <$plugin_type as $crate::Plugin>::login_flow().await
             }
             async fn get_logout_flow() -> Result<Option<$crate::AuthFlow>, $crate::Error> {
-                <$plugin_type as $crate::Plugin>::get_logout_flow().await
+                <$plugin_type as $crate::Plugin>::logout_flow().await
             }
             async fn login(
                 request: $crate::LoginRequest,
@@ -87,11 +92,11 @@ macro_rules! register_storefront {
 
         impl $crate::wit::exports::thrustr::plugin::storefront::Guest for Guest {
             async fn get_games() -> Result<Vec<$crate::Game>, $crate::Error> {
-                <$plugin_type as $crate::Storefront>::get_games().await
+                <$plugin_type as $crate::Storefront>::list_games().await
             }
 
             async fn get_game_versions(game: $crate::Game) -> Result<Vec<$crate::GameVersion>, $crate::Error> {
-                <$plugin_type as $crate::Storefront>::get_game_versions(game).await
+                <$plugin_type as $crate::Storefront>::list_game_versions(game).await
             }
         }
 

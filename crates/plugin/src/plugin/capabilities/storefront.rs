@@ -8,7 +8,7 @@ use domain::{
 
 #[async_trait]
 impl Storefront for Plugin {
-    async fn get_games(&self) -> Result<Vec<NewGame>, Error> {
+    async fn list_games(&self) -> Result<Vec<NewGame>, Error> {
         let games = self
             .call(|instance, mut store| async move {
                 store
@@ -26,7 +26,7 @@ impl Storefront for Plugin {
         Ok(games.into_iter().map(|g| self.to_new_game(g)).collect())
     }
 
-    async fn get_game_versions(&self, game: Game) -> Result<Vec<GameVersion>, Error> {
+    async fn list_game_versions(&self, game: Game) -> Result<Vec<GameVersion>, Error> {
         let versions = self
             .call(|instance, mut store| async move {
                 store

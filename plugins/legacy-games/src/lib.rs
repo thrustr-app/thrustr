@@ -1,4 +1,4 @@
-use crate::api::{get_products, giveaway_login, login};
+use crate::api::{fetch_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use pdk::{
     Error, Game, GameVersion, LoginRequest, Platform, Plugin, Storefront, kv_store::KvStore,
@@ -61,12 +61,12 @@ impl Plugin for LegacyGames {
 }
 
 impl Storefront for LegacyGames {
-    async fn get_games() -> Result<Vec<Game>, Error> {
+    async fn list_games() -> Result<Vec<Game>, Error> {
         let email: String = KvStore::get("email")?.ok_or(Error::auth("not logged in"))?;
         let token = KvStore::get::<String>("token")?;
         let user_id = KvStore::get("user_id")?;
 
-        let games = get_products(&email, token.as_deref(), user_id)
+        let games = fetch_products(&email, token.as_deref(), user_id)
             .await?
             .into_iter()
             .flat_map(Vec::<Game>::from)
@@ -75,7 +75,7 @@ impl Storefront for LegacyGames {
         Ok(games)
     }
 
-    async fn get_game_versions(game: Game) -> Result<Vec<GameVersion>, Error> {
+    async fn list_game_versions(game: Game) -> Result<Vec<GameVersion>, Error> {
         Ok(vec![GameVersion {
             id: game.lookup_id,
             pretty_name: Some(game.name),

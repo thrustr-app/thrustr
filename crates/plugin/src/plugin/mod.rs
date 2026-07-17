@@ -120,7 +120,7 @@ impl Component for Plugin {
         .await
     }
 
-    async fn get_login_method(&self) -> Result<Option<LoginMethod>, ComponentError> {
+    async fn login_method(&self) -> Result<Option<LoginMethod>, ComponentError> {
         let flow = self
             .call(|instance, mut store| async move {
                 store
@@ -140,7 +140,7 @@ impl Component for Plugin {
             .or_else(|| self.manifest.auth.clone().map(LoginMethod::Form)))
     }
 
-    async fn get_logout_flow(&self) -> Result<Option<AuthFlow>, ComponentError> {
+    async fn logout_flow(&self) -> Result<Option<AuthFlow>, ComponentError> {
         let flow = self
             .call(|instance, mut store| async move {
                 store

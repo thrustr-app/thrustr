@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use crate::component::Field;
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum LoginRequest {

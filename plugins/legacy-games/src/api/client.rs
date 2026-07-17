@@ -17,15 +17,15 @@ pub async fn login(token: &str) -> Result<LoginResponse, Error> {
     send(authenticated_request(&endpoints::login(), token)).await
 }
 
-pub async fn get_products(
+pub async fn fetch_products(
     email: &str,
     token: Option<&str>,
     user_id: Option<u64>,
 ) -> Result<Vec<Product>, Error> {
     let (giveaway_response, catalog, entitlements) =
-        futures::try_join!(get_giveaway_catalog(email), get_catalog(), async {
+        futures::try_join!(fetch_giveaway_catalog(email), fetch_catalog(), async {
             match token.zip(user_id) {
-                Some((token, user_id)) => get_entitlements(token, user_id).await.map(Some),
+                Some((token, user_id)) => fetch_entitlements(token, user_id).await.map(Some),
                 None => Ok(None),
             }
         })?;
@@ -65,11 +65,11 @@ pub async fn get_products(
     Ok(products)
 }
 
-async fn get_catalog() -> Result<Vec<Product>, Error> {
+async fn fetch_catalog() -> Result<Vec<Product>, Error> {
     send(base_request(&endpoints::catalog())).await
 }
 
-async fn get_entitlements(token: &str, user_id: u64) -> Result<EntitlementsResponse, Error> {
+async fn fetch_entitlements(token: &str, user_id: u64) -> Result<EntitlementsResponse, Error> {
     send(authenticated_request(
         &endpoints::entitlements(user_id),
         token,
@@ -77,7 +77,7 @@ async fn get_entitlements(token: &str, user_id: u64) -> Result<EntitlementsRespo
     .await
 }
 
-async fn get_giveaway_catalog(email: &str) -> Result<ProductsResponse, Error> {
+async fn fetch_giveaway_catalog(email: &str) -> Result<ProductsResponse, Error> {
     send(base_request(&endpoints::get_giveaway_catalog_by_email(
         email,
     )))

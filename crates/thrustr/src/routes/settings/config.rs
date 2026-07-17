@@ -50,7 +50,7 @@ impl Config {
         let icon = metadata.icon.to_owned().map(image_to_gpui);
 
         let mut local_error = None;
-        let values: HashMap<SharedString, SharedString> = match component.get_config_values() {
+        let values: HashMap<SharedString, SharedString> = match component.config_values() {
             Ok(values) => values
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
@@ -84,7 +84,7 @@ impl Config {
             _tasks,
         };
 
-        page.get_login_method(cx);
+        page.load_login_method(cx);
         page
     }
 
@@ -95,10 +95,10 @@ impl Config {
         cx.notify();
     }
 
-    fn get_login_method(&mut self, cx: &mut Context<Self>) {
+    fn load_login_method(&mut self, cx: &mut Context<Self>) {
         let component = self.component.clone();
         cx.spawn_and_update(
-            async move { component.get_login_method().await },
+            async move { component.login_method().await },
             |config, result, _| {
                 config.login_method = match result {
                     Ok(method) => method,
@@ -237,7 +237,7 @@ impl Config {
         let component = self.component.clone();
         cx.spawn_and_update(
             async move {
-                if let Some(flow) = component.get_logout_flow().await? {
+                if let Some(flow) = component.logout_flow().await? {
                     match unblock(move || open_auth_webview(&flow.url, &flow.target)).await {
                         Ok(_) => {}
                         Err(WebviewError::UserCancelled) => return Ok(()),

@@ -7,6 +7,7 @@ use domain::{
 use runtime::TokioHandle;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Notify, broadcast};
+use tracing::error;
 
 const DEFAULT_QUALITY: f32 = 75.;
 const DEFAULT_MAX_CONCURRENCY: usize = 4;
@@ -76,12 +77,12 @@ impl ArtworkService {
         service
     }
 
-    pub fn max_concurrent(&self) -> usize {
-        self.0.manager.max_concurrent()
+    pub fn max_concurrency(&self) -> usize {
+        self.0.manager.max_concurrency()
     }
 
     pub fn set_max_concurrency(&self, max: usize) {
-        self.0.manager.set_max_concurrent(max);
+        self.0.manager.set_max_concurrency(max);
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ArtworkReady> {
@@ -102,17 +103,17 @@ impl ArtworkService {
             let repo = self.0.games.clone();
             let cursor = after;
             let batch = match tokio::task::spawn_blocking(move || {
-                repo.games_missing_artwork(ArtworkKind::Cover, cursor, BACKFILL_PAGE)
+                repo.list_missing_artwork(ArtworkKind::Cover, cursor, BACKFILL_PAGE)
             })
             .await
             {
                 Ok(Ok(batch)) => batch,
                 Ok(Err(e)) => {
-                    eprintln!("Artwork backfill query failed: {e}");
+                    error!(error = %e, "Artwork backfill query failed");
                     return;
                 }
                 Err(e) => {
-                    eprintln!("Artwork backfill task failed: {e}");
+                    error!(error = %e, "Artwork backfill task failed");
                     return;
                 }
             };
@@ -146,7 +147,7 @@ impl ArtworkService {
         };
 
         if let Err(e) = self.0.manager.enqueue(task) {
-            eprintln!("Failed to enqueue cover for game {}: {}", game_id, e);
+            error!(%game_id, error = %e, "Failed to enqueue cover");
         }
     }
 }

@@ -34,7 +34,7 @@ fn task_key(task: &ArtworkTask) -> TaskKey {
 
 struct Inner {
     inflight: DashSet<TaskKey>,
-    max_concurrent: AtomicUsize,
+    max_concurrency: AtomicUsize,
     wakeup: Notify,
 }
 
@@ -58,7 +58,7 @@ pub struct ArtworkManager {
 impl ArtworkManager {
     pub fn new(
         tokio_handle: TokioHandle,
-        max_concurrent: usize,
+        max_concurrency: usize,
         connectivity: ConnectivityManager,
         artwork: Arc<dyn ArtworkRepository>,
     ) -> Self {
@@ -66,7 +66,7 @@ impl ArtworkManager {
         let (updates, _) = broadcast::channel(128);
 
         let inner = Arc::new(Inner {
-            max_concurrent: AtomicUsize::new(max_concurrent),
+            max_concurrency: AtomicUsize::new(max_concurrency),
             wakeup: Notify::new(),
             inflight: DashSet::new(),
         });
@@ -91,7 +91,7 @@ impl ArtworkManager {
                         }
                     }
 
-                    if join_set.len() >= inner.max_concurrent.load(Ordering::Acquire) {
+                    if join_set.len() >= inner.max_concurrency.load(Ordering::Acquire) {
                         tokio::select! {
                             Some(_) = join_set.join_next() => {}
                             _ = inner.wakeup.notified() => {}
@@ -136,12 +136,12 @@ impl ArtworkManager {
         })
     }
 
-    pub fn max_concurrent(&self) -> usize {
-        self.inner.max_concurrent.load(Ordering::Acquire)
+    pub fn max_concurrency(&self) -> usize {
+        self.inner.max_concurrency.load(Ordering::Acquire)
     }
 
-    pub fn set_max_concurrent(&self, max: usize) {
-        self.inner.max_concurrent.store(max, Ordering::Release);
+    pub fn set_max_concurrency(&self, max: usize) {
+        self.inner.max_concurrency.store(max, Ordering::Release);
         self.inner.wakeup.notify_one();
     }
 

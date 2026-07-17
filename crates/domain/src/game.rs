@@ -67,7 +67,7 @@ pub trait GameRepository: Send + Sync {
 
     fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>>;
 
-    fn games_missing_artwork(
+    fn list_missing_artwork(
         &self,
         kind: ArtworkKind,
         after: GameId,
