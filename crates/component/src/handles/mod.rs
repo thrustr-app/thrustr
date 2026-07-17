@@ -2,7 +2,10 @@ use crate::RegistryContext;
 use domain::component::{
     AuthFlow, Component, ComponentConfig, LoginMethod, LoginRequest, Metadata, Status, StatusEvent,
 };
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 use tracing::warn;
 
 mod storefront;
@@ -103,28 +106,28 @@ impl ComponentHandle {
             .map_err(|e| e.to_string())
     }
 
-    pub async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), String> {
+    pub async fn validate_config(&self, fields: HashMap<String, String>) -> Result<(), String> {
         self.component
             .validate_config(fields)
             .await
             .map_err(|e| e.to_string())
     }
 
-    pub fn get_config_values(&self) -> Result<Vec<(String, String)>, String> {
+    pub fn get_config_values(&self) -> Result<HashMap<String, String>, String> {
         self.context
             .component_storage
             .get_config_values(self.id())
             .map_err(|e| e.to_string())
     }
 
-    pub async fn save_config(&self, fields: &[(String, String)]) -> Result<(), String> {
+    pub async fn save_config(&self, fields: HashMap<String, String>) -> Result<(), String> {
         if !self.status().can_configure() {
             return Err("Cannot configure from current state".into());
         }
-        self.validate_config(fields).await?;
+        self.validate_config(fields.clone()).await?;
         self.context
             .component_storage
-            .set_config_values(self.id(), fields)
+            .set_config_values(self.id(), &fields)
             .map_err(|e| e.to_string())?;
 
         if self.status().can_init() {

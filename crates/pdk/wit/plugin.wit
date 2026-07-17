@@ -14,7 +14,7 @@ interface base {
     }
 
     record login-form {
-        fields: list<tuple<string, string>>,
+        fields: map<string, string>,
     }
 
     variant login-request {
@@ -27,7 +27,7 @@ interface base {
     get-logout-flow: async func() -> result<option<auth-flow>, error>;
     login: async func(request: login-request) -> result<_, error>;
     logout: async func() -> result<_, error>;
-    validate-config: async func(fields: list<tuple<string, string>>) -> result<_, error>;
+    validate-config: async func(fields: map<string, string>) -> result<_, error>;
 }
 
 world base-plugin {

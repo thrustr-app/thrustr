@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use crate::component::Field;
 use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub enum LoginRequest {
     Flow { url: String, body: String },
-    Form { fields: Vec<(String, String)> },
+    Form { fields: HashMap<String, String> },
 }
 
 #[derive(Debug, Clone)]

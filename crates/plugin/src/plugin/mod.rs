@@ -11,6 +11,7 @@ use domain::component::{
 };
 use reqwest::Client;
 use runtime::TokioHandle;
+use std::collections::HashMap;
 use std::sync::Arc;
 use wasmtime::{Engine, ResourceLimiter, Store};
 
@@ -184,9 +185,7 @@ impl Component for Plugin {
         .await
     }
 
-    async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), ComponentError> {
-        let fields = fields.to_vec();
-
+    async fn validate_config(&self, fields: HashMap<String, String>) -> Result<(), ComponentError> {
         self.call(|instance, mut store| async move {
             store
                 .run_concurrent(async |accessor| {

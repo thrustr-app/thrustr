@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 
 pub trait ComponentStorage: Send + Sync {
     fn get_data(&self, component_id: &str, key: &str) -> Result<Option<Vec<u8>>>;
@@ -11,9 +12,10 @@ pub trait ComponentStorage: Send + Sync {
 
     fn get_config_value(&self, component_id: &str, field_id: &str) -> Result<Option<String>>;
 
-    fn get_config_values(&self, component_id: &str) -> Result<Vec<(String, String)>>;
+    fn get_config_values(&self, component_id: &str) -> Result<HashMap<String, String>>;
 
     fn set_config_value(&self, component_id: &str, field_id: &str, value: &str) -> Result<()>;
 
-    fn set_config_values(&self, component_id: &str, fields: &[(String, String)]) -> Result<()>;
+    fn set_config_values(&self, component_id: &str, fields: &HashMap<String, String>)
+    -> Result<()>;
 }

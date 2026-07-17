@@ -1,6 +1,6 @@
 use crate::component::capabilities::Storefront;
 use async_trait::async_trait;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 mod auth;
 pub mod capabilities;
@@ -44,5 +44,5 @@ pub trait Component: Send + Sync {
 
     async fn logout(&self) -> Result<(), Error>;
 
-    async fn validate_config(&self, fields: &[(String, String)]) -> Result<(), Error>;
+    async fn validate_config(&self, fields: HashMap<String, String>) -> Result<(), Error>;
 }

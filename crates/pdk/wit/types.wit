@@ -16,7 +16,7 @@ interface types {
     record game {
         name: string,
         lookup-id: string,
-        external-ids: list<tuple<string, string>>,
+        external-ids: map<string, string>,
         cover-url: option<string>,
         summary: option<string>,
         description: option<string>,

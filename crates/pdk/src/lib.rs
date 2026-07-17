@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub mod config;
 pub mod kv_store;
@@ -49,7 +49,9 @@ pub trait Plugin {
         async { Ok(()) }
     }
 
-    fn validate_config(fields: HashMap<String, String>) -> impl Future<Output = Result<(), Error>> {
+    fn validate_config(
+        fields: BTreeMap<String, String>,
+    ) -> impl Future<Output = Result<(), Error>> {
         async { Ok(()) }
     }
 }
@@ -57,6 +59,8 @@ pub trait Plugin {
 #[macro_export]
 macro_rules! register_storefront {
     ($plugin_type:ty) => {
+        use std::collections::BTreeMap;
+
         struct Guest;
         impl $crate::wit::exports::thrustr::plugin::base::Guest for Guest {
             async fn init() -> Result<(), $crate::Error> {
@@ -76,8 +80,7 @@ macro_rules! register_storefront {
             async fn logout() -> Result<(), $crate::Error> {
                 <$plugin_type as $crate::Plugin>::logout().await
             }
-            async fn validate_config(fields: Vec<(String, String)>) -> Result<(), $crate::Error> {
-                let fields = fields.into_iter().collect::<std::collections::HashMap<_, _>>();
+            async fn validate_config(fields: BTreeMap<String, String>) -> Result<(), $crate::Error> {
                 <$plugin_type as $crate::Plugin>::validate_config(fields).await
             }
         }

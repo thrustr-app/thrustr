@@ -32,6 +32,7 @@ impl PluginManager {
     pub fn new(storage: Arc<dyn ComponentStorage>, tokio_handle: TokioHandle) -> Self {
         let mut config = Config::new();
         config.wasm_component_model_async(true);
+        config.wasm_component_model_map(true);
         config.consume_fuel(true);
 
         let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");

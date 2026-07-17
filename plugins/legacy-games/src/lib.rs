@@ -30,16 +30,10 @@ impl Plugin for LegacyGames {
         if let LoginRequest::Form(form) = request {
             let email = form
                 .fields
-                .iter()
-                .find(|(key, _)| key == "email")
-                .map(|(_, value)| value)
+                .get("email")
                 .ok_or(Error::auth("email is mandatory"))?;
 
-            let password = form
-                .fields
-                .iter()
-                .find(|(key, _)| key == "password")
-                .map(|(_, value)| value);
+            let password = form.fields.get("password");
 
             if let Some(password) = password {
                 let token = STANDARD.encode(format!("{email}:{password}"));

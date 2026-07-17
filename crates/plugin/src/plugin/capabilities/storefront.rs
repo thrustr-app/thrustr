@@ -52,7 +52,7 @@ impl Plugin {
             source: GameSource {
                 id: self.manifest.plugin.id.clone(),
                 lookup_id: game.lookup_id,
-                external_ids: game.external_ids.into_iter().collect(),
+                external_ids: game.external_ids,
             },
             cover_url: game.cover_url,
             summary: game.summary,

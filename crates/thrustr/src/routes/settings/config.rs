@@ -116,12 +116,12 @@ impl Config {
             .values
             .iter()
             .map(|(id, value)| (id.to_string(), value.to_string()))
-            .collect::<Vec<_>>();
+            .collect();
 
         let component = self.component.clone();
 
         cx.spawn_and_update(
-            async move { component.save_config(&fields).await },
+            async move { component.save_config(fields).await },
             |config, result, _| {
                 config.local_error = result.err().map(|e| e.to_string().into());
             },
@@ -430,7 +430,7 @@ impl LoginFormState {
             .all(|id| self.values.get(id).is_some_and(|v| !v.is_empty()))
     }
 
-    pub fn login_fields(&self) -> Vec<(String, String)> {
+    pub fn login_fields(&self) -> HashMap<String, String> {
         self.values
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
