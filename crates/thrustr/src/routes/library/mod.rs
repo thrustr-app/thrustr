@@ -385,7 +385,6 @@ impl GridDims {
     }
 
     fn cache_capacity(&self) -> usize {
-        // TODO: determine if this should be increased (x2, x3)
         self.num_cols * self.visible_rows
     }
 }
