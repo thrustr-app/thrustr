@@ -16,7 +16,11 @@ impl GameService {
         self.game_repo.get(id)
     }
 
-    pub fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>> {
-        self.game_repo.list(offset, limit)
+    pub fn list_ids(&self) -> Result<Vec<GameId>> {
+        self.game_repo.list_ids()
+    }
+
+    pub fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {
+        self.game_repo.list_by_ids(ids)
     }
 }

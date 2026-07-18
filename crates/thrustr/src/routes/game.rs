@@ -6,6 +6,7 @@ use gpui::{
     linear_color_stop, linear_gradient, relative, rems, rgb,
 };
 use theme::ThemeExt;
+use tracing::error;
 
 const BANNER_HEIGHT_REM: f32 = 28.;
 
@@ -27,7 +28,7 @@ impl Game {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    println!("{:?}", e);
+                    error!("failed to load game: {e:#}");
                 }
             },
         );

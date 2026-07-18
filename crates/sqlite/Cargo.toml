@@ -14,3 +14,6 @@ diesel_migrations = "2.3"
 libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 serde_json.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+config.workspace = true

@@ -8,6 +8,7 @@ use diesel::{
 };
 use domain::artwork::{Artwork, ArtworkKind};
 use domain::game::{Game, GameId, GameListItem, GameRepository, NewGame};
+use std::collections::HashMap;
 use tracing::warn;
 
 impl GameRepository for SqliteStorage {
@@ -64,37 +65,47 @@ impl GameRepository for SqliteStorage {
         Ok(row.map(Game::from))
     }
 
-    fn list(&self, offset: usize, limit: usize) -> Result<Vec<GameListItem>> {
-        use crate::schema::artwork;
+    fn list_ids(&self) -> Result<Vec<GameId>> {
         use crate::schema::games::dsl;
 
         let mut conn = self.pool.get()?;
-        let rows: Vec<(GameRow, Option<ArtworkRow>)> = dsl::games
-            .left_join(
-                artwork::table.on(artwork::game_id
-                    .eq(dsl::id)
-                    .and(artwork::kind.eq(ArtworkKind::Cover.as_ref()))),
-            )
+        let ids = dsl::games
             .order((dsl::name.asc(), dsl::id.asc()))
-            .limit(limit as i64)
-            .offset(offset as i64)
-            .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
-            .load(&mut conn)?;
-        let items = rows
-            .into_iter()
-            .map(|(game, cover)| GameListItem {
-                id: from_row_id(game.id),
-                name: game.name,
-                source_id: game.source_id,
-                cover_url: game.cover_url,
-                cover: cover.and_then(|row| {
-                    Artwork::try_from(row)
-                        .inspect_err(|err| warn!(game_id = game.id, "skipping artwork row: {err}"))
-                        .ok()
-                }),
-            })
-            .collect();
-        Ok(items)
+            .select(dsl::id)
+            .load::<i64>(&mut conn)?;
+
+        Ok(ids.into_iter().map(from_row_id).collect())
+    }
+
+    fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {
+        use crate::schema::artwork;
+        use crate::schema::games::dsl;
+
+        const CHUNK_SIZE: usize = 1000;
+
+        let mut conn = self.pool.get()?;
+        let mut by_id: HashMap<i64, GameListItem> = HashMap::with_capacity(ids.len());
+        for chunk in ids.chunks(CHUNK_SIZE) {
+            let row_ids: Vec<i64> = chunk.iter().map(|id| to_row_id(*id)).collect();
+            let rows: Vec<(GameRow, Option<ArtworkRow>)> = dsl::games
+                .left_join(
+                    artwork::table.on(artwork::game_id
+                        .eq(dsl::id)
+                        .and(artwork::kind.eq(ArtworkKind::Cover.as_ref()))),
+                )
+                .filter(dsl::id.eq_any(row_ids))
+                .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
+                .load(&mut conn)?;
+
+            for (game, cover) in rows {
+                by_id.insert(game.id, list_item(game, cover));
+            }
+        }
+
+        Ok(ids
+            .iter()
+            .filter_map(|id| by_id.remove(&to_row_id(*id)))
+            .collect())
     }
 
     fn list_missing_artwork(
@@ -127,5 +138,19 @@ impl GameRepository for SqliteStorage {
             .into_iter()
             .filter_map(|(id, url)| url.map(|url| (from_row_id(id), url)))
             .collect())
+    }
+}
+
+fn list_item(game: GameRow, cover: Option<ArtworkRow>) -> GameListItem {
+    GameListItem {
+        id: from_row_id(game.id),
+        name: game.name,
+        source_id: game.source_id,
+        cover_url: game.cover_url,
+        cover: cover.and_then(|row| {
+            Artwork::try_from(row)
+                .inspect_err(|err| warn!(game_id = game.id, "skipping artwork row: {err}"))
+                .ok()
+        }),
     }
 }

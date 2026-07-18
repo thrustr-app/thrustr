@@ -17,20 +17,38 @@ use gpui::{
     StatefulInteractiveElement, Styled, StyledImage, Task, Window, container_query, div, img, px,
     rems, rgb, uniform_list,
 };
-use std::{collections::HashMap, path::Path, rc::Rc, sync::Arc};
+use lru::LruCache;
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+    ops::Range,
+    path::Path,
+    rc::Rc,
+    sync::Arc,
+};
 use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
+use tracing::error;
 
 mod cache;
 
 const GAME_CARD_WIDTH: Pixels = px(220.);
 const MIN_GAP: Pixels = px(8.);
-
 const CARD_ASPECT_RATIO: f32 = 2. / 3.;
 const CARD_PADDING_REM: f32 = 0.75;
 const CARD_INNER_GAP_REM: f32 = 0.75;
 const CARD_TEXT_SIZE_REM: f32 = 0.9;
 const CARD_ICON_SIZE_REM: f32 = 1.5;
+
+const CHUNK_SIZE: usize = 120;
+const PREFETCH_CHUNKS: usize = 1;
+/// Max hydrated chunks kept resident, with LRU eviction rather than distance-from-viewport.
+/// `uniform_list` also invokes the render closure with a probe range (row 0) every frame
+/// to measure item height, and distance-based eviction around that probe range
+/// would evict the chunks that are actually on screen.
+const MAX_RESIDENT_CHUNKS: NonZeroUsize = NonZeroUsize::new(12).unwrap();
+
+type ChunkCache = LruCache<usize, Vec<GameEntry>>;
 
 #[derive(Clone)]
 struct GameEntry {
@@ -90,29 +108,22 @@ impl GameCard {
 impl RenderOnce for GameCard {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        let group_name = self
-            .game
-            .as_ref()
-            .map(|g| g.element_id.clone())
-            .unwrap_or_default();
 
-        let mut base = div()
-            .id(group_name.clone())
+        let base = div()
             .flex_shrink_0()
             .flex()
             .flex_col()
             .gap(rems(CARD_INNER_GAP_REM))
             .p(rems(CARD_PADDING_REM))
             .w(GAME_CARD_WIDTH)
-            .group(group_name)
             .rounded(theme.radius.lg)
             .bg(theme.colors.card_background.opacity(0.));
 
         let Some(game) = self.game else {
-            return base;
+            return base.into_any_element();
         };
 
-        base = base.on_click(move |_, _, cx| {
+        let base = base.id(game.element_id.clone()).on_click(move |_, _, cx| {
             cx.navigate(Page::Game(game.id));
         });
 
@@ -167,11 +178,17 @@ impl RenderOnce for GameCard {
         .child(cover)
         .child(title)
         .child(icon_row)
+        .into_any_element()
     }
 }
 
 pub struct Library {
-    games: Rc<Vec<GameEntry>>,
+    ids: Rc<Vec<GameId>>,
+    chunks: Rc<ChunkCache>,
+    loading_chunks: HashSet<usize>,
+    /// Bumped whenever `ids` is replaced so in-flight hydrations from a previous
+    /// generation are discarded.
+    generation: u64,
     component_icons: HashMap<String, Arc<Image>>,
     image_cache: Entity<LruImageCache>,
     _tasks: Vec<Task<()>>,
@@ -180,7 +197,10 @@ pub struct Library {
 impl Library {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut page = Self {
-            games: Rc::new(Vec::new()),
+            ids: Rc::new(Vec::new()),
+            chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
+            loading_chunks: HashSet::new(),
+            generation: 0,
             component_icons: HashMap::new(),
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             _tasks: Vec::new(),
@@ -209,19 +229,29 @@ impl Library {
         page
     }
 
-    fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
+    fn chunks_mut(&mut self) -> &mut ChunkCache {
         // Render clones this Rc into frame closures, but gpui drops the element
         // arena right after each draw and this runs between frames, so we should
         // be the sole owner here and make_mut mutates in place. If this fires,
         // something started holding the Rc across frames and make_mut is
-        // silently cloning the whole vec.
+        // silently cloning the whole cache.
         debug_assert_eq!(
-            Rc::strong_count(&self.games),
+            Rc::strong_count(&self.chunks),
             1,
-            "render frame still holds Rc clone - make_mut will clone the entire games vec"
+            "render frame still holds Rc clone - make_mut will clone the entire chunk cache"
         );
-        let games = Rc::make_mut(&mut self.games);
-        if let Some(entry) = games.iter_mut().find(|g| g.id == update.game_id) {
+        Rc::make_mut(&mut self.chunks)
+    }
+
+    fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
+        let position = self.chunks.iter().find_map(|(&chunk_idx, entries)| {
+            entries
+                .iter()
+                .position(|g| g.id == update.game_id)
+                .map(|offset| (chunk_idx, offset))
+        });
+        if let Some((chunk_idx, offset)) = position {
+            let entry = &mut self.chunks_mut().peek_mut(&chunk_idx).unwrap()[offset];
             let path = cover_path(&update.hash);
             entry.cover_path = Some(path.clone());
             entry.accent_color = update.accent_color.map(accent_hsla);
@@ -247,22 +277,73 @@ impl Library {
             .collect();
 
         cx.spawn_and_update(
-            // TODO: implement actual pagination
-            async move { game_service.list(0, 999999) },
+            async move { game_service.list_ids() },
             |library, result, _| {
                 match result {
-                    Ok(games) => {
-                        library.games = Rc::new(
-                            games
-                                .into_iter()
-                                .map(|item| {
-                                    GameEntry::from_list_item(item, &library.component_icons)
-                                })
-                                .collect(),
-                        );
+                    Ok(ids) => {
+                        library.ids = Rc::new(ids);
+                        library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
+                        library.loading_chunks.clear();
+                        library.generation += 1;
                     }
                     Err(e) => {
-                        println!("{:?}", e);
+                        error!("failed to list game ids: {e:#}");
+                    }
+                };
+            },
+        );
+    }
+
+    fn ensure_window(&mut self, items: Range<usize>, cx: &mut Context<Self>) {
+        if self.ids.is_empty() || items.is_empty() {
+            return;
+        }
+
+        let first = items.start / CHUNK_SIZE;
+        let last = (items.end - 1) / CHUNK_SIZE;
+        let max_chunk = (self.ids.len() - 1) / CHUNK_SIZE;
+        let needed =
+            first.saturating_sub(PREFETCH_CHUNKS)..=(last + PREFETCH_CHUNKS).min(max_chunk);
+
+        for chunk_idx in needed {
+            if self.chunks.contains(&chunk_idx) {
+                self.chunks_mut().promote(&chunk_idx);
+            } else if !self.loading_chunks.contains(&chunk_idx) {
+                self.hydrate_chunk(chunk_idx, cx);
+            }
+        }
+    }
+
+    fn hydrate_chunk(&mut self, chunk_idx: usize, cx: &mut Context<Self>) {
+        let start = chunk_idx * CHUNK_SIZE;
+        let end = (start + CHUNK_SIZE).min(self.ids.len());
+        let ids: Vec<GameId> = self.ids[start..end].to_vec();
+        let generation = self.generation;
+        let game_service = cx.game_service();
+
+        self.loading_chunks.insert(chunk_idx);
+        cx.spawn_and_update(
+            async move { game_service.list_by_ids(&ids) },
+            move |library, result, _| {
+                if library.generation != generation {
+                    // `ids` was replaced while this hydration was in flight,
+                    // its chunk index no longer refers to the same games.
+                    return;
+                }
+                match result {
+                    Ok(items) => {
+                        library.loading_chunks.remove(&chunk_idx);
+                        let entries = items
+                            .into_iter()
+                            .map(|item| GameEntry::from_list_item(item, &library.component_icons))
+                            .collect();
+                        library.chunks_mut().push(chunk_idx, entries);
+                    }
+                    Err(e) => {
+                        // Deliberately keep the in-flight marker, since dropping it
+                        // would retry at frame rate against a database that is
+                        // already failing. The next games refresh clears it.
+                        error!(chunk_idx, "failed to hydrate games chunk: {e:#}");
                     }
                 };
             },
@@ -277,18 +358,13 @@ struct GridDims {
 }
 
 impl GridDims {
-    fn compute(
-        grid_width: Pixels,
-        game_count: usize,
-        window_height: Pixels,
-        rem_size: f32,
-    ) -> Self {
+    fn compute(grid_width: Pixels, grid_height: Pixels, game_count: usize, rem_size: f32) -> Self {
         let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
         let num_cols = num_cols.max(1);
         let num_rows = game_count.div_ceil(num_cols);
 
         let visible_rows =
-            (window_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
+            (grid_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
 
         Self {
             num_cols,
@@ -309,6 +385,7 @@ impl GridDims {
     }
 
     fn cache_capacity(&self) -> usize {
+        // TODO: determine if this should be increased (x2, x3)
         self.num_cols * self.visible_rows
     }
 }
@@ -316,8 +393,10 @@ impl GridDims {
 impl Render for Library {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let games = self.games.clone();
+        let game_count = self.ids.len();
+        let chunks = self.chunks.clone();
         let image_cache = self.image_cache.clone();
+        let library = cx.weak_entity();
 
         div()
             .flex_grow_1()
@@ -326,8 +405,8 @@ impl Render for Library {
             .child(container_query(move |size, window, _cx| {
                 let dims = GridDims::compute(
                     size.width,
-                    games.len(),
                     size.height,
+                    game_count,
                     window.rem_size().as_f32(),
                 );
 
@@ -335,23 +414,37 @@ impl Render for Library {
                     .size_full()
                     .image_cache(lru_image_cache(image_cache, dims.cache_capacity()))
                     .child(
-                        uniform_list("game-grid", dims.num_rows, move |range, _, _| {
+                        uniform_list("game-grid", dims.num_rows, move |range, _, cx| {
+                            let items = range.start * dims.num_cols
+                                ..(range.end * dims.num_cols).min(game_count);
+                            let library = library.clone();
+                            cx.defer(move |cx| {
+                                library
+                                    .update(cx, |library, cx| library.ensure_window(items, cx))
+                                    .ok();
+                            });
+
                             range
                                 .map(|row_idx| {
                                     let start = row_idx * dims.num_cols;
-                                    let end = (start + dims.num_cols).min(games.len());
-                                    let row = &games[start..end];
-                                    let blanks = dims.num_cols - row.len();
+                                    let end = (start + dims.num_cols).min(game_count);
 
                                     div()
                                         .w_full()
                                         .flex()
                                         .justify_between()
                                         .pb(rems(1.5))
+                                        .children((start..end).map(|idx| {
+                                            chunks
+                                                .peek(&(idx / CHUNK_SIZE))
+                                                .and_then(|entries| entries.get(idx % CHUNK_SIZE))
+                                                .map(|game| GameCard::new(game.clone()))
+                                                .unwrap_or_else(GameCard::blank)
+                                        }))
                                         .children(
-                                            row.iter().map(|game| GameCard::new(game.clone())),
+                                            (0..dims.num_cols - (end - start))
+                                                .map(|_| GameCard::blank()),
                                         )
-                                        .children((0..blanks).map(|_| GameCard::blank()))
                                 })
                                 .collect()
                         })
