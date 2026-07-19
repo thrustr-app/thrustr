@@ -4,10 +4,10 @@ use crate::models::{ArtworkRow, GameRow, NewGameRow};
 use anyhow::Result;
 use diesel::{
     BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
-    RunQueryDsl, SelectableHelper,
+    RunQueryDsl, SelectableHelper, dsl::sql, sql_types::Untyped,
 };
 use domain::artwork::{Artwork, ArtworkKind};
-use domain::game::{Game, GameId, GameListItem, GameRepository, NewGame};
+use domain::game::{Game, GameId, GameIndex, GameListItem, GameRepository, NewGame, name_bucket};
 use std::collections::HashMap;
 use tracing::warn;
 
@@ -43,14 +43,6 @@ impl GameRepository for SqliteStorage {
         })
     }
 
-    fn count(&self) -> Result<usize> {
-        use crate::schema::games::dsl;
-
-        let mut conn = self.pool.get()?;
-        let count = dsl::games.count().get_result::<i64>(&mut conn)?;
-        Ok(count as usize)
-    }
-
     fn get(&self, id: GameId) -> Result<Option<Game>> {
         use crate::schema::games::dsl;
 
@@ -65,16 +57,27 @@ impl GameRepository for SqliteStorage {
         Ok(row.map(Game::from))
     }
 
-    fn list_ids(&self) -> Result<Vec<GameId>> {
+    fn list_index(&self) -> Result<GameIndex> {
         use crate::schema::games::dsl;
 
         let mut conn = self.pool.get()?;
-        let ids = dsl::games
-            .order((dsl::name.asc(), dsl::id.asc()))
-            .select(dsl::id)
-            .load::<i64>(&mut conn)?;
+        // Ordering by column would fall back to BINARY
+        // and sort every lowercase name after every uppercase one.
+        let rows = dsl::games
+            .order(sql::<Untyped>("name COLLATE NOCASE ASC, id ASC"))
+            .select((dsl::id, dsl::name))
+            .load::<(i64, String)>(&mut conn)?;
 
-        Ok(ids.into_iter().map(from_row_id).collect())
+        let mut ids = Vec::with_capacity(rows.len());
+        let sections = rows
+            .into_iter()
+            .map(|(id, name)| {
+                ids.push(from_row_id(id));
+                name_bucket(&name)
+            })
+            .collect();
+
+        Ok(GameIndex { ids, sections })
     }
 
     fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {

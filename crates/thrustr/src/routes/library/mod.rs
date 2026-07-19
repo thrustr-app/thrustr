@@ -3,19 +3,22 @@ use crate::{
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
     navigation::{NavigatorExt, Page},
-    routes::library::cache::{LruImageCache, lru_image_cache},
+    routes::library::{
+        bubble::index_bubble,
+        cache::{LruImageCache, lru_image_cache},
+    },
 };
 use artwork::ArtworkReady;
 use config::paths;
 use domain::{
     artwork::Color,
-    game::{GameId, GameListItem},
+    game::{GameId, GameListItem, SectionIndex},
 };
 use gpui::{
     App, AppContext, Context, Entity, FontWeight, Hsla, Image, ImageSource, InteractiveElement,
     IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Task, Window, container_query, div, img, px,
-    rems, rgb, uniform_list,
+    StatefulInteractiveElement, Styled, StyledImage, Task, UniformListScrollHandle, Window,
+    container_query, div, img, px, rems, rgb, uniform_list,
 };
 use lru::LruCache;
 use std::{
@@ -29,7 +32,9 @@ use std::{
 use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
+use ui::{ListScrollbar, list_scrollbar_state};
 
+mod bubble;
 mod cache;
 
 const GAME_CARD_WIDTH: Pixels = px(220.);
@@ -39,6 +44,9 @@ const CARD_PADDING_REM: f32 = 0.75;
 const CARD_INNER_GAP_REM: f32 = 0.75;
 const CARD_TEXT_SIZE_REM: f32 = 0.9;
 const CARD_ICON_SIZE_REM: f32 = 1.5;
+/// Fixed so a card's height does not depend on whether its title has loaded.
+const CARD_TITLE_HEIGHT_REM: f32 = 1.25;
+const GRID_PADDING_REM: f32 = 2. - CARD_PADDING_REM;
 
 const CHUNK_SIZE: usize = 120;
 const PREFETCH_CHUNKS: usize = 1;
@@ -93,21 +101,39 @@ fn accent_hsla(color: Color) -> Hsla {
 #[derive(IntoElement)]
 struct GameCard {
     game: Option<GameEntry>,
+    filler: bool,
 }
 
 impl GameCard {
     fn new(game: GameEntry) -> Self {
-        Self { game: Some(game) }
+        Self {
+            game: Some(game),
+            filler: false,
+        }
     }
 
     fn blank() -> Self {
-        Self { game: None }
+        Self {
+            game: None,
+            filler: false,
+        }
+    }
+
+    fn filler() -> Self {
+        Self {
+            game: None,
+            filler: true,
+        }
     }
 }
 
 impl RenderOnce for GameCard {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
+
+        if self.filler {
+            return div().flex_shrink_0().w(GAME_CARD_WIDTH).into_any_element();
+        }
 
         let base = div()
             .flex_shrink_0()
@@ -119,19 +145,31 @@ impl RenderOnce for GameCard {
             .rounded(theme.radius.lg)
             .bg(theme.colors.card_background.opacity(0.));
 
-        let Some(game) = self.game else {
-            return base.into_any_element();
-        };
-
-        let base = base.id(game.element_id.clone()).on_click(move |_, _, cx| {
-            cx.navigate(Page::Game(game.id));
-        });
-
         let mut cover = div()
             .aspect_ratio(CARD_ASPECT_RATIO)
             .w_full()
             .bg(theme.colors.card_background)
             .rounded(theme.radius.md);
+
+        let mut title = div()
+            .h(rems(CARD_TITLE_HEIGHT_REM))
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .w_full()
+            .text_ellipsis()
+            .text_color(theme.colors.primary)
+            .text_size(rems(CARD_TEXT_SIZE_REM))
+            .font_weight(FontWeight::LIGHT);
+
+        let mut icon_row = div().h(rems(CARD_ICON_SIZE_REM)).flex_shrink_0();
+
+        let Some(game) = self.game else {
+            return base
+                .child(cover)
+                .child(title)
+                .child(icon_row)
+                .into_any_element();
+        };
 
         if let Some(path) = game.cover_path {
             let mut cover_img = img(ImageSource::Resource(Resource::Path(path)))
@@ -151,39 +189,33 @@ impl RenderOnce for GameCard {
             cover = cover.child(cover_img);
         }
 
-        let title = div()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .w_full()
-            .text_ellipsis()
-            .text_color(theme.colors.primary)
-            .text_size(rems(CARD_TEXT_SIZE_REM))
-            .font_weight(FontWeight::LIGHT)
-            .child(game.name);
+        title = title.child(game.name);
 
-        let icon_row = if let Some(icon) = game.source_icon {
-            img(ImageSource::Image(icon))
-                .size(rems(CARD_ICON_SIZE_REM))
-                .into_any_element()
-        } else {
-            div().mb(rems(CARD_ICON_SIZE_REM)).into_any_element()
-        };
+        if let Some(icon) = game.source_icon {
+            icon_row = icon_row.child(img(ImageSource::Image(icon)).size(rems(CARD_ICON_SIZE_REM)));
+        }
 
-        base.hover(|style| {
-            style.bg(game
-                .accent_color
-                .unwrap_or(theme.colors.card_background)
-                .opacity(0.25))
-        })
-        .child(cover)
-        .child(title)
-        .child(icon_row)
-        .into_any_element()
+        base.id(game.element_id.clone())
+            .on_click(move |_, _, cx| {
+                cx.navigate(Page::Game(game.id));
+            })
+            .hover(|style| {
+                style.bg(game
+                    .accent_color
+                    .unwrap_or(theme.colors.card_background)
+                    .opacity(0.25))
+            })
+            .child(cover)
+            .child(title)
+            .child(icon_row)
+            .into_any_element()
     }
 }
 
 pub struct Library {
     ids: Rc<Vec<GameId>>,
+    sections: Rc<SectionIndex>,
+    scroll_handle: UniformListScrollHandle,
     chunks: Rc<ChunkCache>,
     loading_chunks: HashSet<usize>,
     /// Bumped whenever `ids` is replaced so in-flight hydrations from a previous
@@ -198,6 +230,8 @@ impl Library {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let mut page = Self {
             ids: Rc::new(Vec::new()),
+            sections: Rc::new(SectionIndex::default()),
+            scroll_handle: UniformListScrollHandle::new(),
             chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
             loading_chunks: HashSet::new(),
             generation: 0,
@@ -277,17 +311,18 @@ impl Library {
             .collect();
 
         cx.spawn_and_update(
-            async move { game_service.list_ids() },
+            async move { game_service.list_index() },
             |library, result, _| {
                 match result {
-                    Ok(ids) => {
-                        library.ids = Rc::new(ids);
+                    Ok(index) => {
+                        library.ids = Rc::new(index.ids);
+                        library.sections = Rc::new(index.sections);
                         library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
                         library.loading_chunks.clear();
                         library.generation += 1;
                     }
                     Err(e) => {
-                        error!("failed to list game ids: {e:#}");
+                        error!("failed to list game index: {e:#}");
                     }
                 };
             },
@@ -390,65 +425,82 @@ impl GridDims {
 }
 
 impl Render for Library {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let game_count = self.ids.len();
         let chunks = self.chunks.clone();
         let image_cache = self.image_cache.clone();
         let library = cx.weak_entity();
 
+        let scrollbar = list_scrollbar_state("library-scrollbar", &self.scroll_handle, window, cx);
+        let scroll_handle = self.scroll_handle.clone();
+        let sections = self.sections.clone();
+
         div()
             .flex_grow_1()
-            .px(rems(2. - CARD_PADDING_REM))
             .text_color(theme.colors.accent)
-            .child(container_query(move |size, window, _cx| {
+            .child(container_query(move |size, window, cx| {
+                let padding = px(GRID_PADDING_REM * window.rem_size().as_f32());
                 let dims = GridDims::compute(
-                    size.width,
+                    size.width - padding * 2.,
                     size.height,
                     game_count,
                     window.rem_size().as_f32(),
                 );
 
+                let bubble = index_bubble(&scrollbar, &scroll_handle, &sections, &dims, size, cx);
+
                 div()
                     .size_full()
-                    .image_cache(lru_image_cache(image_cache, dims.cache_capacity()))
+                    .relative()
+                    .image_cache(lru_image_cache(image_cache.clone(), dims.cache_capacity()))
                     .child(
-                        uniform_list("game-grid", dims.num_rows, move |range, _, cx| {
-                            let items = range.start * dims.num_cols
-                                ..(range.end * dims.num_cols).min(game_count);
+                        uniform_list("game-grid", dims.num_rows, {
+                            let chunks = chunks.clone();
                             let library = library.clone();
-                            cx.defer(move |cx| {
-                                library
-                                    .update(cx, |library, cx| library.ensure_window(items, cx))
-                                    .ok();
-                            });
+                            move |range, _, cx| {
+                                let items = range.start * dims.num_cols
+                                    ..(range.end * dims.num_cols).min(game_count);
+                                let library = library.clone();
+                                cx.defer(move |cx| {
+                                    library
+                                        .update(cx, |library, cx| library.ensure_window(items, cx))
+                                        .ok();
+                                });
 
-                            range
-                                .map(|row_idx| {
-                                    let start = row_idx * dims.num_cols;
-                                    let end = (start + dims.num_cols).min(game_count);
+                                range
+                                    .map(|row_idx| {
+                                        let start = row_idx * dims.num_cols;
+                                        let end = (start + dims.num_cols).min(game_count);
 
-                                    div()
-                                        .w_full()
-                                        .flex()
-                                        .justify_between()
-                                        .pb(rems(1.5))
-                                        .children((start..end).map(|idx| {
-                                            chunks
-                                                .peek(&(idx / CHUNK_SIZE))
-                                                .and_then(|entries| entries.get(idx % CHUNK_SIZE))
-                                                .map(|game| GameCard::new(game.clone()))
-                                                .unwrap_or_else(GameCard::blank)
-                                        }))
-                                        .children(
-                                            (0..dims.num_cols - (end - start))
-                                                .map(|_| GameCard::blank()),
-                                        )
-                                })
-                                .collect()
+                                        div()
+                                            .w_full()
+                                            .flex()
+                                            .justify_between()
+                                            .px(padding)
+                                            .pb(rems(1.5))
+                                            .children((start..end).map(|idx| {
+                                                chunks
+                                                    .peek(&(idx / CHUNK_SIZE))
+                                                    .and_then(|entries| {
+                                                        entries.get(idx % CHUNK_SIZE)
+                                                    })
+                                                    .map(|game| GameCard::new(game.clone()))
+                                                    .unwrap_or_else(GameCard::blank)
+                                            }))
+                                            .children(
+                                                (0..dims.num_cols - (end - start))
+                                                    .map(|_| GameCard::filler()),
+                                            )
+                                    })
+                                    .collect()
+                            }
                         })
+                        .track_scroll(&scroll_handle)
+                        .with_decoration(ListScrollbar::new(scrollbar.clone()))
                         .size_full(),
                     )
+                    .children(bubble)
             }))
     }
 }

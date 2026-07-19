@@ -644,9 +644,14 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let delta = event.delta.pixel_delta(window.line_height());
+
+        // Only consume horizontal wheel events.
+        if delta.x.abs() <= delta.y.abs() {
+            return;
+        }
         cx.stop_propagation();
 
-        let delta = event.delta.pixel_delta(window.line_height());
         let current_offset = self.scroll_handle.offset();
         let new_offset = current_offset - delta;
         self.update_scroll_offset(Some(new_offset), cx);

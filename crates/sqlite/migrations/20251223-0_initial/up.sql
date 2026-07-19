@@ -37,7 +37,7 @@ CREATE TABLE artwork (
   )
 );
 
-CREATE INDEX idx_games_name ON games (name, id);
+CREATE INDEX idx_games_name ON games (name COLLATE NOCASE, id);
 
 CREATE INDEX idx_artwork_hash ON artwork (hash);
 

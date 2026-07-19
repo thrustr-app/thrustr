@@ -1,5 +1,5 @@
 use anyhow::Result;
-use domain::game::{Game, GameId, GameListItem, GameRepository};
+use domain::game::{Game, GameId, GameIndex, GameListItem, GameRepository};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -16,8 +16,8 @@ impl GameService {
         self.game_repo.get(id)
     }
 
-    pub fn list_ids(&self) -> Result<Vec<GameId>> {
-        self.game_repo.list_ids()
+    pub fn list_index(&self) -> Result<GameIndex> {
+        self.game_repo.list_index()
     }
 
     pub fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {

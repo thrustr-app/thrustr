@@ -10,13 +10,16 @@ use domain::component::{
 };
 use gpui::{
     AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task,
-    Window, div, img, prelude::FluentBuilder, rems, svg,
+    IntoElement, ParentElement, Render, SharedString, Styled, Task, Window, div, img,
+    prelude::FluentBuilder, rems, svg,
 };
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
-use ui::{Alert, Button, Card, InputEvent, Label, PortalContext, WithSize, WithVariant, input};
+use ui::{
+    Alert, Button, Card, InputEvent, Label, PortalContext, WithScrollbar, WithSize, WithVariant,
+    input,
+};
 
 struct Field {
     id: SharedString,
@@ -372,7 +375,9 @@ impl Config {
             .h_0()
             .gap(rems(1.5))
             .id("config-form")
-            .overflow_y_scroll()
+            .mr(rems(-1.5))
+            .pr(rems(1.5))
+            .overflow_y_scrollbar()
             .when_some(self.local_error.clone(), |div, error| {
                 div.child(Alert::new().title("Error").description(error))
             })
