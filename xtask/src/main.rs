@@ -15,6 +15,7 @@ fn main() -> Result<()> {
             println!("Usage: cargo xtask <command>");
             println!();
             println!("Commands:");
+            println!("  setup            Set up the development environment");
             println!("  build-plugins    Build all plugins and bundle them as .tp files");
         }
     }
