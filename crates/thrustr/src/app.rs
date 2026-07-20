@@ -1,113 +1,53 @@
 use crate::globals::PluginServiceExt;
 use crate::navigation::{Navigator, NavigatorExt, Page};
 use config::paths;
-use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyView, App as GpuiApp, AppContext, Context, FocusHandle, Focusable, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, rems, svg, transparent_black,
+    InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, SharedString, Styled,
+    Window, div, rems, svg,
 };
 use theme::ThemeExt;
 use tracing::error;
-use ui::UiProvider;
+use ui::{Sidebar, SidebarItem, UiProvider};
 
-#[derive(IntoElement)]
-struct SidebarIconButton {
-    page: Page,
+fn nav_item(page: Page, cx: &GpuiApp) -> SidebarItem {
+    let is_active = cx.navigator().is_active_for(page.clone());
+
+    SidebarItem::new(page.label())
+        .icon(page.icon_path())
+        .active(is_active)
+        .on_click(move |_, _, cx| cx.navigate(page.clone()))
 }
 
-impl From<Page> for SidebarIconButton {
-    fn from(page: Page) -> Self {
-        Self { page }
-    }
-}
+fn sidebar_rail(cx: &GpuiApp) -> impl IntoElement {
+    let theme = cx.theme();
 
-impl RenderOnce for SidebarIconButton {
-    fn render(self, _window: &mut Window, cx: &mut GpuiApp) -> impl IntoElement {
-        let theme = cx.theme();
-
-        let label = self.page.label();
-        let icon_path = self.page.icon_path();
-        let is_active = cx.navigator().is_active_for(self.page.clone());
-
-        div()
-            .id(label)
-            .cursor_pointer()
-            .on_click(move |_, _, cx| cx.navigate(self.page.clone()))
-            .group(label)
-            .p(rems(0.625))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(theme.radius.full)
-            .bg(transparent_black())
-            .hover(|div| div.bg(theme.colors.sidebar_hover))
-            .when(is_active, |div| div.bg(theme.colors.sidebar_surface))
-            .child(
-                svg()
-                    .group(label)
-                    .path(icon_path)
-                    .text_color(theme.colors.sidebar_secondary)
-                    .size(rems(1.5))
-                    .when(is_active, |svg| {
-                        svg.text_color(theme.colors.sidebar_primary)
-                    }),
-            )
-    }
-}
-
-#[derive(IntoElement)]
-pub struct Sidebar;
-
-impl RenderOnce for Sidebar {
-    fn render(self, _window: &mut Window, cx: &mut GpuiApp) -> impl IntoElement {
-        let theme = cx.theme();
-
-        let top_nav = div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(rems(0.75))
-            .child(SidebarIconButton::from(Page::Home))
-            .child(SidebarIconButton::from(Page::Library))
-            .child(SidebarIconButton::from(Page::Collections));
-
-        let bottom_nav = div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(rems(0.75))
-            .mb(rems(1.5))
-            .child(SidebarIconButton::from(Page::Settings(None)));
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(rems(2.))
-            .items_center()
-            .flex_shrink_0()
-            .w(rems(5.5))
-            .bg(theme.colors.sidebar_background)
-            .border_r_1()
-            .border_color(theme.colors.border)
-            .child(
-                svg()
-                    .path("icons/logo.svg")
-                    .text_color(theme.colors.sidebar_logo)
-                    .mt(rems(1.5))
-                    .size(rems(3.)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_grow_1()
-                    .flex_col()
-                    .items_center()
-                    .justify_between()
-                    .child(top_nav)
-                    .child(bottom_nav),
-            )
-    }
+    div()
+        .flex()
+        .flex_col()
+        .gap(rems(2.))
+        .items_center()
+        .flex_shrink_0()
+        .w(rems(5.5))
+        .bg(theme.colors.sidebar_background)
+        .border_r_1()
+        .border_color(theme.colors.border)
+        .child(
+            svg()
+                .path("icons/logo.svg")
+                .text_color(theme.colors.sidebar_logo)
+                .mt(rems(1.5))
+                .size(rems(3.)),
+        )
+        .child(
+            Sidebar::new("main-sidebar")
+                .flex_grow_1()
+                .pb(rems(1.5))
+                .item(nav_item(Page::Home, cx))
+                .item(nav_item(Page::Library, cx))
+                .item(nav_item(Page::Collections, cx))
+                .bottom_item(nav_item(Page::Settings(None), cx)),
+        )
 }
 
 #[derive(IntoElement)]
@@ -158,9 +98,17 @@ impl App {
 
         cx.observe_global_in::<Navigator>(window, |this, window, cx| {
             let page = cx.navigator().current_page();
-            this.active_view = page.build_view(cx);
+
+            let same_view = matches!(
+                (&this.current_page, &page),
+                (Page::Settings(_), Page::Settings(_))
+            );
             this.current_page = page;
-            this.focus_handle.focus(window, cx);
+
+            if !same_view {
+                this.active_view = this.current_page.build_view(cx);
+                this.focus_handle.focus(window, cx);
+            }
             cx.notify();
         })
         .detach();
@@ -204,7 +152,7 @@ impl Render for App {
             .size_full()
             .bg(theme.colors.background)
             .child(
-                div().flex().size_full().child(Sidebar).child(
+                div().flex().size_full().child(sidebar_rail(cx)).child(
                     div()
                         .flex_grow_1()
                         .flex()

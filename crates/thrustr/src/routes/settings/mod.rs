@@ -1,10 +1,7 @@
-use crate::navigation::{NavigatorExt, SettingsPage};
-use gpui::{
-    AnyView, App, Context, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
-    transparent_black,
-};
+use crate::navigation::{Navigator, NavigatorExt, Page, SettingsPage};
+use gpui::{AnyView, App, Context, IntoElement, ParentElement, Render, Styled, Window, div, rems};
 use theme::ThemeExt;
+use ui::{Sidebar, SidebarItem, SidebarPalette};
 
 mod appearance;
 mod config;
@@ -16,55 +13,18 @@ pub use config::Config;
 pub use plugins::Plugins;
 pub use storefronts::Storefronts;
 
-#[derive(IntoElement)]
-struct SettingsPageButton {
-    page: SettingsPage,
-}
+fn settings_item(page: SettingsPage, cx: &App) -> SidebarItem {
+    let is_active = cx.navigator().is_active_for(page.clone());
 
-impl SettingsPageButton {
-    fn new(page: SettingsPage) -> Self {
-        Self { page }
-    }
-}
-
-impl RenderOnce for SettingsPageButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-
-        let target = self.page.clone();
-        let is_active = cx.navigator().is_active_for(self.page.clone());
-
-        div()
-            .id(self.page.label())
-            .cursor_pointer()
-            .on_click(move |_, _, cx| cx.navigate(target.clone()))
-            .py(rems(0.625))
-            .px(rems(1.25))
-            .w_full()
-            .flex()
-            .items_center()
-            .rounded(theme.radius.full)
-            .gap(rems(0.75))
-            .bg(transparent_black())
-            .hover(|style| style.bg(theme.colors.hover))
-            .when(is_active, |style| {
-                style
-                    .bg(theme.colors.surface)
-                    .text_color(theme.colors.primary)
-            })
-            .child(
-                svg()
-                    .flex_shrink_0()
-                    .path(self.page.icon_path())
-                    .text_color(theme.colors.secondary)
-                    .size(rems(1.5))
-                    .when(is_active, |svg| svg.text_color(theme.colors.primary)),
-            )
-            .child(div().child(self.page.label()))
-    }
+    SidebarItem::new(page.label())
+        .icon(page.icon_path())
+        .label(page.label())
+        .active(is_active)
+        .on_click(move |_, _, cx| cx.navigate(page.clone()))
 }
 
 pub struct Settings {
+    current_page: SettingsPage,
     active_view: AnyView,
 }
 
@@ -72,7 +32,21 @@ impl Settings {
     pub fn new(page: SettingsPage, cx: &mut Context<Self>) -> Self {
         let active_view = page.build_view(cx);
 
-        Self { active_view }
+        cx.observe_global::<Navigator>(|this, cx| {
+            if let Page::Settings(Some(page)) = cx.navigator().current_page()
+                && page != this.current_page
+            {
+                this.current_page = page.clone();
+                this.active_view = page.build_view(cx);
+                cx.notify();
+            }
+        })
+        .detach();
+
+        Self {
+            current_page: page,
+            active_view,
+        }
     }
 }
 
@@ -85,20 +59,15 @@ impl Render for Settings {
             .flex_grow_1()
             .flex()
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(rems(0.75))
-                    .items_center()
+                Sidebar::new("settings-sidebar")
+                    .palette(SidebarPalette::Content)
                     .flex_shrink_0()
-                    .w_auto()
                     .pr(rems(1.5))
                     .border_r_1()
                     .border_color(theme.colors.border)
-                    .text_color(theme.colors.secondary)
-                    .child(SettingsPageButton::new(SettingsPage::Storefronts(None)))
-                    .child(SettingsPageButton::new(SettingsPage::Plugins(None)))
-                    .child(SettingsPageButton::new(SettingsPage::Appearance)),
+                    .item(settings_item(SettingsPage::Storefronts(None), cx))
+                    .item(settings_item(SettingsPage::Plugins(None), cx))
+                    .item(settings_item(SettingsPage::Appearance, cx)),
             )
             .child(self.active_view.clone())
     }
