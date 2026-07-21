@@ -10,15 +10,15 @@ use domain::component::{
 };
 use gpui::{
     AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Task, Window, div, img,
+    IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled, Task, Window, div, img,
     prelude::FluentBuilder, rems, svg,
 };
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Card, InputEvent, Label, PortalContext, WithScrollbar, WithSize, WithVariant,
-    input,
+    Alert, Button, Card, InputEvent, Label, PortalContext, WithFocus, WithScrollbar, WithSize,
+    WithVariant, input,
 };
 
 struct Field {
@@ -44,6 +44,7 @@ pub struct Config {
     login_method: Option<LoginMethod>,
     authenticating: bool,
     login_form_view: Option<Entity<LoginFormState>>,
+    scroll_handle: ScrollHandle,
     _tasks: Vec<Task<()>>,
 }
 
@@ -84,6 +85,7 @@ impl Config {
             login_method: None,
             authenticating: false,
             login_form_view: None,
+            scroll_handle: ScrollHandle::new(),
             _tasks,
         };
 
@@ -257,7 +259,7 @@ impl Config {
         cx.notify();
     }
 
-    fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_header(&mut self, autofocus_back: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let has_login = self.login_method.is_some();
 
@@ -282,6 +284,7 @@ impl Config {
                     .child(
                         Button::new("back-button")
                             .variant_ghost()
+                            .auto_focus(autofocus_back)
                             .child(
                                 svg()
                                     .path("icons/arrow-left.svg")
@@ -345,12 +348,18 @@ impl Config {
             )
     }
 
-    fn render_body(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_body(
+        &mut self,
+        autofocus_field: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let sections = self.sections.iter().map(|s| {
             let fields = s.fields.iter().map(|f| {
                 let field_id = f.id.clone();
                 input(f.id.clone())
                     .when(!self.status.can_configure(), |btn| btn.disabled())
+                    .auto_focus(autofocus_field.as_ref() == Some(&f.id))
+                    .reveal_on_focus(&self.scroll_handle)
                     .label(f.label.clone())
                     .max_w(rems(20.))
                     .when_some(f.placeholder.clone(), |input, placeholder| {
@@ -378,6 +387,7 @@ impl Config {
             .mr(rems(-1.5))
             .pr(rems(1.5))
             .overflow_y_scrollbar()
+            .handle(&self.scroll_handle)
             .when_some(self.local_error.clone(), |div, error| {
                 div.child(Alert::new().title("Error").description(error))
             })
@@ -390,14 +400,21 @@ impl Config {
 
 impl Render for Config {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let autofocus_field = self
+            .status
+            .can_configure()
+            .then(|| self.sections.iter().find_map(|s| s.fields.first()))
+            .flatten()
+            .map(|f| f.id.clone());
+
         div()
             .flex_grow_1()
             .pl(rems(1.5))
             .flex()
             .flex_col()
             .gap(rems(2.))
-            .child(self.render_header(cx))
-            .child(self.render_body(cx))
+            .child(self.render_header(autofocus_field.is_none(), cx))
+            .child(self.render_body(autofocus_field, cx))
     }
 }
 

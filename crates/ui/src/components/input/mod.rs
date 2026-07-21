@@ -1,4 +1,4 @@
-use crate::components::input::state::InputState;
+use crate::{FocusProps, WithFocus, components::input::state::InputState};
 use gpui::{
     App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, Hsla, InteractiveElement,
     Interactivity, IntoElement, MouseButton, ParentElement, Refineable, RenderOnce, SharedString,
@@ -45,9 +45,7 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         masked: false,
         mask: None,
         max_length: None,
-        tab_index: 0,
-        tab_stop: true,
-        auto_focus: false,
+        focus: FocusProps::default(),
     }
 }
 
@@ -68,9 +66,7 @@ pub struct Input {
     masked: bool,
     mask: Option<SharedString>,
     max_length: Option<usize>,
-    tab_index: isize,
-    tab_stop: bool,
-    auto_focus: bool,
+    focus: FocusProps,
 }
 
 impl Input {
@@ -130,24 +126,15 @@ impl Input {
         self
     }
 
-    pub fn tab_stop(mut self, tab_stop: bool) -> Self {
-        self.tab_stop = tab_stop;
-        self
-    }
-
-    pub fn tab_index(mut self, tab_index: isize) -> Self {
-        self.tab_index = tab_index;
-        self
-    }
-
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
         self
     }
+}
 
-    pub fn auto_focus(mut self) -> Self {
-        self.auto_focus = true;
-        self
+impl WithFocus for Input {
+    fn focus_props(&mut self) -> &mut FocusProps {
+        &mut self.focus
     }
 }
 
@@ -170,7 +157,7 @@ impl RenderOnce for Input {
         let state = window
             .use_keyed_state(self.id.clone(), cx, |window, cx| {
                 let state = cx.new(|cx| InputState::new(window, cx));
-                if self.auto_focus {
+                if self.focus.auto_focus {
                     state.focus_handle(cx).focus(window, cx);
                 }
                 state
@@ -178,13 +165,7 @@ impl RenderOnce for Input {
             .read(cx)
             .clone();
 
-        let mut focus_handle = state.focus_handle(cx);
-        if focus_handle.tab_stop != self.tab_stop {
-            focus_handle = focus_handle.tab_stop(self.tab_stop);
-        }
-        if focus_handle.tab_index != self.tab_index {
-            focus_handle = focus_handle.tab_index(self.tab_index);
-        }
+        let focus_handle = self.focus.configure(state.focus_handle(cx));
 
         state.update(cx, |state, _cx| {
             state.set_value(self.value);
@@ -258,20 +239,25 @@ impl RenderOnce for Input {
 
         let width = input.style().max_size.width;
 
-        div()
+        let label_focus_handle = focus_handle.clone();
+        let container = div()
+            .id((self.id.clone(), "field"))
             .when_some(width, |container, width| container.max_w(width))
             .when_some(self.label, |container, label| {
                 container.child(
                     div()
-                        .id(self.id)
+                        .id((self.id.clone(), "label"))
                         .on_click(move |_, window, cx| {
-                            focus_handle.focus(window, cx);
+                            label_focus_handle.focus(window, cx);
                         })
                         .child(label)
                         .mb(rems(0.5))
                         .text_color(theme.colors.card_primary),
                 )
             })
-            .child(input)
+            .child(input);
+
+        self.focus
+            .attach_reveal(container, &focus_handle, (self.id, "reveal"), window, cx)
     }
 }

@@ -194,7 +194,7 @@ impl RenderOnce for Sidebar {
             focus_handle = focus_handle.tab_stop(true);
         }
 
-        let focused = focus_handle.is_focused(window);
+        let focused = focus_handle.is_focused(window) && window.last_input_was_keyboard();
         let theme = cx.theme();
         let radius = theme.radius.full;
         let colors = &theme.colors;
@@ -205,14 +205,14 @@ impl RenderOnce for Sidebar {
                 active_bg: colors.sidebar_surface,
                 active_fg: colors.sidebar_primary,
                 muted_fg: colors.sidebar_secondary,
-                ring: colors.accent,
+                ring: colors.sidebar_primary,
             },
             SidebarPalette::Content => Palette {
                 hover: colors.hover,
                 active_bg: colors.surface,
                 active_fg: colors.primary,
                 muted_fg: colors.secondary,
-                ring: colors.accent,
+                ring: colors.primary,
             },
         };
 

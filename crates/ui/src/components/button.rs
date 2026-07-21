@@ -1,4 +1,4 @@
-use crate::{Size, Variant, WithSize, WithVariant};
+use crate::{FocusProps, Size, Variant, WithFocus, WithSize, WithVariant};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, InteractiveElement,
     IntoElement, ParentElement, Refineable, RenderOnce, StatefulInteractiveElement,
@@ -18,9 +18,7 @@ pub struct Button {
     size: Size,
     children: SmallVec<[AnyElement; 1]>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
-    auto_focus: bool,
-    tab_index: isize,
-    tab_stop: bool,
+    focus: FocusProps,
     loading: bool,
     disabled: bool,
 }
@@ -34,9 +32,7 @@ impl Button {
             size: Size::Medium,
             children: SmallVec::new(),
             on_click: None,
-            auto_focus: false,
-            tab_index: 0,
-            tab_stop: true,
+            focus: FocusProps::default(),
             loading: false,
             disabled: false,
         }
@@ -47,21 +43,6 @@ impl Button {
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Box::new(handler));
-        self
-    }
-
-    pub fn tab_stop(mut self, tab_stop: bool) -> Self {
-        self.tab_stop = tab_stop;
-        self
-    }
-
-    pub fn tab_index(mut self, tab_index: isize) -> Self {
-        self.tab_index = tab_index;
-        self
-    }
-
-    pub fn auto_focus(mut self, auto_focus: bool) -> Self {
-        self.auto_focus = auto_focus;
         self
     }
 
@@ -102,30 +83,30 @@ impl WithVariant for Button {
     }
 }
 
+impl WithFocus for Button {
+    fn focus_props(&mut self) -> &mut FocusProps {
+        &mut self.focus
+    }
+}
+
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let mut focus_handle = window
+        let focus_handle = window
             .use_keyed_state(self.id.clone(), cx, |window, cx| {
                 let focus_handle = cx.focus_handle();
-                if self.auto_focus {
+                if self.focus.auto_focus {
                     focus_handle.focus(window, cx);
                 }
                 focus_handle
             })
             .read(cx)
             .clone();
-
-        if focus_handle.tab_stop != self.tab_stop {
-            focus_handle = focus_handle.tab_stop(self.tab_stop);
-        }
-        if focus_handle.tab_index != self.tab_index {
-            focus_handle = focus_handle.tab_index(self.tab_index);
-        }
+        let focus_handle = self.focus.configure(focus_handle);
 
         let theme = cx.theme();
 
         let mut button = div()
-            .id(self.id)
+            .id(self.id.clone())
             .rounded(theme.radius.full)
             .when(!self.disabled && !self.loading, |button| {
                 button
@@ -182,25 +163,27 @@ impl RenderOnce for Button {
                 button = button
                     .bg(theme.colors.primary)
                     .text_color(theme.colors.background)
-                    .focus(|input| input.border_color(theme.colors.accent))
+                    .focus_visible(|input| input.border_color(theme.colors.accent))
             }
             Variant::Accent => {
                 button = button
                     .bg(theme.colors.accent)
                     .text_color(theme.colors.background)
-                    .focus(|input| input.border_color(theme.colors.primary));
+                    .focus_visible(|input| input.border_color(theme.colors.primary));
             }
             Variant::Ghost => {
                 button = button
                     .bg(transparent_black())
                     .text_color(theme.colors.primary)
                     .border_color(theme.colors.border)
-                    .focus(|input| input.border_color(theme.colors.primary));
+                    .focus_visible(|input| input.border_color(theme.colors.primary));
             }
             _ => {}
         }
 
         button.style().refine(&self.style);
-        button
+
+        self.focus
+            .attach_reveal(button, &focus_handle, (self.id, "reveal"), window, cx)
     }
 }

@@ -96,7 +96,7 @@ impl App {
         let current_page = cx.navigator().current_page();
         let active_view = current_page.build_view(cx);
 
-        cx.observe_global_in::<Navigator>(window, |this, window, cx| {
+        cx.observe_global_in::<Navigator>(window, |this, _, cx| {
             let page = cx.navigator().current_page();
 
             let same_view = matches!(
@@ -107,9 +107,16 @@ impl App {
 
             if !same_view {
                 this.active_view = this.current_page.build_view(cx);
-                this.focus_handle.focus(window, cx);
             }
+
             cx.notify();
+        })
+        .detach();
+
+        // When the focused element disappears, fall back to the
+        // root handle so keyboard navigation keeps working.
+        cx.on_focus_lost(window, |this, window, cx| {
+            this.focus_handle.focus(window, cx);
         })
         .detach();
 

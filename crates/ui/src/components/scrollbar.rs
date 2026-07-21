@@ -10,7 +10,6 @@ use gpui::{
 use smallvec::SmallVec;
 use std::{
     ops::Range,
-    rc::Rc,
     time::{Duration, Instant},
 };
 use theme::ThemeExt as _;
@@ -42,48 +41,35 @@ impl ScrollAxes {
     }
 }
 
-/// Anything a scrollbar can drive. Object safe so the scrollbar state can hold
-/// a single erased handle regardless of which container it decorates.
-pub trait ScrollbarHandle: 'static {
-    fn max_offset(&self) -> Point<Pixels>;
-    fn set_offset(&self, offset: Point<Pixels>);
-    fn offset(&self) -> Point<Pixels>;
-    fn viewport(&self) -> Bounds<Pixels>;
+/// Handle to whichever kind of container the scrollbar drives.
+#[derive(Clone)]
+enum ScrollbarTarget {
+    Div(ScrollHandle),
+    UniformList(UniformListScrollHandle),
 }
 
-impl ScrollbarHandle for ScrollHandle {
+impl ScrollbarTarget {
+    fn base_handle(&self) -> ScrollHandle {
+        match self {
+            Self::Div(handle) => handle.clone(),
+            Self::UniformList(handle) => handle.0.borrow().base_handle.clone(),
+        }
+    }
+
     fn max_offset(&self) -> Point<Pixels> {
-        self.max_offset()
+        self.base_handle().max_offset()
     }
 
     fn set_offset(&self, offset: Point<Pixels>) {
-        self.set_offset(offset);
+        self.base_handle().set_offset(offset);
     }
 
     fn offset(&self) -> Point<Pixels> {
-        self.offset()
+        self.base_handle().offset()
     }
 
     fn viewport(&self) -> Bounds<Pixels> {
-        self.bounds()
-    }
-}
-
-impl ScrollbarHandle for UniformListScrollHandle {
-    fn max_offset(&self) -> Point<Pixels> {
-        self.0.borrow().base_handle.max_offset()
-    }
-
-    fn set_offset(&self, offset: Point<Pixels>) {
-        self.0.borrow().base_handle.set_offset(offset);
-    }
-
-    fn offset(&self) -> Point<Pixels> {
-        self.0.borrow().base_handle.offset()
-    }
-
-    fn viewport(&self) -> Bounds<Pixels> {
-        self.0.borrow().base_handle.bounds()
+        self.base_handle().bounds()
     }
 }
 
@@ -107,7 +93,7 @@ impl ThumbState {
 
 /// Persistent scrollbar state held in an `Entity`.
 pub struct ScrollbarState {
-    handle: Rc<dyn ScrollbarHandle>,
+    handle: ScrollbarTarget,
     /// Set only when the scrollbar created the handle itself, in which case the
     /// container needs `track_scroll` wired to it.
     owned_handle: Option<ScrollHandle>,
@@ -122,7 +108,7 @@ impl ScrollbarState {
     fn owned(axes: ScrollAxes) -> Self {
         let handle = ScrollHandle::new();
         Self {
-            handle: Rc::new(handle.clone()),
+            handle: ScrollbarTarget::Div(handle.clone()),
             owned_handle: Some(handle),
             axes,
             thumb: ThumbState::default(),
@@ -132,7 +118,7 @@ impl ScrollbarState {
         }
     }
 
-    fn borrowed(handle: Rc<dyn ScrollbarHandle>, axes: ScrollAxes) -> Self {
+    fn borrowed(handle: ScrollbarTarget, axes: ScrollAxes) -> Self {
         Self {
             handle,
             owned_handle: None,
@@ -691,11 +677,24 @@ pub struct Scrollable {
     div: Stateful<Div>,
     axes: ScrollAxes,
     id: ElementId,
+    handle: Option<ScrollHandle>,
 }
 
 impl Scrollable {
     fn new(div: Stateful<Div>, axes: ScrollAxes, id: ElementId) -> Self {
-        Self { div, axes, id }
+        Self {
+            div,
+            axes,
+            id,
+            handle: None,
+        }
+    }
+
+    /// Drive the scrollbar from a caller-owned handle instead of an internally
+    /// created one.
+    pub fn handle(mut self, handle: &ScrollHandle) -> Self {
+        self.handle = Some(handle.clone());
+        self
     }
 }
 
@@ -721,16 +720,28 @@ impl StatefulInteractiveElement for Scrollable {}
 
 impl RenderOnce for Scrollable {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let Self { div, axes, id } = self;
+        let Self {
+            div,
+            axes,
+            id,
+            handle,
+        } = self;
 
-        let state = window.use_keyed_state(id, cx, |_, _| ScrollbarState::owned(axes));
-        state.update(cx, |state, _| state.axes = axes);
+        let state = window.use_keyed_state(id, cx, |_, _| match &handle {
+            Some(handle) => ScrollbarState::borrowed(ScrollbarTarget::Div(handle.clone()), axes),
+            None => ScrollbarState::owned(axes),
+        });
+        state.update(cx, |state, _| {
+            state.axes = axes;
+            // The caller may have swapped handles between frames.
+            if let Some(handle) = &handle {
+                state.handle = ScrollbarTarget::Div(handle.clone());
+            }
+        });
 
-        let handle = state
-            .read(cx)
-            .owned_handle
-            .clone()
-            .expect("div scrollbars always own their handle");
+        let handle = handle
+            .or_else(|| state.read(cx).owned_handle.clone())
+            .expect("a div scrollbar either borrows a caller handle or owns one it created");
 
         let div = match axes {
             ScrollAxes::Horizontal => div.overflow_x_scroll(),
@@ -811,11 +822,15 @@ pub fn list_scrollbar_state(
 ) -> Entity<ScrollbarState> {
     let state = window.use_keyed_state(id.into(), cx, {
         let handle = handle.clone();
-        move |_, _| ScrollbarState::borrowed(Rc::new(handle), ScrollAxes::Vertical)
+        move |_, _| {
+            ScrollbarState::borrowed(ScrollbarTarget::UniformList(handle), ScrollAxes::Vertical)
+        }
     });
 
     // The caller may have swapped handles between frames.
-    state.update(cx, |state, _| state.handle = Rc::new(handle.clone()));
+    state.update(cx, |state, _| {
+        state.handle = ScrollbarTarget::UniformList(handle.clone())
+    });
     state
 }
 

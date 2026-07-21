@@ -1,3 +1,4 @@
+use crate::{FocusProps, WithFocus};
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
@@ -14,9 +15,7 @@ pub struct Card {
     header: Option<AnyElement>,
     children: SmallVec<[AnyElement; 1]>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
-    auto_focus: bool,
-    tab_index: isize,
-    tab_stop: bool,
+    focus: FocusProps,
 }
 
 impl Card {
@@ -27,9 +26,7 @@ impl Card {
             header: None,
             children: SmallVec::new(),
             on_click: None,
-            auto_focus: false,
-            tab_index: 0,
-            tab_stop: true,
+            focus: FocusProps::default(),
         }
     }
 
@@ -55,20 +52,11 @@ impl Card {
         self.on_click = Some(Box::new(handler));
         self
     }
+}
 
-    pub fn auto_focus(mut self) -> Self {
-        self.auto_focus = true;
-        self
-    }
-
-    pub fn tab_stop(mut self, tab_stop: bool) -> Self {
-        self.tab_stop = tab_stop;
-        self
-    }
-
-    pub fn tab_index(mut self, tab_index: isize) -> Self {
-        self.tab_index = tab_index;
-        self
+impl WithFocus for Card {
+    fn focus_props(&mut self) -> &mut FocusProps {
+        &mut self.focus
     }
 }
 
@@ -86,23 +74,18 @@ impl ParentElement for Card {
 
 impl RenderOnce for Card {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let mut focus_handle = window
+        let focus_handle = window
             .use_keyed_state((self.id.clone(), "card"), cx, |window, cx| {
                 let focus_handle = cx.focus_handle();
-                if self.auto_focus {
+                if self.focus.auto_focus {
                     focus_handle.focus(window, cx);
                 }
                 focus_handle
             })
             .read(cx)
             .clone();
+        let focus_handle = self.focus.configure(focus_handle);
 
-        if focus_handle.tab_stop != self.tab_stop {
-            focus_handle = focus_handle.tab_stop(self.tab_stop);
-        }
-        if focus_handle.tab_index != self.tab_index {
-            focus_handle = focus_handle.tab_index(self.tab_index);
-        }
         let theme = cx.theme();
 
         let mut card = div()
@@ -123,10 +106,12 @@ impl RenderOnce for Card {
                     .on_click(on_click)
                     .track_focus(&focus_handle)
             })
-            .focus(|card| card.border_color(theme.colors.primary))
+            .focus_visible(|card| card.border_color(theme.colors.primary))
             .children(self.children);
 
         card.style().refine(&self.style);
-        card
+
+        self.focus
+            .attach_reveal(card, &focus_handle, (self.id, "reveal"), window, cx)
     }
 }
