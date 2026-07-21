@@ -15,13 +15,15 @@ use domain::{
     game::{GameId, GameListItem, SectionIndex},
 };
 use gpui::{
-    App, AppContext, Context, Entity, FontWeight, Hsla, Image, ImageSource, InteractiveElement,
-    IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce, Resource, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, Task, UniformListScrollHandle, Window,
-    container_query, div, img, px, rems, rgb, uniform_list,
+    App, AppContext, Context, Entity, FocusHandle, FontWeight, Hsla, Image, ImageSource,
+    InteractiveElement, IntoElement, ObjectFit, ParentElement, Pixels, Render, RenderOnce,
+    Resource, ScrollStrategy, SharedString, StatefulInteractiveElement, Styled, StyledImage, Task,
+    UniformListScrollHandle, Window, container_query, div, img, prelude::FluentBuilder, px, rems,
+    rgb, transparent_black, uniform_list,
 };
 use lru::LruCache;
 use std::{
+    cell::Cell,
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
     ops::Range,
@@ -32,7 +34,10 @@ use std::{
 use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
-use ui::{ListScrollbar, list_scrollbar_state};
+use ui::{
+    Activate, GRID_CONTEXT, GridDir, ListScrollbar, ScrollbarState, SelectDown, SelectLeft,
+    SelectRight, SelectUp, grid_step, list_scrollbar_state,
+};
 
 mod bubble;
 mod cache;
@@ -102,6 +107,7 @@ fn accent_hsla(color: Color) -> Hsla {
 struct GameCard {
     game: Option<GameEntry>,
     filler: bool,
+    selected: bool,
 }
 
 impl GameCard {
@@ -109,6 +115,7 @@ impl GameCard {
         Self {
             game: Some(game),
             filler: false,
+            selected: false,
         }
     }
 
@@ -116,6 +123,7 @@ impl GameCard {
         Self {
             game: None,
             filler: false,
+            selected: false,
         }
     }
 
@@ -123,7 +131,13 @@ impl GameCard {
         Self {
             game: None,
             filler: true,
+            selected: false,
         }
+    }
+
+    fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
     }
 }
 
@@ -135,6 +149,12 @@ impl RenderOnce for GameCard {
             return div().flex_shrink_0().w(GAME_CARD_WIDTH).into_any_element();
         }
 
+        let ring = if self.selected {
+            theme.colors.primary
+        } else {
+            transparent_black()
+        };
+
         let base = div()
             .flex_shrink_0()
             .flex()
@@ -143,6 +163,8 @@ impl RenderOnce for GameCard {
             .p(rems(CARD_PADDING_REM))
             .w(GAME_CARD_WIDTH)
             .rounded(theme.radius.lg)
+            .border_1()
+            .border_color(ring)
             .bg(theme.colors.card_background.opacity(0.));
 
         let mut cover = div()
@@ -195,16 +217,17 @@ impl RenderOnce for GameCard {
             icon_row = icon_row.child(img(ImageSource::Image(icon)).size(rems(CARD_ICON_SIZE_REM)));
         }
 
+        let accent = game
+            .accent_color
+            .unwrap_or(theme.colors.card_background)
+            .opacity(0.25);
+
         base.id(game.element_id.clone())
             .on_click(move |_, _, cx| {
                 cx.navigate(Page::Game(game.id));
             })
-            .hover(|style| {
-                style.bg(game
-                    .accent_color
-                    .unwrap_or(theme.colors.card_background)
-                    .opacity(0.25))
-            })
+            .when(self.selected, |style| style.bg(accent))
+            .hover(move |style| style.bg(accent))
             .child(cover)
             .child(title)
             .child(icon_row)
@@ -223,6 +246,11 @@ pub struct Library {
     generation: u64,
     component_icons: HashMap<String, Arc<Image>>,
     image_cache: Entity<LruImageCache>,
+    focus_handle: FocusHandle,
+    selected: Option<usize>,
+    was_focused: bool,
+    num_cols: Rc<Cell<usize>>,
+    scrollbar: Option<Entity<ScrollbarState>>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -237,6 +265,11 @@ impl Library {
             generation: 0,
             component_icons: HashMap::new(),
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
+            focus_handle: cx.focus_handle().tab_stop(true),
+            selected: None,
+            was_focused: false,
+            num_cols: Rc::new(Cell::new(1)),
+            scrollbar: None,
             _tasks: Vec::new(),
         };
 
@@ -315,11 +348,22 @@ impl Library {
             |library, result, _| {
                 match result {
                     Ok(index) => {
+                        let selected_id = library
+                            .selected
+                            .and_then(|idx| library.ids.get(idx))
+                            .copied();
+                        let anchor = library.scroll_anchor();
+                        let old_ids = library.ids.clone();
+
                         library.ids = Rc::new(index.ids);
                         library.sections = Rc::new(index.sections);
                         library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
                         library.loading_chunks.clear();
                         library.generation += 1;
+
+                        library.selected =
+                            selected_id.and_then(|id| library.ids.iter().position(|&g| g == id));
+                        library.restore_scroll(&old_ids, anchor);
                     }
                     Err(e) => {
                         error!("failed to list game index: {e:#}");
@@ -327,6 +371,97 @@ impl Library {
                 };
             },
         );
+    }
+
+    fn move_selection(&mut self, dir: GridDir, cx: &mut Context<Self>) {
+        let cols = self.num_cols.get().max(1);
+        let next = match self.selected {
+            None => self.top_visible_item(),
+            Some(_) => grid_step(self.selected, dir, self.ids.len(), cols),
+        };
+        if let Some(next) = next {
+            self.selected = Some(next);
+            self.scroll_handle
+                .scroll_to_item(next / cols, ScrollStrategy::Nearest);
+            if let Some(scrollbar) = &self.scrollbar {
+                scrollbar.update(cx, |scrollbar, cx| scrollbar.flash(cx));
+            }
+            cx.notify();
+        }
+    }
+
+    fn top_visible_item(&self) -> Option<usize> {
+        let cols = self.num_cols.get().max(1);
+        let count = self.ids.len();
+        if count == 0 {
+            return None;
+        }
+
+        let list = self.scroll_handle.0.borrow();
+        let row_height = list.last_item_size.map(|size| size.item.height);
+        let offset = list.base_handle.offset().y.abs();
+        drop(list);
+
+        let Some(row_height) = row_height.filter(|&h| h > Pixels::ZERO) else {
+            // Not laid out yet, so nothing has scrolled.
+            return Some(0);
+        };
+        let top_row = (offset / row_height).floor() as usize;
+        Some((top_row * cols).min(count - 1))
+    }
+
+    /// Whether the card's row is at least partially inside the viewport.
+    fn is_item_visible(&self, idx: usize) -> bool {
+        let cols = self.num_cols.get().max(1);
+        let list = self.scroll_handle.0.borrow();
+        let Some(row_height) = list.last_item_size.map(|size| size.item.height) else {
+            return false;
+        };
+        let viewport = list.base_handle.bounds().size.height;
+        let offset = list.base_handle.offset().y.abs();
+
+        let top = row_height * (idx / cols) as f32;
+        top < offset + viewport && top + row_height > offset
+    }
+
+    /// Index anchoring the viewport across a games refresh.
+    fn scroll_anchor(&self) -> Option<usize> {
+        self.selected
+            .filter(|&idx| self.is_item_visible(idx))
+            .or_else(|| self.top_visible_item())
+    }
+
+    /// Scroll the refreshed list back to roughly the games that were on screen.
+    fn restore_scroll(&mut self, old_ids: &[GameId], old_anchor: Option<usize>) {
+        let Some(old_anchor) = old_anchor else { return };
+        let Some(new_anchor) = old_ids[old_anchor..]
+            .iter()
+            .find_map(|old| self.ids.iter().position(|new| new == old))
+        else {
+            return;
+        };
+
+        let cols = self.num_cols.get().max(1);
+        let old_row = old_anchor / cols;
+        let new_row = new_anchor / cols;
+        if new_row == old_row {
+            return;
+        }
+
+        let list = self.scroll_handle.0.borrow();
+        let row_height = list.last_item_size.map(|size| size.item.height);
+        let mut offset = list.base_handle.offset();
+        drop(list);
+        let Some(row_height) = row_height else { return };
+
+        offset.y -= row_height * (new_row as f32 - old_row as f32);
+        self.scroll_handle.0.borrow().base_handle.set_offset(offset);
+    }
+
+    fn activate_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.selected.and_then(|idx| self.ids.get(idx)).copied() {
+            cx.navigate(Page::Game(id));
+        }
     }
 
     fn ensure_window(&mut self, items: Range<usize>, cx: &mut Context<Self>) {
@@ -433,10 +568,41 @@ impl Render for Library {
         let library = cx.weak_entity();
 
         let scrollbar = list_scrollbar_state("library-scrollbar", &self.scroll_handle, window, cx);
+        self.scrollbar = Some(scrollbar.clone());
         let scroll_handle = self.scroll_handle.clone();
         let sections = self.sections.clone();
 
+        let is_focused = self.focus_handle.is_focused(window);
+        if is_focused && !self.was_focused && window.last_input_was_keyboard() {
+            self.selected = self.top_visible_item();
+            if let Some(idx) = self.selected {
+                let cols = self.num_cols.get().max(1);
+                self.scroll_handle
+                    .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
+            }
+        }
+        self.was_focused = is_focused;
+
+        let focused = is_focused && window.last_input_was_keyboard();
+        let selected = self.selected;
+        let num_cols = self.num_cols.clone();
+
         div()
+            .track_focus(&self.focus_handle)
+            .key_context(GRID_CONTEXT)
+            .on_action(
+                cx.listener(|this, _: &SelectLeft, _, cx| this.move_selection(GridDir::Left, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectRight, _, cx| this.move_selection(GridDir::Right, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectUp, _, cx| this.move_selection(GridDir::Up, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SelectDown, _, cx| this.move_selection(GridDir::Down, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Activate, _, cx| this.activate_selected(cx)))
             .flex_grow_1()
             .text_color(theme.colors.accent)
             .child(container_query(move |size, window, cx| {
@@ -447,6 +613,7 @@ impl Render for Library {
                     game_count,
                     window.rem_size().as_f32(),
                 );
+                num_cols.set(dims.num_cols);
 
                 let bubble = index_bubble(&scrollbar, &scroll_handle, &sections, &dims, size, cx);
 
@@ -487,6 +654,7 @@ impl Render for Library {
                                                     })
                                                     .map(|game| GameCard::new(game.clone()))
                                                     .unwrap_or_else(GameCard::blank)
+                                                    .selected(focused && selected == Some(idx))
                                             }))
                                             .children(
                                                 (0..dims.num_cols - (end - start))

@@ -134,6 +134,11 @@ impl ScrollbarState {
         self.thumb.is_dragging()
     }
 
+    /// Reveal the bar as if the content had just scrolled.
+    pub fn flash(&mut self, cx: &mut Context<Self>) {
+        self.mark_scrolled(cx);
+    }
+
     /// Opacity for overlays keyed to actual scrolling.
     pub fn scroll_opacity(&self) -> f32 {
         if self.is_dragging() {

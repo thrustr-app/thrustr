@@ -122,10 +122,13 @@ impl App {
 
         Self::load_plugins(cx);
 
+        let focus_handle = cx.focus_handle();
+        focus_handle.focus(window, cx);
+
         Self {
             current_page,
             active_view,
-            focus_handle: cx.focus_handle(),
+            focus_handle,
         }
     }
 
