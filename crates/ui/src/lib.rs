@@ -106,11 +106,70 @@ impl UiProvider {
     }
 
     fn on_tab(&mut self, _: &Tab, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus_next(cx);
+        self.cycle_focus(false, window, cx);
     }
 
     fn on_tab_prev(&mut self, _: &TabPrev, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus_prev(cx);
+        self.cycle_focus(true, window, cx);
+    }
+
+    /// Move focus to the next/previous tab stop, trapping focus inside the
+    /// topmost open dialog so Tab/Shift-Tab cycle within it instead of escaping.
+    fn cycle_focus(&mut self, backward: bool, window: &mut Window, cx: &mut App) {
+        let Some(trap) = self.active_dialogs.last().map(|d| d.focus_handle.clone()) else {
+            if backward {
+                window.focus_prev(cx);
+            } else {
+                window.focus_next(cx);
+            }
+            return;
+        };
+
+        if backward {
+            window.focus_prev(cx);
+        } else {
+            window.focus_next(cx);
+        }
+
+        if trap.contains_focused(window, cx) {
+            return;
+        }
+
+        if backward {
+            focus_last_child(&trap, window, cx);
+        } else {
+            trap.focus(window, cx);
+            window.focus_next(cx);
+        }
+    }
+}
+
+fn focus_last_child(trap: &FocusHandle, window: &mut Window, cx: &mut App) {
+    trap.focus(window, cx);
+
+    let mut first: Option<FocusHandle> = None;
+    let mut last: Option<FocusHandle> = None;
+
+    loop {
+        window.focus_next(cx);
+
+        if !trap.contains_focused(window, cx) {
+            break;
+        }
+
+        let focused = window.focused(cx);
+        if focused == last || focused == first {
+            break;
+        }
+        if first.is_none() {
+            first = focused.clone();
+        }
+
+        last = focused;
+    }
+
+    if let Some(last) = last {
+        window.focus(&last, cx);
     }
 }
 
