@@ -5,10 +5,12 @@ use gpui::{
 use std::rc::Rc;
 
 mod components;
-mod traits;
+mod foundation;
+mod interaction;
 
 pub use components::*;
-pub use traits::*;
+pub use foundation::*;
+pub use interaction::grid::*;
 
 actions!(global, [Tab, TabPrev]);
 
@@ -28,6 +30,7 @@ pub struct UiProvider {
 impl UiProvider {
     pub fn new(view: impl Into<AnyView>, _window: &mut Window, cx: &mut App) -> Entity<Self> {
         components::init(cx);
+        interaction::init(cx);
         cx.bind_keys([
             KeyBinding::new("tab", Tab, None),
             KeyBinding::new("shift-tab", TabPrev, None),
