@@ -46,7 +46,11 @@ const CARD_TEXT_SIZE_REM: f32 = 0.9;
 const CARD_ICON_SIZE_REM: f32 = 1.5;
 /// Fixed so a card's height does not depend on whether its title has loaded.
 const CARD_TITLE_HEIGHT_REM: f32 = 1.25;
+const CARD_ROW_GAP_REM: f32 = 1.5;
+
 const GRID_PADDING_REM: f32 = 2. - CARD_PADDING_REM;
+
+const CACHE_OVERSCAN_ROWS: usize = 3;
 
 const CHUNK_SIZE: usize = 120;
 const PREFETCH_CHUNKS: usize = 1;
@@ -213,6 +217,19 @@ impl Library {
         }
     }
 
+    /// Height of one grid row from the last layout.
+    fn measured_row_height(&self, rows: usize) -> Option<Pixels> {
+        if rows == 0 {
+            return None;
+        }
+        self.scroll_handle
+            .0
+            .borrow()
+            .last_item_size
+            .map(|size| size.contents.height / rows as f32)
+            .filter(|&h| h > Pixels::ZERO)
+    }
+
     fn top_visible_item(&self) -> Option<usize> {
         let cols = self.num_cols.get().max(1);
         let count = self.ids.len();
@@ -220,26 +237,23 @@ impl Library {
             return None;
         }
 
-        let list = self.scroll_handle.0.borrow();
-        let row_height = list.last_item_size.map(|size| size.item.height);
-        let offset = list.base_handle.offset().y.abs();
-        drop(list);
-
-        let Some(row_height) = row_height.filter(|&h| h > Pixels::ZERO) else {
+        let Some(row_height) = self.measured_row_height(count.div_ceil(cols)) else {
             // Not laid out yet, so nothing has scrolled.
             return Some(0);
         };
-        let top_row = (offset / row_height).floor() as usize;
+
+        let offset = self.scroll_handle.0.borrow().base_handle.offset().y.abs();
+        let top_row = (offset / row_height).round() as usize;
         Some((top_row * cols).min(count - 1))
     }
 
     /// Whether the card's row is at least partially inside the viewport.
     fn is_item_visible(&self, idx: usize) -> bool {
         let cols = self.num_cols.get().max(1);
-        let list = self.scroll_handle.0.borrow();
-        let Some(row_height) = list.last_item_size.map(|size| size.item.height) else {
+        let Some(row_height) = self.measured_row_height(self.ids.len().div_ceil(cols)) else {
             return false;
         };
+        let list = self.scroll_handle.0.borrow();
         let viewport = list.base_handle.bounds().size.height;
         let offset = list.base_handle.offset().y.abs();
 
@@ -271,11 +285,10 @@ impl Library {
             return;
         }
 
-        let list = self.scroll_handle.0.borrow();
-        let row_height = list.last_item_size.map(|size| size.item.height);
-        let mut offset = list.base_handle.offset();
-        drop(list);
-        let Some(row_height) = row_height else { return };
+        let Some(row_height) = self.measured_row_height(old_ids.len().div_ceil(cols)) else {
+            return;
+        };
+        let mut offset = self.scroll_handle.0.borrow().base_handle.offset();
 
         offset.y -= row_height * (new_row as f32 - old_row as f32);
         self.scroll_handle.0.borrow().base_handle.set_offset(offset);
@@ -351,13 +364,24 @@ struct GridDims {
 }
 
 impl GridDims {
-    fn compute(grid_width: Pixels, grid_height: Pixels, game_count: usize, rem_size: f32) -> Self {
+    fn compute(
+        grid_width: Pixels,
+        grid_height: Pixels,
+        game_count: usize,
+        content_height: Option<Pixels>,
+    ) -> Self {
         let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
         let num_cols = num_cols.max(1);
         let num_rows = game_count.div_ceil(num_cols);
 
-        let visible_rows =
-            (grid_height.as_f32() / Self::card_height_px(rem_size)).ceil() as usize + 2;
+        let visible_rows = content_height
+            .filter(|h| *h > Pixels::ZERO)
+            .zip(NonZeroUsize::new(num_rows))
+            .map(|(content, rows)| {
+                let row_height = content / rows.get() as f32;
+                (grid_height / row_height).ceil() as usize
+            })
+            .unwrap_or(0);
 
         Self {
             num_cols,
@@ -366,19 +390,8 @@ impl GridDims {
         }
     }
 
-    /// Approximate full card height in pixels.
-    fn card_height_px(rem_size: f32) -> f32 {
-        let image_height = GAME_CARD_WIDTH.as_f32() / CARD_ASPECT_RATIO;
-        let chrome = (CARD_PADDING_REM * 2.
-            + CARD_INNER_GAP_REM * 2.
-            + CARD_TEXT_SIZE_REM
-            + CARD_ICON_SIZE_REM)
-            * rem_size;
-        image_height + chrome
-    }
-
     fn cache_capacity(&self) -> usize {
-        self.num_cols * self.visible_rows
+        self.num_cols * (self.visible_rows + CACHE_OVERSCAN_ROWS)
     }
 }
 
@@ -430,11 +443,17 @@ impl Render for Library {
             .text_color(theme.colors.accent)
             .child(container_query(move |size, window, cx| {
                 let padding = px(GRID_PADDING_REM * window.rem_size().as_f32());
+                let content_height = {
+                    let list = scroll_handle.0.borrow();
+                    let viewport = list.base_handle.bounds().size.height;
+                    let max_offset = list.base_handle.max_offset().y;
+                    (viewport > Pixels::ZERO).then_some(max_offset + viewport)
+                };
                 let dims = GridDims::compute(
                     size.width - padding * 2.,
                     size.height,
                     game_count,
-                    window.rem_size().as_f32(),
+                    content_height,
                 );
                 num_cols.set(dims.num_cols);
 
@@ -468,7 +487,7 @@ impl Render for Library {
                                             .flex()
                                             .justify_between()
                                             .px(padding)
-                                            .pb(rems(1.5))
+                                            .pb(rems(CARD_ROW_GAP_REM))
                                             .children((start..end).map(|idx| {
                                                 chunks
                                                     .peek(&(idx / CHUNK_SIZE))
