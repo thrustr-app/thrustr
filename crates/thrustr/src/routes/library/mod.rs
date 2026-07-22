@@ -440,6 +440,8 @@ impl Route for Library {
                 .variant_outline()
                 .placeholder("Search library")
                 .value(self.search_query.clone())
+                .leading_icon("icons/search.svg")
+                .clear_button()
                 .w(rems(28.))
                 .rounded_full()
                 .px(rems(1.2))

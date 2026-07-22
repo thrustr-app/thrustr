@@ -3,7 +3,7 @@ use gpui::{
     App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, FontWeight, Hsla,
     InteractiveElement, Interactivity, IntoElement, MouseButton, ParentElement, Refineable,
     RenderOnce, SharedString, Stateful, StatefulInteractiveElement, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder, rems, transparent_black,
+    Window, div, prelude::FluentBuilder, rems, svg, transparent_black,
 };
 
 mod actions;
@@ -46,6 +46,8 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         masked: false,
         mask: None,
         max_length: None,
+        leading_icon: None,
+        clear_button: false,
         focus: FocusProps::default(),
     }
 }
@@ -68,6 +70,8 @@ pub struct Input {
     masked: bool,
     mask: Option<SharedString>,
     max_length: Option<usize>,
+    leading_icon: Option<SharedString>,
+    clear_button: bool,
     focus: FocusProps,
 }
 
@@ -132,6 +136,18 @@ impl Input {
         self.disabled = true;
         self
     }
+
+    /// Show an icon at the start of the field
+    pub fn leading_icon(mut self, path: impl Into<SharedString>) -> Self {
+        self.leading_icon = Some(path.into());
+        self
+    }
+
+    /// Show a button to clear the field when it has a value
+    pub fn clear_button(mut self) -> Self {
+        self.clear_button = true;
+        self
+    }
 }
 
 impl WithFocus for Input {
@@ -193,6 +209,8 @@ impl RenderOnce for Input {
             state.max_length = self.max_length;
         });
 
+        let has_value = !state.read(cx).value.is_empty();
+
         let theme = cx.theme();
 
         let background = if outline {
@@ -213,6 +231,16 @@ impl RenderOnce for Input {
             .rounded(theme.radius.sm)
             .bg(background)
             .p(rems(0.5))
+            .gap(rems(0.5))
+            .when_some(self.leading_icon, |input, path| {
+                input.child(
+                    svg()
+                        .path(path)
+                        .size(rems(1.))
+                        .flex_none()
+                        .text_color(theme.colors.secondary),
+                )
+            })
             .when(!self.disabled, |this| {
                 this.key_context(CONTEXT)
                     .track_focus(&focus_handle)
@@ -259,7 +287,26 @@ impl RenderOnce for Input {
             .on_scroll_wheel(window.listener_for(&state, InputState::on_scroll_wheel))
             .focus(|input| input.border_1().border_color(theme.colors.primary))
             .when(self.disabled, |button| button.opacity(0.6))
-            .child(state.clone());
+            .child(state.clone())
+            .when(self.clear_button && has_value, |input| {
+                let state = state.clone();
+                input.child(
+                    div()
+                        .id((self.id.clone(), "clear"))
+                        .flex_none()
+                        .cursor_pointer()
+                        .text_color(theme.colors.secondary)
+                        .child(
+                            svg()
+                                .path("icons/x.svg")
+                                .size(rems(1.))
+                                .text_color(theme.colors.secondary),
+                        )
+                        .on_click(move |_, window, cx| {
+                            state.update(cx, |state, cx| state.clear(window, cx));
+                        }),
+                )
+            });
 
         input.style().refine(&self.style);
 

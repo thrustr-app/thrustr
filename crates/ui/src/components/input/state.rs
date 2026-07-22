@@ -149,6 +149,29 @@ impl InputState {
         }
     }
 
+    pub fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.value.is_empty() {
+            return;
+        }
+        self.value = SharedString::default();
+        self.selected_range = 0..0;
+        self.marked_range = None;
+        self.should_auto_scroll = true;
+        self.last_layout = None;
+        self.last_bounds = None;
+        self.history.clear();
+        if let Some(on_input) = &self.on_input {
+            on_input(
+                &InputEvent {
+                    value: self.value.clone(),
+                },
+                window,
+                cx,
+            );
+        }
+        cx.notify();
+    }
+
     /// Mask or unmask the text field (e.g., for passwords)
     pub fn set_masked(&mut self, masked: bool) {
         if self.masked != masked {
