@@ -29,6 +29,7 @@ pub struct PrepaintState {
     line: Option<ShapedLine>,
     cursor: Option<PaintQuad>,
     selection: Option<PaintQuad>,
+    optical_offset_y: Pixels,
 }
 
 impl IntoElement for TextElement {
@@ -178,6 +179,18 @@ impl Element for TextElement {
             .text_system()
             .shape_line(display_text, font_size, &runs, None);
 
+        // gpui centers the em box (ascent + descent) within the line height,
+        // which leaves text sitting high in fonts whose descent reserves more
+        // space than their glyphs use above the cap line. Shift the line so
+        // the cap-height band is what gets centered instead.
+        let font_id = window.text_system().resolve_font(&style.font());
+        let cap_height = window.text_system().cap_height(font_id, font_size);
+        let optical_offset_y = if cap_height > px(0.) {
+            (cap_height + line.descent - line.ascent) / 2.
+        } else {
+            px(0.)
+        };
+
         if state.should_auto_scroll {
             self.state.update(cx, |state, _| {
                 state.auto_scroll_to_cursor(&line, bounds);
@@ -224,6 +237,7 @@ impl Element for TextElement {
             line: Some(line),
             cursor,
             selection,
+            optical_offset_y,
         }
     }
 
@@ -251,7 +265,10 @@ impl Element for TextElement {
 
         let line = prepaint.line.take().unwrap();
         let scroll_offset = state.scroll_handle.offset();
-        let text_origin = point(bounds.origin.x - scroll_offset.x, bounds.origin.y);
+        let text_origin = point(
+            bounds.origin.x - scroll_offset.x,
+            bounds.origin.y + prepaint.optical_offset_y,
+        );
 
         line.paint(
             text_origin,
