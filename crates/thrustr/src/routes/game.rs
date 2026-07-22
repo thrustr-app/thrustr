@@ -1,5 +1,5 @@
-use crate::extensions::SpawnTaskExt;
 use crate::globals::GameServiceExt;
+use crate::{app::Route, extensions::SpawnTaskExt};
 use domain::game::GameId;
 use gpui::{
     Context, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
@@ -40,6 +40,8 @@ impl Game {
         }
     }
 }
+
+impl Route for Game {}
 
 impl Render for Game {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

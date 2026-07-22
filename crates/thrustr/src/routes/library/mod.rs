@@ -1,4 +1,5 @@
 use crate::{
+    app::Route,
     conversions::image::image_to_gpui,
     extensions::{EventListenerExt, SpawnTaskExt},
     globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
@@ -12,9 +13,9 @@ use crate::{
 use artwork::ArtworkReady;
 use domain::game::{GameId, SectionIndex};
 use gpui::{
-    AppContext, Context, Entity, FocusHandle, Image, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Render, Resource, ScrollStrategy, Styled, Task, UniformListScrollHandle,
-    Window, container_query, div, px, rems, uniform_list,
+    AnyElement, AppContext, Context, Entity, FocusHandle, Image, InteractiveElement, IntoElement,
+    ParentElement, Pixels, Render, Resource, ScrollStrategy, SharedString, Styled, Task,
+    UniformListScrollHandle, Window, container_query, div, px, rems, uniform_list,
 };
 use lru::LruCache;
 use std::{
@@ -24,21 +25,22 @@ use std::{
     ops::Range,
     rc::Rc,
     sync::Arc,
+    time::Duration,
 };
 use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
     Activate, GRID_CONTEXT, GridDir, ListScrollbar, ScrollbarState, SelectDown, SelectLeft,
-    SelectRight, SelectUp, grid_step, list_scrollbar_state,
+    SelectRight, SelectUp, grid_step, input, list_scrollbar_state,
 };
 
 mod bubble;
 mod cache;
 mod card;
 
-const GAME_CARD_WIDTH: Pixels = px(220.);
-const MIN_GAP: Pixels = px(8.);
+const CARD_WIDTH: Pixels = px(220.);
+const CARD_MIN_GAP: Pixels = px(8.);
 const CARD_ASPECT_RATIO: f32 = 2. / 3.;
 const CARD_PADDING_REM: f32 = 0.75;
 const CARD_INNER_GAP_REM: f32 = 0.75;
@@ -55,10 +57,11 @@ const CACHE_OVERSCAN_ROWS: usize = 3;
 const CHUNK_SIZE: usize = 120;
 const PREFETCH_CHUNKS: usize = 1;
 /// Max hydrated chunks kept resident, with LRU eviction rather than distance-from-viewport.
-/// `uniform_list` also invokes the render closure with a probe range (row 0) every frame
-/// to measure item height, and distance-based eviction around that probe range
-/// would evict the chunks that are actually on screen.
+/// `uniform_list` renders row 0 every frame for measuring item height and distance-based
+/// eviction around that probe range would evict the chunks that are actually on screen.
 const MAX_RESIDENT_CHUNKS: NonZeroUsize = NonZeroUsize::new(12).unwrap();
+
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
 
 type ChunkCache = LruCache<usize, Vec<GameEntry>>;
 
@@ -71,6 +74,9 @@ pub struct Library {
     /// Bumped whenever `ids` is replaced so in-flight hydrations from a previous
     /// generation are discarded.
     generation: u64,
+    /// Bumped on every refresh so an earlier, slower query cannot overwrite the
+    /// results of a later one when they resolve out of order.
+    refresh_seq: u64,
     component_icons: HashMap<String, Arc<Image>>,
     image_cache: Entity<LruImageCache>,
     focus_handle: FocusHandle,
@@ -78,6 +84,8 @@ pub struct Library {
     was_focused: bool,
     num_cols: Rc<Cell<usize>>,
     scrollbar: Option<Entity<ScrollbarState>>,
+    search_query: SharedString,
+    _search_debounce: Option<Task<()>>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -90,6 +98,7 @@ impl Library {
             chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
             loading_chunks: HashSet::new(),
             generation: 0,
+            refresh_seq: 0,
             component_icons: HashMap::new(),
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             focus_handle: cx.focus_handle().tab_stop(true),
@@ -97,10 +106,15 @@ impl Library {
             was_focused: false,
             num_cols: Rc::new(Cell::new(1)),
             scrollbar: None,
+            search_query: SharedString::default(),
+            _search_debounce: None,
             _tasks: Vec::new(),
         };
 
-        let task = cx.listen("games", |page, cx| page.refresh_games(cx));
+        let task = cx.listen("games", |page, cx| {
+            page.refresh_icons(cx);
+            page.refresh_games(cx);
+        });
         page._tasks.push(task);
 
         let mut artwork_rx = cx.artwork_service().subscribe();
@@ -119,6 +133,7 @@ impl Library {
         });
         page._tasks.push(artwork_task);
 
+        page.refresh_icons(cx);
         page.refresh_games(cx);
         page
     }
@@ -157,9 +172,7 @@ impl Library {
         }
     }
 
-    fn refresh_games(&mut self, cx: &mut Context<Self>) {
-        let game_service = cx.game_service();
-
+    fn refresh_icons(&mut self, cx: &mut Context<Self>) {
         self.component_icons = cx
             .storefronts()
             .iter()
@@ -169,10 +182,20 @@ impl Library {
                     .map(|icon| (meta.id.to_string(), image_to_gpui(icon)))
             })
             .collect();
+    }
 
+    fn refresh_games(&mut self, cx: &mut Context<Self>) {
+        let game_service = cx.game_service();
+
+        self.refresh_seq += 1;
+        let seq = self.refresh_seq;
+        let query = self.search_query.clone();
         cx.spawn_and_update(
-            async move { game_service.list_index() },
-            |library, result, _| {
+            async move { game_service.list_index(Some(&query)) },
+            move |library, result, _| {
+                if library.refresh_seq != seq {
+                    return;
+                }
                 match result {
                     Ok(index) => {
                         let selected_id = library
@@ -198,6 +221,20 @@ impl Library {
                 };
             },
         );
+    }
+
+    fn set_query(&mut self, query: SharedString, cx: &mut Context<Self>) {
+        if query == self.search_query {
+            return;
+        }
+        self.search_query = query;
+
+        self._search_debounce = Some(cx.spawn(async move |library, cx| {
+            cx.background_executor().timer(SEARCH_DEBOUNCE).await;
+            library
+                .update(cx, |library, cx| library.refresh_games(cx))
+                .ok();
+        }));
     }
 
     fn move_selection(&mut self, dir: GridDir, cx: &mut Context<Self>) {
@@ -370,7 +407,7 @@ impl GridDims {
         game_count: usize,
         content_height: Option<Pixels>,
     ) -> Self {
-        let num_cols = ((grid_width + MIN_GAP) / (GAME_CARD_WIDTH + MIN_GAP)).floor() as usize;
+        let num_cols = ((grid_width + CARD_MIN_GAP) / (CARD_WIDTH + CARD_MIN_GAP)).floor() as usize;
         let num_cols = num_cols.max(1);
         let num_rows = game_count.div_ceil(num_cols);
 
@@ -392,6 +429,25 @@ impl GridDims {
 
     fn cache_capacity(&self) -> usize {
         self.num_cols * (self.visible_rows + CACHE_OVERSCAN_ROWS)
+    }
+}
+
+impl Route for Library {
+    fn header(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let library = cx.weak_entity();
+        Some(
+            input("library-search")
+                .placeholder("Search library")
+                .value(self.search_query.clone())
+                .w(rems(18.))
+                .on_input(move |event, _, cx| {
+                    let query = event.value.clone();
+                    library
+                        .update(cx, |library, cx| library.set_query(query, cx))
+                        .ok();
+                })
+                .into_any_element(),
+        )
     }
 }
 

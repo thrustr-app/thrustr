@@ -136,7 +136,7 @@ pub trait GameRepository: Send + Sync {
 
     fn get(&self, id: GameId) -> Result<Option<Game>>;
 
-    fn list_index(&self) -> Result<GameIndex>;
+    fn list_index(&self, query: Option<&str>) -> Result<GameIndex>;
 
     fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>>;
 

@@ -43,8 +43,6 @@ CREATE INDEX idx_artwork_hash ON artwork (hash);
 
 CREATE VIRTUAL TABLE games_fts USING fts5 (
   name,
-  summary,
-  description,
   content = 'games',
   content_rowid = 'id',
   tokenize = 'unicode61 remove_diacritics 2'
@@ -52,42 +50,30 @@ CREATE VIRTUAL TABLE games_fts USING fts5 (
 
 CREATE TRIGGER games_fts_after_insert AFTER INSERT ON games BEGIN
 INSERT INTO
-  games_fts (rowid, name, summary, description)
+  games_fts (rowid, name)
 VALUES
-  (new.id, new.name, new.summary, new.description);
+  (new.id, new.name);
 
 END;
 
 CREATE TRIGGER games_fts_after_delete AFTER DELETE ON games BEGIN
 INSERT INTO
-  games_fts (games_fts, rowid, name, summary, description)
+  games_fts (games_fts, rowid, name)
 VALUES
-  (
-    'delete',
-    old.id,
-    old.name,
-    old.summary,
-    old.description
-  );
+  ('delete', old.id, old.name);
 
 END;
 
 CREATE TRIGGER games_fts_after_update AFTER
 UPDATE ON games BEGIN
 INSERT INTO
-  games_fts (games_fts, rowid, name, summary, description)
+  games_fts (games_fts, rowid, name)
 VALUES
-  (
-    'delete',
-    old.id,
-    old.name,
-    old.summary,
-    old.description
-  );
+  ('delete', old.id, old.name);
 
 INSERT INTO
-  games_fts (rowid, name, summary, description)
+  games_fts (rowid, name)
 VALUES
-  (new.id, new.name, new.summary, new.description);
+  (new.id, new.name);
 
 END;

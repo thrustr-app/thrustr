@@ -1,4 +1,4 @@
-use crate::{globals::ComponentRegistryExt, routes};
+use crate::{app::RouteHandle, globals::ComponentRegistryExt, routes};
 use domain::game::GameId;
 use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString};
 use std::{collections::VecDeque, mem::replace};
@@ -40,14 +40,14 @@ impl Page {
         }
     }
 
-    pub fn build_view(&self, cx: &mut App) -> AnyView {
+    pub fn build_view(&self, cx: &mut App) -> Box<dyn RouteHandle> {
         match self {
-            Self::Home => cx.new(|_| routes::Home).into(),
-            Self::Library => cx.new(routes::Library::new).into(),
-            Self::Collections => cx.new(|_| routes::Collections).into(),
-            Self::Game(id) => cx.new(|cx| routes::Game::new(*id, cx)).into(),
-            Self::Settings(Some(sub)) => cx.new(|cx| routes::Settings::new(sub.clone(), cx)).into(),
-            _ => cx.new(|_| EmptyView).into(),
+            Self::Home => Box::new(cx.new(|_| routes::Home)),
+            Self::Library => Box::new(cx.new(routes::Library::new)),
+            Self::Collections => Box::new(cx.new(|_| routes::Collections)),
+            Self::Game(id) => Box::new(cx.new(|cx| routes::Game::new(*id, cx))),
+            Self::Settings(Some(sub)) => Box::new(cx.new(|cx| routes::Settings::new(sub.clone(), cx))),
+            _ => Box::new(cx.new(|_| EmptyView)),
         }
     }
 

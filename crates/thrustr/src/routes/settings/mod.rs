@@ -1,4 +1,7 @@
-use crate::navigation::{Navigator, NavigatorExt, Page, SettingsPage};
+use crate::{
+    app::Route,
+    navigation::{Navigator, NavigatorExt, Page, SettingsPage},
+};
 use gpui::{AnyView, App, Context, IntoElement, ParentElement, Render, Styled, Window, div, rems};
 use theme::ThemeExt;
 use ui::{Sidebar, SidebarItem, SidebarPalette};
@@ -49,6 +52,8 @@ impl Settings {
         }
     }
 }
+
+impl Route for Settings {}
 
 impl Render for Settings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

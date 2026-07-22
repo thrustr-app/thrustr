@@ -2,9 +2,9 @@ use crate::globals::PluginServiceExt;
 use crate::navigation::{Navigator, NavigatorExt, Page};
 use config::paths;
 use gpui::{
-    AnyView, App as GpuiApp, AppContext, Context, FocusHandle, Focusable, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, SharedString, Styled,
-    Window, div, rems, svg,
+    AnyElement, AnyView, App as GpuiApp, AppContext, Context, EmptyView, Entity, FocusHandle,
+    Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
+    SharedString, Styled, Window, div, rems, svg,
 };
 use theme::ThemeExt;
 use tracing::error;
@@ -50,15 +50,43 @@ fn sidebar_rail(cx: &GpuiApp) -> impl IntoElement {
         )
 }
 
+/// A top-level page.
+pub trait Route: Render {
+    /// Page-specific top bar content.
+    fn header(&mut self, _cx: &mut Context<Self>) -> Option<AnyElement> {
+        None
+    }
+}
+
+/// Type-erased handle to the active [`Route`].
+pub trait RouteHandle {
+    fn view(&self) -> AnyView;
+    fn render_header(&self, cx: &mut GpuiApp) -> Option<AnyElement>;
+}
+
+impl Route for EmptyView {}
+
+impl<T: Route> RouteHandle for Entity<T> {
+    fn view(&self) -> AnyView {
+        self.clone().into()
+    }
+
+    fn render_header(&self, cx: &mut GpuiApp) -> Option<AnyElement> {
+        self.update(cx, |page, cx| page.header(cx))
+    }
+}
+
 #[derive(IntoElement)]
 pub struct Topbar {
     title: SharedString,
+    header: Option<AnyElement>,
 }
 
 impl Topbar {
-    fn new(title: impl Into<SharedString>) -> Self {
+    fn new(title: impl Into<SharedString>, header: Option<AnyElement>) -> Self {
         Self {
             title: title.into(),
+            header,
         }
     }
 }
@@ -68,6 +96,7 @@ impl RenderOnce for Topbar {
         let theme = cx.theme();
 
         div()
+            .relative()
             .px(rems(2.))
             .h(rems(6.))
             .bg(theme.colors.background)
@@ -82,12 +111,23 @@ impl RenderOnce for Topbar {
                     .text_size(rems(1.5))
                     .text_color(theme.colors.primary),
             )
+            .children(self.header.map(|header| {
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(header)
+            }))
     }
 }
 
 pub struct App {
     current_page: Page,
-    active_view: AnyView,
+    active_view: Box<dyn RouteHandle>,
     focus_handle: FocusHandle,
 }
 
@@ -167,8 +207,11 @@ impl Render for App {
                         .flex_grow_1()
                         .flex()
                         .flex_col()
-                        .child(Topbar::new(self.current_page.label()))
-                        .child(self.active_view.clone()),
+                        .child(Topbar::new(
+                            self.current_page.label(),
+                            self.active_view.render_header(cx),
+                        ))
+                        .child(self.active_view.view()),
                 ),
             )
             .children(UiProvider::render_dialogs(window, cx))

@@ -16,8 +16,8 @@ impl GameService {
         self.game_repo.get(id)
     }
 
-    pub fn list_index(&self) -> Result<GameIndex> {
-        self.game_repo.list_index()
+    pub fn list_index(&self, query: Option<&str>) -> Result<GameIndex> {
+        self.game_repo.list_index(query)
     }
 
     pub fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {

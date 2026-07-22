@@ -1,6 +1,6 @@
 use super::{
     CARD_ASPECT_RATIO, CARD_ICON_SIZE_REM, CARD_INNER_GAP_REM, CARD_PADDING_REM,
-    CARD_TEXT_SIZE_REM, CARD_TITLE_HEIGHT_REM, GAME_CARD_WIDTH,
+    CARD_TEXT_SIZE_REM, CARD_TITLE_HEIGHT_REM, CARD_WIDTH,
 };
 use crate::{
     globals::ArtworkServiceExt,
@@ -102,7 +102,7 @@ impl RenderOnce for GameCard {
         let theme = cx.theme();
 
         if self.filler {
-            return div().flex_shrink_0().w(GAME_CARD_WIDTH).into_any_element();
+            return div().flex_shrink_0().w(CARD_WIDTH).into_any_element();
         }
 
         let ring = if self.selected {
@@ -117,7 +117,7 @@ impl RenderOnce for GameCard {
             .flex_col()
             .gap(rems(CARD_INNER_GAP_REM))
             .p(rems(CARD_PADDING_REM))
-            .w(GAME_CARD_WIDTH)
+            .w(CARD_WIDTH)
             .rounded(theme.radius.lg)
             .border_1()
             .border_color(ring)
