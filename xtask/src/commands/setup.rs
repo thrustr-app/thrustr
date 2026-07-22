@@ -2,14 +2,21 @@ use anyhow::Result;
 use std::fs;
 
 pub fn setup() -> Result<()> {
-    println!("Setting up commit linting...");
+    println!("Setting up git hooks...");
 
-    fs::copy(".hooks/commit-msg", ".git/hooks/commit-msg")?;
-    #[cfg(unix)]
-    {
-        use std::{fs::Permissions, os::unix::fs::PermissionsExt};
-        fs::set_permissions(".git/hooks/commit-msg", Permissions::from_mode(0o755))?;
+    for entry in fs::read_dir(".hooks")? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let dest = format!(".git/hooks/{}", entry.file_name().to_string_lossy());
+        fs::copy(entry.path(), &dest)?;
+        #[cfg(unix)]
+        {
+            use std::{fs::Permissions, os::unix::fs::PermissionsExt};
+            fs::set_permissions(&dest, Permissions::from_mode(0o755))?;
+        }
     }
-    println!("Done! Commit linting is set up.");
+    println!("Done! Git hooks are set up.");
     Ok(())
 }
