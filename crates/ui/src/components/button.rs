@@ -141,7 +141,7 @@ impl RenderOnce for Button {
                             .path("icons/loader.svg")
                             .size(rems(1.25))
                             .text_color(theme.colors.background)
-                            .when(self.variant == Variant::Ghost, |svg| {
+                            .when(self.variant == Variant::Outline, |svg| {
                                 svg.text_color(theme.colors.primary)
                             })
                             .with_animation(
@@ -171,7 +171,7 @@ impl RenderOnce for Button {
                     .text_color(theme.colors.background)
                     .focus_visible(|input| input.border_color(theme.colors.primary));
             }
-            Variant::Ghost => {
+            Variant::Outline => {
                 button = button
                     .bg(transparent_black())
                     .text_color(theme.colors.primary)

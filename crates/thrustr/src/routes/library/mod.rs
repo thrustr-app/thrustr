@@ -32,7 +32,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
     Activate, GRID_CONTEXT, GridDir, ListScrollbar, ScrollbarState, SelectDown, SelectLeft,
-    SelectRight, SelectUp, grid_step, input, list_scrollbar_state,
+    SelectRight, SelectUp, WithVariant, grid_step, input, list_scrollbar_state,
 };
 
 mod bubble;
@@ -437,9 +437,12 @@ impl Route for Library {
         let library = cx.weak_entity();
         Some(
             input("library-search")
+                .variant_outline()
                 .placeholder("Search library")
                 .value(self.search_query.clone())
-                .w(rems(18.))
+                .w(rems(28.))
+                .rounded_full()
+                .px(rems(1.2))
                 .on_input(move |event, _, cx| {
                     let query = event.value.clone();
                     library

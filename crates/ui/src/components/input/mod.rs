@@ -1,9 +1,9 @@
-use crate::{FocusProps, WithFocus, components::input::state::InputState};
+use crate::{FocusProps, Variant, WithFocus, WithVariant, components::input::state::InputState};
 use gpui::{
-    App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, Hsla, InteractiveElement,
-    Interactivity, IntoElement, MouseButton, ParentElement, Refineable, RenderOnce, SharedString,
-    Stateful, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
-    prelude::FluentBuilder, rems,
+    App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, FontWeight, Hsla,
+    InteractiveElement, Interactivity, IntoElement, MouseButton, ParentElement, Refineable,
+    RenderOnce, SharedString, Stateful, StatefulInteractiveElement, StyleRefinement, Styled,
+    Window, div, prelude::FluentBuilder, rems, transparent_black,
 };
 
 mod actions;
@@ -34,6 +34,7 @@ pub fn input(id: impl Into<ElementId>) -> Input {
             .id(id)
             .cursor(CursorStyle::IBeam),
         style: StyleRefinement::default(),
+        variant: Variant::Primary,
         disabled: false,
         value: None,
         on_input: None,
@@ -55,6 +56,7 @@ pub struct Input {
     id: ElementId,
     base: Stateful<Div>,
     style: StyleRefinement,
+    variant: Variant,
     disabled: bool,
     value: Option<SharedString>,
     on_input: Option<Box<dyn Fn(&InputEvent, &mut Window, &mut App) + 'static>>,
@@ -138,6 +140,13 @@ impl WithFocus for Input {
     }
 }
 
+impl WithVariant for Input {
+    fn variant(mut self, variant: Variant) -> Self {
+        self.variant = variant;
+        self
+    }
+}
+
 impl Styled for Input {
     fn style(&mut self) -> &mut StyleRefinement {
         &mut self.style
@@ -167,12 +176,17 @@ impl RenderOnce for Input {
 
         let focus_handle = self.focus.configure(state.focus_handle(cx));
 
+        let outline = self.variant == Variant::Outline;
+        let placeholder_color = self
+            .placeholder_color
+            .or_else(|| Some(cx.theme().colors.secondary));
+
         state.update(cx, |state, _cx| {
             state.set_value(self.value);
             state.on_input = self.on_input;
             state.on_change = self.on_change;
             state.set_placeholder(self.placeholder);
-            state.set_placeholder_color(self.placeholder_color);
+            state.set_placeholder_color(placeholder_color);
             state.set_selection_color(self.selection_color);
             state.set_masked(self.masked);
             state.set_mask(self.mask);
@@ -181,11 +195,23 @@ impl RenderOnce for Input {
 
         let theme = cx.theme();
 
+        let background = if outline {
+            transparent_black()
+        } else {
+            theme.colors.card_surface
+        };
+
         let mut input = self
             .base
+            .font_weight(FontWeight::LIGHT)
             .border_1()
+            .when(outline, |input| {
+                input
+                    .border_color(theme.colors.border)
+                    .text_color(theme.colors.primary)
+            })
             .rounded(theme.radius.sm)
-            .bg(theme.colors.card_surface)
+            .bg(background)
             .p(rems(0.5))
             .when(!self.disabled, |this| {
                 this.key_context(CONTEXT)

@@ -5,7 +5,7 @@ pub enum Variant {
     Accent,
     Warning,
     Destructive,
-    Ghost,
+    Outline,
 }
 
 pub trait WithVariant: Sized {
@@ -31,7 +31,7 @@ pub trait WithVariant: Sized {
         self.variant(Variant::Destructive)
     }
 
-    fn variant_ghost(self) -> Self {
-        self.variant(Variant::Ghost)
+    fn variant_outline(self) -> Self {
+        self.variant(Variant::Outline)
     }
 }

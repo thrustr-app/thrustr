@@ -46,7 +46,9 @@ impl Page {
             Self::Library => Box::new(cx.new(routes::Library::new)),
             Self::Collections => Box::new(cx.new(|_| routes::Collections)),
             Self::Game(id) => Box::new(cx.new(|cx| routes::Game::new(*id, cx))),
-            Self::Settings(Some(sub)) => Box::new(cx.new(|cx| routes::Settings::new(sub.clone(), cx))),
+            Self::Settings(Some(sub)) => {
+                Box::new(cx.new(|cx| routes::Settings::new(sub.clone(), cx)))
+            }
             _ => Box::new(cx.new(|_| EmptyView)),
         }
     }

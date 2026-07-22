@@ -283,7 +283,7 @@ impl Config {
                     .text_color(theme.colors.primary)
                     .child(
                         Button::new("back-button")
-                            .variant_ghost()
+                            .variant_outline()
                             .auto_focus(autofocus_back)
                             .child(
                                 svg()
@@ -338,7 +338,7 @@ impl Config {
                         div.child(
                             Button::new("logout")
                                 .when(self.authenticating, |btn| btn.loading())
-                                .variant_ghost()
+                                .variant_outline()
                                 .size_lg()
                                 .child("Log Out")
                                 .w(rems(10.))

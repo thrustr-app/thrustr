@@ -213,7 +213,7 @@ impl RenderOnce for Dialog {
                                     Button::new("close-dialog")
                                         .w_full()
                                         .max_w(rems(10.))
-                                        .variant_ghost()
+                                        .variant_outline()
                                         .child(self.cancel_text)
                                         .on_click({
                                             move |event, window, cx| {
