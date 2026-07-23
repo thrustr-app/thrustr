@@ -8,7 +8,7 @@ use gpui::{
 };
 use theme::ThemeExt;
 use tracing::error;
-use ui::{Sidebar, UiProvider};
+use ui::{Sidebar, TitleBar, UiProvider, client_side_decorations};
 
 fn sidebar_rail(cx: &GpuiApp) -> impl IntoElement {
     let theme = cx.theme();
@@ -182,24 +182,35 @@ impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        div()
+        let root = div()
             .font_family("Metropolis")
             .track_focus(&self.focus_handle(cx))
+            .flex()
+            .flex_col()
             .size_full()
             .bg(theme.colors.background)
+            .child(TitleBar::new("title-bar"))
             .child(
-                div().flex().size_full().child(sidebar_rail(cx)).child(
-                    div()
-                        .flex_grow_1()
-                        .flex()
-                        .flex_col()
-                        .child(Topbar::new(
-                            self.current_page.label(),
-                            self.active_view.render_header(cx),
-                        ))
-                        .child(self.active_view.view()),
-                ),
+                div()
+                    .flex()
+                    .flex_grow_1()
+                    .min_h_0()
+                    .child(sidebar_rail(cx))
+                    .child(
+                        div()
+                            .flex_grow_1()
+                            .flex()
+                            .flex_col()
+                            .min_w_0()
+                            .child(Topbar::new(
+                                self.current_page.label(),
+                                self.active_view.render_header(cx),
+                            ))
+                            .child(self.active_view.view()),
+                    ),
             )
-            .children(UiProvider::render_dialogs(window, cx))
+            .children(UiProvider::render_dialogs(window, cx));
+
+        client_side_decorations(root, window, cx)
     }
 }

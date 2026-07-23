@@ -8,6 +8,7 @@ mod input;
 mod label;
 mod scrollbar;
 mod sidebar;
+mod title_bar;
 
 pub use alert::*;
 pub use button::*;
@@ -17,6 +18,7 @@ pub use input::*;
 pub use label::*;
 pub use scrollbar::*;
 pub use sidebar::*;
+pub use title_bar::*;
 
 pub fn init(cx: &mut App) {
     dialog::init(cx);

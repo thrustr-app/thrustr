@@ -3,7 +3,9 @@
 use crate::app::App;
 use assets::Assets;
 use config::{logging, paths, tls};
-use gpui::{AppContext, CursorHideMode, TitlebarOptions, WindowOptions};
+use gpui::{
+    AppContext, CursorHideMode, TitlebarOptions, WindowDecorations, WindowOptions, point, px,
+};
 use sqlite::SqliteStorage;
 use std::sync::Arc;
 use ui::UiProvider;
@@ -50,8 +52,11 @@ fn main() {
                         app_id: Some("com.thrustr.thrustr".into()),
                         titlebar: Some(TitlebarOptions {
                             title: Some("Thrustr".into()),
-                            ..Default::default()
+                            appears_transparent: true,
+                            traffic_light_position: Some(point(px(13.), px(9.))),
                         }),
+                        window_decorations: cfg!(target_os = "linux")
+                            .then_some(WindowDecorations::Client),
                         ..Default::default()
                     },
                     |window, cx| {

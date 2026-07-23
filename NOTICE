@@ -1,0 +1,28 @@
+Thrustr
+Copyright (C) 2026 Jorge Pardo
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+------------------------------------------------------------------------------
+Third-party portions
+------------------------------------------------------------------------------
+
+Portions of the custom window title bar and client-side window decorations
+were adapted from Zed (https://github.com/zed-industries/zed), specifically
+the `workspace`, `platform_title_bar`, and `theme` crates, which are licensed
+under GPL-3.0-or-later. Copyright (C) Zed Industries, Inc.
+
+Affected files:
+  - crates/ui/src/decorations.rs
+  - crates/ui/src/components/title_bar.rs
+
+The text input module (crates/ui/src/components/input/) is derived from the
+gpui text-input example (crates/gpui/examples/input.rs) and the Tokio bridge
+(crates/thrustr/src/tokio.rs) from gpui_tokio, both Copyright (C) Zed
+Industries, Inc. and licensed under Apache-2.0.
+
+Thrustr also depends on gpui, gpui_macros, and gpui_platform from the same
+project, which are licensed under Apache-2.0.

@@ -3,6 +3,9 @@ resolver = "3"
 members = ["crates/*", "plugins/*", "tools/*", "xtask"]
 default-members = ["crates/thrustr"]
 
+[workspace.package]
+license = "GPL-3.0-or-later"
+
 [workspace.dependencies]
 # Local
 artwork = { path = "crates/artwork" }
