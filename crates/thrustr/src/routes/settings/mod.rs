@@ -1,6 +1,6 @@
 use crate::{
     app::Route,
-    navigation::{Navigator, NavigatorExt, Page, SettingsPage},
+    navigation::{NavNode, Navigator, NavigatorExt, Page, SettingsPage, nav_item},
 };
 use gpui::{AnyView, App, Context, IntoElement, ParentElement, Render, Styled, Window, div, rems};
 use theme::ThemeExt;
@@ -17,13 +17,8 @@ pub use plugins::Plugins;
 pub use storefronts::Storefronts;
 
 fn settings_item(page: SettingsPage, cx: &App) -> SidebarItem {
-    let is_active = cx.navigator().is_active_for(page.clone());
-
-    SidebarItem::new(page.label())
-        .icon(page.icon_path())
-        .label(page.label())
-        .active(is_active)
-        .on_click(move |_, _, cx| cx.navigate(page.clone()))
+    let label = page.label();
+    nav_item(page, cx).label(label)
 }
 
 pub struct Settings {

@@ -1,5 +1,5 @@
 use crate::globals::PluginServiceExt;
-use crate::navigation::{Navigator, NavigatorExt, Page};
+use crate::navigation::{NavNode, Navigator, NavigatorExt, Page, nav_item};
 use config::paths;
 use gpui::{
     AnyElement, AnyView, App as GpuiApp, AppContext, Context, EmptyView, Entity, FocusHandle,
@@ -8,16 +8,7 @@ use gpui::{
 };
 use theme::ThemeExt;
 use tracing::error;
-use ui::{Sidebar, SidebarItem, UiProvider};
-
-fn nav_item(page: Page, cx: &GpuiApp) -> SidebarItem {
-    let is_active = cx.navigator().is_active_for(page.clone());
-
-    SidebarItem::new(page.label())
-        .icon(page.icon_path())
-        .active(is_active)
-        .on_click(move |_, _, cx| cx.navigate(page.clone()))
-}
+use ui::{Sidebar, UiProvider};
 
 fn sidebar_rail(cx: &GpuiApp) -> impl IntoElement {
     let theme = cx.theme();
@@ -139,15 +130,10 @@ impl App {
         cx.observe_global_in::<Navigator>(window, |this, _, cx| {
             let page = cx.navigator().current_page();
 
-            let same_view = matches!(
-                (&this.current_page, &page),
-                (Page::Settings(_), Page::Settings(_))
-            );
-            this.current_page = page;
-
-            if !same_view {
-                this.active_view = this.current_page.build_view(cx);
+            if this.current_page.section() != page.section() {
+                this.active_view = page.build_view(cx);
             }
+            this.current_page = page;
 
             cx.notify();
         })

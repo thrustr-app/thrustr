@@ -2,11 +2,39 @@ use crate::{app::RouteHandle, globals::ComponentRegistryExt, routes};
 use domain::game::GameId;
 use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString};
 use std::{collections::VecDeque, mem::replace};
+use ui::SidebarItem;
 
 const MAX_HISTORY: usize = 20;
 
 pub fn init(cx: &mut App) {
     cx.set_global(Navigator::new(Page::Home));
+}
+
+/// A navigable node in the page tree.
+pub trait NavNode: Into<Page> + Clone {
+    fn label(&self) -> &'static str;
+    fn icon_path(&self) -> &'static str;
+    fn is_parent_of(&self, other: &Self) -> bool;
+}
+
+/// Builds a sidebar item that navigates to `page` and reflects its active state.
+pub fn nav_item<T: NavNode + 'static>(page: T, cx: &App) -> SidebarItem {
+    let is_active = cx.navigator().is_active_for(page.clone());
+
+    SidebarItem::new(page.label())
+        .icon(page.icon_path())
+        .active(is_active)
+        .on_click(move |_, _, cx| cx.navigate(page.clone()))
+}
+
+/// Determines whether two pages reuse the same root view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Section {
+    Home,
+    Library,
+    Collections,
+    Game(GameId),
+    Settings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,8 +46,8 @@ pub enum Page {
     Settings(Option<SettingsPage>),
 }
 
-impl Page {
-    pub fn label(&self) -> &'static str {
+impl NavNode for Page {
+    fn label(&self) -> &'static str {
         match self {
             Self::Home => "Home",
             Self::Library => "Library",
@@ -30,13 +58,34 @@ impl Page {
         }
     }
 
-    pub fn icon_path(&self) -> &'static str {
+    fn icon_path(&self) -> &'static str {
         match self {
             Self::Home => "icons/home.svg",
             Self::Library => "icons/library.svg",
             Self::Collections => "icons/collections.svg",
             Self::Game(_) => "icons/library.svg",
             Self::Settings(_) => "icons/settings.svg",
+        }
+    }
+
+    fn is_parent_of(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Library, Self::Game(_)) => true,
+            (Self::Settings(None), Self::Settings(_)) => true,
+            (Self::Settings(Some(a)), Self::Settings(Some(b))) => a.is_parent_of(b),
+            _ => self == other,
+        }
+    }
+}
+
+impl Page {
+    pub(crate) fn section(&self) -> Section {
+        match self {
+            Self::Home => Section::Home,
+            Self::Library => Section::Library,
+            Self::Collections => Section::Collections,
+            Self::Game(id) => Section::Game(*id),
+            Self::Settings(_) => Section::Settings,
         }
     }
 
@@ -50,16 +99,6 @@ impl Page {
                 Box::new(cx.new(|cx| routes::Settings::new(sub.clone(), cx)))
             }
             _ => Box::new(cx.new(|_| EmptyView)),
-        }
-    }
-
-    /// Whether this page is the parent of the other page, i.e. the other page is a subpage of this one.
-    fn is_parent_of(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Settings(None), Self::Settings(_)) => true,
-
-            (Self::Settings(Some(a)), Self::Settings(Some(b))) => a.is_parent_of(b),
-            _ => self == other,
         }
     }
 }
@@ -83,8 +122,8 @@ impl Default for SettingsPage {
     }
 }
 
-impl SettingsPage {
-    pub fn label(&self) -> &'static str {
+impl NavNode for SettingsPage {
+    fn label(&self) -> &'static str {
         match self {
             Self::Storefronts(_) => "Storefronts",
             Self::Plugins(_) => "Plugins",
@@ -92,7 +131,7 @@ impl SettingsPage {
         }
     }
 
-    pub fn icon_path(&self) -> &'static str {
+    fn icon_path(&self) -> &'static str {
         match self {
             Self::Storefronts(_) => "icons/storefronts.svg",
             Self::Plugins(_) => "icons/plugins.svg",
@@ -100,27 +139,25 @@ impl SettingsPage {
         }
     }
 
+    fn is_parent_of(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Storefronts(None), Self::Storefronts(_)) => true,
+            (Self::Plugins(None), Self::Plugins(_)) => true,
+            _ => self == other,
+        }
+    }
+}
+
+impl SettingsPage {
     pub fn build_view(&self, cx: &mut App) -> AnyView {
         match self {
             Self::Storefronts(None) => cx.new(routes::Storefronts::new).into(),
             Self::Plugins(None) => cx.new(routes::Plugins::new).into(),
             Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => match cx.component(id) {
                 Some(component) => cx.new(|cx| routes::Config::new(cx, component)).into(),
-                None => {
-                    cx.navigate_back();
-                    cx.new(|_| EmptyView).into()
-                }
+                None => cx.new(|_| EmptyView).into(),
             },
             Self::Appearance => cx.new(|_| routes::Appearance).into(),
-        }
-    }
-
-    /// Whether this page is the parent of the other page, i.e. the other page is a subpage of this one.
-    fn is_parent_of(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Storefronts(None), Self::Storefronts(_)) => true,
-            (Self::Plugins(None), Self::Plugins(_)) => true,
-            _ => self == other,
         }
     }
 }
