@@ -4,8 +4,8 @@ use gpui::{
     Hsla, InteractiveElement, Interactivity, IntoElement, IsZero, LayoutId, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Position, Render,
     RenderOnce, ScrollHandle, ScrollWheelEvent, Stateful, StatefulInteractiveElement, Style,
-    StyleRefinement, Styled, UniformList, UniformListDecoration, UniformListScrollHandle, Window,
-    px, quad, relative, size,
+    StyleRefinement, Styled, Task, UniformList, UniformListDecoration, UniformListScrollHandle,
+    Window, px, quad, relative, size,
 };
 use smallvec::SmallVec;
 use std::{
@@ -102,6 +102,9 @@ pub struct ScrollbarState {
     last_activity: Option<Instant>,
     last_scroll: Option<Instant>,
     last_layout: Option<LayoutState>,
+    /// Whether the pointer was inside the container as of the last mouse move.
+    was_hovered: bool,
+    _fade_wake: Option<Task<()>>,
 }
 
 impl ScrollbarState {
@@ -115,6 +118,8 @@ impl ScrollbarState {
             last_activity: None,
             last_scroll: None,
             last_layout: None,
+            was_hovered: false,
+            _fade_wake: None,
         }
     }
 
@@ -127,6 +132,8 @@ impl ScrollbarState {
             last_activity: None,
             last_scroll: None,
             last_layout: None,
+            was_hovered: false,
+            _fade_wake: None,
         }
     }
 
@@ -172,6 +179,12 @@ impl ScrollbarState {
     }
 
     fn set_offset(&mut self, offset: Point<Pixels>, cx: &mut Context<Self>) {
+        // Pointer movement too small to change the offset would draw the same
+        // frame again, so only the activity timestamp needs refreshing.
+        if self.handle.offset() == offset {
+            self.last_scroll = Some(Instant::now());
+            return;
+        }
         self.handle.set_offset(offset);
         self.mark_scrolled(cx);
     }
@@ -179,6 +192,26 @@ impl ScrollbarState {
     fn mark_scrolled(&mut self, cx: &mut Context<Self>) {
         self.last_scroll = Some(Instant::now());
         self.mark_active(cx);
+    }
+
+    fn schedule_fade(&mut self, cx: &mut Context<Self>) {
+        let Some(since) = self.last_activity.max(self.last_scroll) else {
+            return;
+        };
+        let Some(delay) = HIDE_DELAY.checked_sub(since.elapsed()) else {
+            return;
+        };
+        self._fade_wake = Some(cx.spawn(async move |state, cx| {
+            cx.background_executor().timer(delay).await;
+            state.update(cx, |_, cx| cx.notify()).ok();
+        }));
+    }
+
+    fn fade_pending(&self, container_hovered: bool) -> bool {
+        self.scroll_opacity() >= 1.
+            || (!container_hovered
+                && !self.thumb.is_active()
+                && self.opacity(container_hovered) >= 1.)
     }
 
     /// Current opacity of the bar.
@@ -419,10 +452,12 @@ impl Element for ScrollbarElement {
     ) -> Self::PrepaintState {
         let state = self.state.read(cx);
         let axes = state.scrollable_axes().collect::<SmallVec<[_; 2]>>();
-        let max_offset = state.handle.max_offset();
-        let offset = state.handle.offset();
 
-        let viewport_bounds = state.handle.viewport();
+        let handle = state.handle.base_handle();
+        let max_offset = handle.max_offset();
+        let offset = handle.offset();
+
+        let viewport_bounds = handle.bounds();
         let viewport = viewport_bounds.size;
 
         // Shorten each track when both bars are present so they do not fight
@@ -517,14 +552,22 @@ impl Element for ScrollbarElement {
                 let theme = cx.theme();
                 let state = self.state.read(cx);
 
-                for bar in &layout.bars {
-                    let base = match state.thumb {
-                        ThumbState::Dragging(axis, _) if axis == bar.axis => theme.colors.primary,
-                        ThumbState::Hover(axis) if axis == bar.axis => theme.colors.primary,
-                        _ => theme.colors.secondary,
-                    };
+                let dragging = state.thumb.is_dragging();
+                if dragging {
+                    window.set_window_cursor_style(CursorStyle::Arrow);
+                }
 
-                    let mut color = base;
+                for bar in &layout.bars {
+                    let active = matches!(
+                        state.thumb,
+                        ThumbState::Dragging(axis, _) | ThumbState::Hover(axis) if axis == bar.axis
+                    );
+
+                    let mut color = if active {
+                        theme.colors.primary
+                    } else {
+                        theme.colors.secondary
+                    };
                     color.a *= opacity;
 
                     window.paint_quad(quad(
@@ -536,19 +579,20 @@ impl Element for ScrollbarElement {
                         BorderStyle::default(),
                     ));
 
-                    if state.thumb.is_dragging() {
-                        window.set_window_cursor_style(CursorStyle::Arrow);
-                    } else {
+                    if !dragging {
                         window.set_cursor_style(CursorStyle::Arrow, &bar.hitbox);
                     }
                 }
 
-                // Keep painting while a fade is pending.
-                let fade_pending = opacity < 1.
-                    || state.scroll_opacity() > 0.
-                    || !(hovered || state.thumb.is_active());
-                if fade_pending {
+                // Drive frames only while something is actually changing.
+                let scroll_opacity = state.scroll_opacity();
+                let fading =
+                    (opacity > 0. && opacity < 1.) || (scroll_opacity > 0. && scroll_opacity < 1.);
+
+                if fading {
                     window.request_animation_frame();
+                } else if state.fade_pending(hovered) {
+                    self.state.update(cx, |state, cx| state.schedule_fade(cx));
                 }
             }
 
@@ -626,11 +670,21 @@ impl Element for ScrollbarElement {
                             cx.stop_propagation();
                         }
                         None if event.pressed_button.is_none() => {
-                            if state.parent_hovered(window) {
-                                state.mark_active(cx);
+                            let hovered = state.parent_hovered(window);
+                            let crossed = hovered != state.was_hovered;
+                            state.was_hovered = hovered;
+
+                            if hovered || crossed {
+                                state.last_activity = Some(Instant::now());
+                            }
+
+                            if hovered {
                                 state.update_hover(&event.position, cx);
                             } else {
                                 state.set_thumb(ThumbState::Inactive, cx);
+                            }
+                            if crossed {
+                                cx.notify();
                             }
                         }
                         None => {}
