@@ -101,7 +101,7 @@ impl Library {
             refresh_seq: 0,
             component_icons: HashMap::new(),
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
-            focus_handle: cx.focus_handle().tab_stop(true),
+            focus_handle: cx.focus_handle().tab_stop(false),
             selected: None,
             was_focused: false,
             num_cols: Rc::new(Cell::new(1)),
@@ -205,6 +205,9 @@ impl Library {
                         let anchor = library.scroll_anchor();
                         let old_ids = library.ids.clone();
 
+                        library.focus_handle =
+                            library.focus_handle.clone().tab_stop(!index.ids.is_empty());
+
                         library.ids = Rc::new(index.ids);
                         library.sections = Rc::new(index.sections);
                         library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
@@ -243,7 +246,7 @@ impl Library {
             None => self.top_visible_item(),
             Some(_) => grid_step(self.selected, dir, self.ids.len(), cols),
         };
-        if let Some(next) = next {
+        if let Some(next) = next.filter(|&next| Some(next) != self.selected) {
             self.selected = Some(next);
             self.scroll_handle
                 .scroll_to_item(next / cols, ScrollStrategy::Nearest);
@@ -479,6 +482,20 @@ impl Render for Library {
             }
         }
         self.was_focused = is_focused;
+
+        let pending_scroll = {
+            let list = self.scroll_handle.0.borrow();
+            list.deferred_scroll_to_item
+                .is_some()
+                .then(|| list.base_handle.offset())
+        };
+        if let Some(offset) = pending_scroll {
+            cx.on_next_frame(window, move |library, _, cx| {
+                if library.scroll_handle.0.borrow().base_handle.offset() != offset {
+                    cx.notify();
+                }
+            });
+        }
 
         let focused = is_focused && window.last_input_was_keyboard();
         let selected = self.selected;

@@ -324,6 +324,7 @@ impl RenderOnce for WindowControl {
 
         div()
             .id(button.id())
+            .group("window-control")
             .occlude()
             .flex()
             .items_center()
@@ -331,13 +332,16 @@ impl RenderOnce for WindowControl {
             .size(rems(1.25))
             .rounded_full()
             .cursor_pointer()
-            .text_color(theme.colors.secondary)
-            .hover(|style| {
-                style
-                    .bg(theme.colors.hover)
-                    .text_color(theme.colors.primary)
-            })
-            .child(svg().size(rems(0.875)).path(self.icon()))
+            .hover(|style| style.bg(theme.colors.hover))
+            .child(
+                svg()
+                    .size(rems(0.875))
+                    .path(self.icon())
+                    .text_color(theme.colors.secondary)
+                    .group_hover("window-control", |this| {
+                        this.text_color(theme.colors.primary)
+                    }),
+            )
             .on_click(move |_, window, cx| {
                 cx.stop_propagation();
                 match button {
