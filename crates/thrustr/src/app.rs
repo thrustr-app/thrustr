@@ -2,15 +2,18 @@ use crate::globals::PluginServiceExt;
 use crate::navigation::{NavNode, Navigator, NavigatorExt, Page, nav_item};
 use config::paths;
 use gpui::{
-    AnyElement, AnyView, App as GpuiApp, AppContext, Context, EmptyView, Entity, FocusHandle,
-    Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    SharedString, Styled, Window, div, rems, svg,
+    AnyElement, AnyView, App as GpuiApp, AppContext, Context, Corners, EmptyView, Entity,
+    FocusHandle, Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render,
+    RenderOnce, SharedString, Styled, Window, div, rems, svg,
 };
 use theme::ThemeExt;
 use tracing::error;
-use ui::{Sidebar, UiProvider};
+use ui::{
+    ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, TitleBar, UiProvider,
+    client_side_decorations,
+};
 
-fn sidebar_rail(cx: &GpuiApp) -> impl IntoElement {
+fn sidebar_rail(window: &Window, cx: &GpuiApp) -> impl IntoElement {
     let theme = cx.theme();
 
     div()
@@ -21,6 +24,13 @@ fn sidebar_rail(cx: &GpuiApp) -> impl IntoElement {
         .flex_shrink_0()
         .w(rems(5.5))
         .bg(theme.colors.sidebar_background)
+        .rounded_client_corners(
+            Corners {
+                bottom_left: true,
+                ..Default::default()
+            },
+            window,
+        )
         .border_r_1()
         .border_color(theme.colors.border)
         .child(
@@ -182,24 +192,37 @@ impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        div()
+        let root = div()
             .font_family("Metropolis")
             .track_focus(&self.focus_handle(cx))
+            .flex()
+            .flex_col()
             .size_full()
             .bg(theme.colors.background)
+            .rounded_client_corners(ALL_CORNERS, window)
+            .on_action(|_: &CloseWindow, window, _| window.remove_window())
+            .child(TitleBar::new("title-bar").title("Thrustr"))
             .child(
-                div().flex().size_full().child(sidebar_rail(cx)).child(
-                    div()
-                        .flex_grow_1()
-                        .flex()
-                        .flex_col()
-                        .child(Topbar::new(
-                            self.current_page.label(),
-                            self.active_view.render_header(cx),
-                        ))
-                        .child(self.active_view.view()),
-                ),
+                div()
+                    .flex()
+                    .flex_grow_1()
+                    .min_h_0()
+                    .child(sidebar_rail(window, cx))
+                    .child(
+                        div()
+                            .flex_grow_1()
+                            .flex()
+                            .flex_col()
+                            .min_w_0()
+                            .child(Topbar::new(
+                                self.current_page.label(),
+                                self.active_view.render_header(cx),
+                            ))
+                            .child(self.active_view.view()),
+                    ),
             )
-            .children(UiProvider::render_dialogs(window, cx))
+            .children(UiProvider::render_dialogs(window, cx));
+
+        client_side_decorations(root, window, cx)
     }
 }

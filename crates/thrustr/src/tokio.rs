@@ -1,11 +1,9 @@
-//! This code has been taken from:
-//! https://github.com/zed-industries/zed/blob/main/crates/gpui_tokio/src/gpui_tokio.rs
-//!
-//! Original work Copyright © Zed Industries
-//! Licensed under the Apache License, Version 2.0
-//!
-//! Modifications:
-//! - Minor changes for integration into this project.
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Adapted from gpui_tokio, Copyright (C) Zed Industries, Inc., licensed under
+// Apache-2.0:
+// https://github.com/zed-industries/zed/blob/main/crates/gpui_tokio/src/gpui_tokio.rs
+// Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 #![allow(dead_code)]
 

@@ -1,6 +1,9 @@
-/* Based on
- * https://github.com/longbridge/gpui-component/blob/main/crates/ui/src/input/blink_cursor.rs
- */
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Adapted from gpui-component, Copyright (C) Longbridge, licensed under
+// Apache-2.0:
+// https://github.com/longbridge/gpui-component/blob/main/crates/ui/src/input/blink_cursor.rs
+// Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 use gpui::Context;
 use std::time::Duration;

@@ -1,7 +1,9 @@
-//! Text operations module for cursor movement and text manipulation
-//!
-//! This module provides utilities for working with text boundaries, cursor positioning,
-//! and text manipulation operations like word boundaries and grapheme clusters.
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Parts of this module are adapted from the gpui text-input example,
+// Copyright (C) Zed Industries, Inc., licensed under Apache-2.0:
+// https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/input.rs
+// Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;

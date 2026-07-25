@@ -5,10 +5,12 @@ use gpui::{
 use std::rc::Rc;
 
 mod components;
+mod decorations;
 mod foundation;
 mod interaction;
 
 pub use components::*;
+pub use decorations::*;
 pub use foundation::*;
 pub use interaction::grid::*;
 
