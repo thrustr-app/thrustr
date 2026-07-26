@@ -8,13 +8,14 @@ use crate::{
         bubble::index_bubble,
         cache::{LruImageCache, lru_image_cache},
         card::{GameCard, GameEntry, accent_hsla, cover_path},
+        grid::{GridDims, GridMetrics},
     },
 };
 use artwork::ArtworkReady;
 use domain::game::{GameId, SectionIndex};
 use gpui::{
     AnyElement, AppContext, Context, Entity, FocusHandle, Image, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Render, Resource, ScrollStrategy, SharedString, Styled, Task,
+    ParentElement, Pixels, Rems, Render, Resource, ScrollStrategy, SharedString, Styled, Task,
     UniformListScrollHandle, Window, container_query, div, px, rems, uniform_list,
 };
 use lru::LruCache;
@@ -38,19 +39,19 @@ use ui::{
 mod bubble;
 mod cache;
 mod card;
+mod grid;
 
 const CARD_WIDTH: Pixels = px(220.);
 const CARD_MIN_GAP: Pixels = px(8.);
 const CARD_ASPECT_RATIO: f32 = 2. / 3.;
-const CARD_PADDING_REM: f32 = 0.75;
-const CARD_INNER_GAP_REM: f32 = 0.75;
-const CARD_TEXT_SIZE_REM: f32 = 0.9;
-const CARD_ICON_SIZE_REM: f32 = 1.5;
-/// Fixed so a card's height does not depend on whether its title has loaded.
-const CARD_TITLE_HEIGHT_REM: f32 = 1.25;
-const CARD_ROW_GAP_REM: f32 = 1.5;
+const CARD_PADDING: Rems = rems(0.75);
+const CARD_INNER_GAP: Rems = rems(0.75);
+const CARD_TEXT_SIZE: Rems = rems(0.9);
+const CARD_ICON_SIZE: Rems = rems(1.5);
+const CARD_TITLE_HEIGHT: Rems = rems(1.25);
+const CARD_ROW_GAP: Rems = rems(1.5);
 
-const GRID_PADDING_REM: f32 = 2. - CARD_PADDING_REM;
+const GRID_PADDING: Rems = rems(2. - CARD_PADDING.0);
 
 const CACHE_OVERSCAN_ROWS: usize = 3;
 
@@ -74,7 +75,7 @@ pub struct Library {
     /// Bumped whenever `ids` is replaced so in-flight hydrations from a previous
     /// generation are discarded.
     generation: u64,
-    /// Bumped on every refresh so an earlier, slower query cannot overwrite the
+    /// Bumped on every refresh so an earlier query cannot overwrite the
     /// results of a later one when they resolve out of order.
     refresh_seq: u64,
     component_icons: HashMap<String, Arc<Image>>,
@@ -141,9 +142,7 @@ impl Library {
     fn chunks_mut(&mut self) -> &mut ChunkCache {
         // Render clones this Rc into frame closures, but gpui drops the element
         // arena right after each draw and this runs between frames, so we should
-        // be the sole owner here and make_mut mutates in place. If this fires,
-        // something started holding the Rc across frames and make_mut is
-        // silently cloning the whole cache.
+        // be the sole owner here.
         debug_assert_eq!(
             Rc::strong_count(&self.chunks),
             1,
@@ -168,7 +167,10 @@ impl Library {
             let resource = Resource::Path(path);
             self.image_cache
                 .update(cx, |cache, cx| cache.remove(&resource, cx));
-            cx.notify();
+
+            if self.is_item_visible(chunk_idx * CHUNK_SIZE + offset) {
+                cx.notify();
+            }
         }
     }
 
@@ -196,6 +198,7 @@ impl Library {
                 if library.refresh_seq != seq {
                     return;
                 }
+
                 match result {
                     Ok(index) => {
                         let selected_id = library
@@ -204,6 +207,13 @@ impl Library {
                             .copied();
                         let anchor = library.scroll_anchor();
                         let old_ids = library.ids.clone();
+
+                        let positions: HashMap<GameId, usize> = index
+                            .ids
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, &id)| (id, idx))
+                            .collect();
 
                         library.focus_handle =
                             library.focus_handle.clone().tab_stop(!index.ids.is_empty());
@@ -214,9 +224,8 @@ impl Library {
                         library.loading_chunks.clear();
                         library.generation += 1;
 
-                        library.selected =
-                            selected_id.and_then(|id| library.ids.iter().position(|&g| g == id));
-                        library.restore_scroll(&old_ids, anchor);
+                        library.selected = selected_id.and_then(|id| positions.get(&id).copied());
+                        library.restore_scroll(&old_ids, anchor, &positions);
                     }
                     Err(e) => {
                         error!("failed to list game index: {e:#}");
@@ -246,6 +255,7 @@ impl Library {
             None => self.top_visible_item(),
             Some(_) => grid_step(self.selected, dir, self.ids.len(), cols),
         };
+
         if let Some(next) = next.filter(|&next| Some(next) != self.selected) {
             self.selected = Some(next);
             self.scroll_handle
@@ -257,17 +267,9 @@ impl Library {
         }
     }
 
-    /// Height of one grid row from the last layout.
-    fn measured_row_height(&self, rows: usize) -> Option<Pixels> {
-        if rows == 0 {
-            return None;
-        }
-        self.scroll_handle
-            .0
-            .borrow()
-            .last_item_size
-            .map(|size| size.contents.height / rows as f32)
-            .filter(|&h| h > Pixels::ZERO)
+    fn metrics(&self, count: usize) -> Option<GridMetrics> {
+        let cols = self.num_cols.get().max(1);
+        GridMetrics::measure(&self.scroll_handle, count.div_ceil(cols))
     }
 
     fn top_visible_item(&self) -> Option<usize> {
@@ -277,28 +279,16 @@ impl Library {
             return None;
         }
 
-        let Some(row_height) = self.measured_row_height(count.div_ceil(cols)) else {
-            // Not laid out yet, so nothing has scrolled.
+        let Some(metrics) = self.metrics(count) else {
             return Some(0);
         };
-
-        let offset = self.scroll_handle.0.borrow().base_handle.offset().y.abs();
-        let top_row = (offset / row_height).round() as usize;
-        Some((top_row * cols).min(count - 1))
+        Some((metrics.nearest_row() * cols).min(count - 1))
     }
 
-    /// Whether the card's row is at least partially inside the viewport.
     fn is_item_visible(&self, idx: usize) -> bool {
         let cols = self.num_cols.get().max(1);
-        let Some(row_height) = self.measured_row_height(self.ids.len().div_ceil(cols)) else {
-            return false;
-        };
-        let list = self.scroll_handle.0.borrow();
-        let viewport = list.base_handle.bounds().size.height;
-        let offset = list.base_handle.offset().y.abs();
-
-        let top = row_height * (idx / cols) as f32;
-        top < offset + viewport && top + row_height > offset
+        self.metrics(self.ids.len())
+            .is_some_and(|metrics| metrics.row_is_visible(idx / cols))
     }
 
     /// Index anchoring the viewport across a games refresh.
@@ -309,11 +299,16 @@ impl Library {
     }
 
     /// Scroll the refreshed list back to roughly the games that were on screen.
-    fn restore_scroll(&mut self, old_ids: &[GameId], old_anchor: Option<usize>) {
+    fn restore_scroll(
+        &mut self,
+        old_ids: &[GameId],
+        old_anchor: Option<usize>,
+        positions: &HashMap<GameId, usize>,
+    ) {
         let Some(old_anchor) = old_anchor else { return };
-        let Some(new_anchor) = old_ids[old_anchor..]
+        let Some(&new_anchor) = old_ids[old_anchor..]
             .iter()
-            .find_map(|old| self.ids.iter().position(|new| new == old))
+            .find_map(|old| positions.get(old))
         else {
             return;
         };
@@ -325,12 +320,13 @@ impl Library {
             return;
         }
 
-        let Some(row_height) = self.measured_row_height(old_ids.len().div_ceil(cols)) else {
+        // The layout still describes the list being replaced.
+        let Some(metrics) = self.metrics(old_ids.len()) else {
             return;
         };
         let mut offset = self.scroll_handle.0.borrow().base_handle.offset();
 
-        offset.y -= row_height * (new_row as f32 - old_row as f32);
+        offset.y -= metrics.scroll_delta(old_row, new_row);
         self.scroll_handle.0.borrow().base_handle.set_offset(offset);
     }
 
@@ -340,7 +336,7 @@ impl Library {
         }
     }
 
-    fn ensure_window(&mut self, items: Range<usize>, cx: &mut Context<Self>) {
+    fn ensure_chunks_resident(&mut self, items: Range<usize>, cx: &mut Context<Self>) {
         if self.ids.is_empty() || items.is_empty() {
             return;
         }
@@ -372,8 +368,6 @@ impl Library {
             async move { game_service.list_by_ids(&ids) },
             move |library, result, _| {
                 if library.generation != generation {
-                    // `ids` was replaced while this hydration was in flight,
-                    // its chunk index no longer refers to the same games.
                     return;
                 }
                 match result {
@@ -394,44 +388,6 @@ impl Library {
                 };
             },
         );
-    }
-}
-
-struct GridDims {
-    num_cols: usize,
-    num_rows: usize,
-    visible_rows: usize,
-}
-
-impl GridDims {
-    fn compute(
-        grid_width: Pixels,
-        grid_height: Pixels,
-        game_count: usize,
-        content_height: Option<Pixels>,
-    ) -> Self {
-        let num_cols = ((grid_width + CARD_MIN_GAP) / (CARD_WIDTH + CARD_MIN_GAP)).floor() as usize;
-        let num_cols = num_cols.max(1);
-        let num_rows = game_count.div_ceil(num_cols);
-
-        let visible_rows = content_height
-            .filter(|h| *h > Pixels::ZERO)
-            .zip(NonZeroUsize::new(num_rows))
-            .map(|(content, rows)| {
-                let row_height = content / rows.get() as f32;
-                (grid_height / row_height).ceil() as usize
-            })
-            .unwrap_or(0);
-
-        Self {
-            num_cols,
-            num_rows,
-            visible_rows,
-        }
-    }
-
-    fn cache_capacity(&self) -> usize {
-        self.num_cols * (self.visible_rows + CACHE_OVERSCAN_ROWS)
     }
 }
 
@@ -483,6 +439,10 @@ impl Render for Library {
         }
         self.was_focused = is_focused;
 
+        // The bubble is placed from the offset this frame starts with, and
+        // `uniform_list` only applies a queued `scroll_to_item` later in its
+        // prepaint. Nothing else redraws after a keyboard move, so the bubble
+        // would sit a frame behind the selection.
         let pending_scroll = {
             let list = self.scroll_handle.0.borrow();
             list.deferred_scroll_to_item
@@ -520,7 +480,7 @@ impl Render for Library {
             .flex_grow_1()
             .text_color(theme.colors.accent)
             .child(container_query(move |size, window, cx| {
-                let padding = px(GRID_PADDING_REM * window.rem_size().as_f32());
+                let padding = px(GRID_PADDING.0 * window.rem_size().as_f32());
                 let content_height = {
                     let list = scroll_handle.0.borrow();
                     let viewport = list.base_handle.bounds().size.height;
@@ -551,7 +511,9 @@ impl Render for Library {
                                 let library = library.clone();
                                 cx.defer(move |cx| {
                                     library
-                                        .update(cx, |library, cx| library.ensure_window(items, cx))
+                                        .update(cx, |library, cx| {
+                                            library.ensure_chunks_resident(items, cx)
+                                        })
                                         .ok();
                                 });
 
@@ -565,7 +527,7 @@ impl Render for Library {
                                             .flex()
                                             .justify_between()
                                             .px(padding)
-                                            .pb(rems(CARD_ROW_GAP_REM))
+                                            .pb(CARD_ROW_GAP)
                                             .children((start..end).map(|idx| {
                                                 chunks
                                                     .peek(&(idx / CHUNK_SIZE))
@@ -573,12 +535,12 @@ impl Render for Library {
                                                         entries.get(idx % CHUNK_SIZE)
                                                     })
                                                     .map(|game| GameCard::new(game.clone()))
-                                                    .unwrap_or_else(GameCard::blank)
+                                                    .unwrap_or_else(GameCard::unloaded)
                                                     .selected(focused && selected == Some(idx))
                                             }))
                                             .children(
                                                 (0..dims.num_cols - (end - start))
-                                                    .map(|_| GameCard::filler()),
+                                                    .map(|_| GameCard::spacer()),
                                             )
                                     })
                                     .collect()

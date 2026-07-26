@@ -92,6 +92,7 @@ impl LruImageCache {
                 cx.on_next_frame(move |_, cx| {
                     if let Some(entity) = weak.upgrade() {
                         cx.update_entity(&entity, |cache, cx| {
+                            // The image may have been evicted while it loaded.
                             if cache.cache.contains(&key) {
                                 cx.notify();
                             }
