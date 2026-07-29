@@ -29,9 +29,9 @@ serde_json.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
-wasmtime = "46"
-wasmtime-wasi = { version = "46", features = ["p3"] }
-wasmtime-wasi-http = { version = "46", features = ["p3"] }
+wasmtime = "47"
+wasmtime-wasi = { version = "47", features = ["p3"] }
+wasmtime-wasi-http = { version = "47", features = ["p3"] }
 zip.workspace = true
 
 [dev-dependencies]

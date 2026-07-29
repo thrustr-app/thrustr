@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-wit-bindgen = "0.59"
+wit-bindgen = "0.60"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
