@@ -8,5 +8,6 @@ license.workspace = true
 chrono.workspace = true
 directories = "6.0.0"
 rustls.workspace = true
+tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true

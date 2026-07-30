@@ -1,11 +1,13 @@
 use crate::paths;
 use chrono::Local;
 use std::{
+    backtrace::Backtrace,
     cmp::Reverse,
-    fs,
+    fs, panic,
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tracing::error;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     EnvFilter, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
@@ -44,7 +46,27 @@ pub fn init() -> WorkerGuard {
         .with(stderr_layer)
         .init();
 
+    install_panic_hook();
+
     guard
+}
+
+fn install_panic_hook() {
+    let previous = panic::take_hook();
+
+    panic::set_hook(Box::new(move |info| {
+        let location = info.location().map(ToString::to_string);
+        let backtrace = Backtrace::force_capture();
+
+        error!(
+            reason = info.payload_as_str().unwrap_or("unknown"),
+            location = location.as_deref().unwrap_or("unknown"),
+            %backtrace,
+            "panicked"
+        );
+
+        previous(info);
+    }));
 }
 
 fn prune_old_logs(dir: &Path, keep: usize) {
