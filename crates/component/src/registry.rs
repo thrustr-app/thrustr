@@ -8,6 +8,7 @@ use domain::{
 use runtime::TokioHandle;
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::debug;
 
 #[derive(Clone)]
 pub struct RegistryContext {
@@ -49,6 +50,7 @@ impl ComponentRegistry {
             Entry::Vacant(entry) => {
                 let handle = ComponentHandle::new(component, self.context.clone());
                 entry.insert(handle.clone());
+                debug!(component = handle.id(), "component registered");
                 Ok(handle)
             }
         }
