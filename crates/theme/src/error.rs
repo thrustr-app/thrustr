@@ -1,16 +1,9 @@
-use std::{error::Error, fmt::Display};
+use thiserror::Error;
 
-#[derive(Debug)]
+pub(crate) type Result<T> = std::result::Result<T, ThemeError>;
+
+#[derive(Debug, Error)]
 pub enum ThemeError {
+    #[error("Theme '{0}' not found")]
     NotFound(String),
 }
-
-impl Display for ThemeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ThemeError::NotFound(name) => write!(f, "Theme '{}' not found", name),
-        }
-    }
-}
-
-impl Error for ThemeError {}

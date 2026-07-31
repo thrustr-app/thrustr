@@ -1,4 +1,4 @@
-use crate::error::ThemeError;
+use crate::error::{Result, ThemeError};
 use assets::Assets;
 use gpui::{App, Global};
 use std::collections::HashMap;
@@ -13,8 +13,6 @@ pub use theme::*;
 pub fn init(cx: &mut App) {
     cx.set_global(ThemeManager::new());
 }
-
-type Result<T> = std::result::Result<T, ThemeError>;
 
 pub struct ThemeManager {
     themes: HashMap<String, Theme>,
