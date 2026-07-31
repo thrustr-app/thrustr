@@ -6,5 +6,6 @@ license.workspace = true
 
 [dependencies]
 runtime.workspace = true
+strum.workspace = true
 tokio.workspace = true
 tracing.workspace = true

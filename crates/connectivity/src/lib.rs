@@ -1,9 +1,9 @@
 use runtime::TokioHandle;
 use std::{
-    fmt,
     sync::{Arc, Mutex},
     time::Duration,
 };
+use strum::Display;
 use tokio::{
     net::TcpStream,
     sync::{Semaphore, watch},
@@ -12,7 +12,8 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+#[strum(serialize_all = "lowercase")]
 pub enum ConnectivityState {
     Online,
     Offline,
@@ -25,15 +26,6 @@ impl ConnectivityState {
 
     pub fn is_offline(&self) -> bool {
         matches!(self, Self::Offline)
-    }
-}
-
-impl fmt::Display for ConnectivityState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Online => write!(f, "online"),
-            Self::Offline => write!(f, "offline"),
-        }
     }
 }
 
