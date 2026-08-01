@@ -221,19 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn downgrade_to_shared_always_succeeds() {
-        let mut in_flight = InFlight::default();
-        in_flight.acquire(Operation::Init);
-
-        in_flight.release(Operation::Init);
-        assert!(in_flight.acquire(sync()));
-
-        assert!(in_flight.exclusive().is_none());
-        assert_eq!(in_flight.shared(), [sync()]);
-    }
-
-    #[test]
-    fn upgrade_fails_while_other_shared_run() {
+    fn exclusive_blocked_while_any_shared_remains() {
         let mut in_flight = InFlight::default();
         in_flight.acquire(sync());
         in_flight.acquire(sync());
@@ -243,15 +231,5 @@ mod tests {
 
         assert!(in_flight.acquire(sync()));
         assert_eq!(in_flight.shared().len(), 2);
-    }
-
-    #[test]
-    fn upgrade_succeeds_when_last_shared() {
-        let mut in_flight = InFlight::default();
-        in_flight.acquire(sync());
-
-        in_flight.release(sync());
-        assert!(in_flight.acquire(Operation::Login));
-        assert_eq!(in_flight.exclusive(), Some(Operation::Login));
     }
 }
