@@ -1230,11 +1230,13 @@ version = "0.1.0"
 name = "component"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "artwork",
  "dashmap",
  "domain",
  "event",
  "runtime",
+ "strum 0.28.0",
  "thiserror 2.0.19",
  "tracing",
 ]

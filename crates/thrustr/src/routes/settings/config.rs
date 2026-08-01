@@ -4,9 +4,10 @@ use crate::{
     navigation::NavigatorExt,
     webview::{WebviewError, open_auth_webview},
 };
-use component::ComponentHandle;
+use component::{ComponentHandle, Operation};
 use domain::component::{
-    Field as ConfigField, LoginForm, LoginMethod, LoginRequest, Section as ConfigSection, Status,
+    AuthFlow, Field as ConfigField, LoginForm, LoginMethod, LoginRequest, Section as ConfigSection,
+    Status,
 };
 use gpui::{
     AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
@@ -42,7 +43,6 @@ pub struct Config {
     local_error: Option<SharedString>,
     status_error: Option<SharedString>,
     login_method: Option<LoginMethod>,
-    authenticating: bool,
     login_form_view: Option<Entity<LoginFormState>>,
     scroll_handle: ScrollHandle,
     _tasks: Vec<Task<()>>,
@@ -60,7 +60,7 @@ impl Config {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
             Err(err) => {
-                local_error = Some(err.into());
+                local_error = Some(err.to_string().into());
                 HashMap::new()
             }
         };
@@ -83,7 +83,6 @@ impl Config {
             values,
             local_error,
             login_method: None,
-            authenticating: false,
             login_form_view: None,
             scroll_handle: ScrollHandle::new(),
             _tasks,
@@ -108,7 +107,7 @@ impl Config {
                 config.login_method = match result {
                     Ok(method) => method,
                     Err(err) => {
-                        config.local_error = Some(err.into());
+                        config.local_error = Some(err.to_string().into());
                         None
                     }
                 };
@@ -117,6 +116,10 @@ impl Config {
     }
 
     fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(mut claim) = self.component.begin(Operation::Configure) else {
+            return;
+        };
+
         let fields = self
             .values
             .iter()
@@ -124,59 +127,55 @@ impl Config {
             .collect();
 
         let component = self.component.clone();
-
         cx.spawn_and_update(
-            async move { component.save_config(fields).await },
+            async move { component.save_config(&mut claim, fields).await },
             |config, result, _| {
                 config.local_error = result.err().map(|e| e.to_string().into());
             },
         );
+        self.refresh_status(cx);
     }
 
     fn on_login(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.authenticating {
-            return;
+        match self.login_method.clone() {
+            Some(LoginMethod::Flow(login_flow)) => self.handle_login_flow(login_flow, cx),
+            Some(LoginMethod::Form(login_form)) => self.handle_login_form(login_form, window, cx),
+            None => {}
         }
-        let Some(login_method) = self.login_method.as_ref() else {
-            return;
-        };
-
-        self.authenticating = true;
-        match login_method {
-            LoginMethod::Flow(_) => self.handle_login_flow(cx),
-            LoginMethod::Form(_) => self.handle_login_form(window, cx),
-        }
-        cx.notify();
     }
 
-    fn handle_login_flow(&mut self, cx: &mut Context<Self>) {
-        let Some(LoginMethod::Flow(login_flow)) = self.login_method.clone() else {
+    fn handle_login_flow(&mut self, login_flow: AuthFlow, cx: &mut Context<Self>) {
+        let Some(mut claim) = self.component.begin(Operation::Login) else {
             return;
         };
-        let component = self.component.clone();
 
+        let component = self.component.clone();
         cx.spawn_and_update(
             async move {
                 let result =
                     unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
                 match result {
-                    Ok((url, body)) => component.login(LoginRequest::Flow { url, body }).await,
+                    Ok((url, body)) => component
+                        .login(&mut claim, LoginRequest::Flow { url, body })
+                        .await
+                        .map_err(|e| e.to_string()),
                     Err(WebviewError::UserCancelled) => Ok(()),
                     Err(WebviewError::Internal(e)) => Err(e),
                 }
             },
             |config, result, _| {
-                config.authenticating = false;
-                config.local_error = result.err().map(|e| e.to_string().into());
+                config.local_error = result.err().map(Into::into);
             },
         );
+        self.refresh_status(cx);
     }
 
-    fn handle_login_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(LoginMethod::Form(login_form)) = self.login_method.clone() else {
-            return;
-        };
-
+    fn handle_login_form(
+        &mut self,
+        login_form: LoginForm,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let component = self.component.clone();
         let config_entity = cx.entity().downgrade();
 
@@ -196,19 +195,24 @@ impl Config {
                 .ok_text("Log In")
                 .when(!is_valid, |dialog| dialog.disabled())
                 .on_ok(move |_, _, cx| {
+                    let Some(mut claim) = component.begin(Operation::Login) else {
+                        return;
+                    };
+
                     let fields = form_entity.read(cx).login_fields();
-                    let component = component.clone();
                     let config_entity = config_entity_for_ok.clone();
+                    let component = component.clone();
 
                     let task = cx.background_spawn(async move {
-                        component.login(LoginRequest::Form { fields }).await
+                        component
+                            .login(&mut claim, LoginRequest::Form { fields })
+                            .await
                     });
 
                     cx.spawn(async move |cx| {
                         let result = task.await;
                         if let Some(entity) = config_entity.upgrade() {
                             entity.update(cx, |config, cx| {
-                                config.authenticating = false;
                                 config.login_form_view = None;
                                 config.local_error = match result {
                                     Ok(()) => None,
@@ -223,7 +227,6 @@ impl Config {
                 .on_cancel(move |_, _, cx| {
                     if let Some(entity) = config_entity_for_cancel.upgrade() {
                         entity.update(cx, |config, cx| {
-                            config.authenticating = false;
                             config.login_form_view = None;
                             cx.notify();
                         });
@@ -234,34 +237,38 @@ impl Config {
     }
 
     fn on_logout(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.authenticating {
+        let Some(mut claim) = self.component.begin(Operation::Logout) else {
             return;
-        }
-        self.authenticating = true;
+        };
 
         let component = self.component.clone();
         cx.spawn_and_update(
             async move {
-                if let Some(flow) = component.logout_flow().await? {
+                if let Some(flow) = component.logout_flow().await.map_err(|e| e.to_string())? {
                     match unblock(move || open_auth_webview(&flow.url, &flow.target)).await {
                         Ok(_) => {}
                         Err(WebviewError::UserCancelled) => return Ok(()),
                         Err(WebviewError::Internal(e)) => return Err(e),
                     }
                 }
-                component.logout().await
+                component
+                    .logout(&mut claim)
+                    .await
+                    .map_err(|e| e.to_string())
             },
             |this, result, _| {
-                this.authenticating = false;
-                this.local_error = result.err().map(|e| e.to_string().into());
+                this.local_error = result.err().map(Into::into);
             },
         );
-        cx.notify();
+        self.refresh_status(cx);
     }
 
     fn render_header(&mut self, autofocus_back: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let has_login = self.login_method.is_some();
+        // Read live rather than cached: a missed refresh event then costs a
+        // frame, not a button stuck in its loading state.
+        let running = self.component.running();
 
         let status_label = match self.status {
             Status::Initializing => Label::new("INITIALIZING").variant_warning(),
@@ -315,7 +322,10 @@ impl Config {
                     .when(!self.sections.is_empty(), |div| {
                         div.child(
                             Button::new("save")
-                                .when(!self.status.can_configure(), |btn| btn.disabled())
+                                .when(!self.component.can(Operation::Configure), |btn| {
+                                    btn.disabled()
+                                })
+                                .when(running == Some(Operation::Configure), Button::loading)
                                 .size_lg()
                                 .child("Save")
                                 .w(rems(10.))
@@ -325,7 +335,8 @@ impl Config {
                     .when(has_login && self.status.can_login(), |div| {
                         div.child(
                             Button::new("login")
-                                .when(self.authenticating, |btn| btn.loading())
+                                .when(!self.component.can(Operation::Login), |btn| btn.disabled())
+                                .when(running == Some(Operation::Login), Button::loading)
                                 .variant_accent()
                                 .size_lg()
                                 .child("Log In")
@@ -337,7 +348,8 @@ impl Config {
                     .when(has_login && self.status.can_logout(), |div| {
                         div.child(
                             Button::new("logout")
-                                .when(self.authenticating, |btn| btn.loading())
+                                .when(!self.component.can(Operation::Logout), |btn| btn.disabled())
+                                .when(running == Some(Operation::Logout), Button::loading)
                                 .variant_outline()
                                 .size_lg()
                                 .child("Log Out")
@@ -357,7 +369,9 @@ impl Config {
             let fields = s.fields.iter().map(|f| {
                 let field_id = f.id.clone();
                 input(f.id.clone())
-                    .when(!self.status.can_configure(), |btn| btn.disabled())
+                    .when(!self.component.can(Operation::Configure), |btn| {
+                        btn.disabled()
+                    })
                     .auto_focus(autofocus_field.as_ref() == Some(&f.id))
                     .reveal_on_focus(&self.scroll_handle)
                     .label(f.label.clone())
@@ -401,8 +415,8 @@ impl Config {
 impl Render for Config {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let autofocus_field = self
-            .status
-            .can_configure()
+            .component
+            .can(Operation::Configure)
             .then(|| self.sections.iter().find_map(|s| s.fields.first()))
             .flatten()
             .map(|f| f.id.clone());

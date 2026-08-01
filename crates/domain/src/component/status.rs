@@ -1,10 +1,13 @@
 use crate::component::Error;
+use strum::Display;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
+#[strum(serialize_all = "lowercase")]
 pub enum Status {
     Inactive,
     Initializing,
     Active,
+    #[strum(to_string = "initialization error")]
     InitError(Error),
     Unauthenticated,
     Error(Error),
