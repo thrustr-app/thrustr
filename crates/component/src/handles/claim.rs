@@ -1,5 +1,5 @@
 use crate::{ComponentHandle, StorefrontOperation};
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+use domain::component::Status;
 use strum::Display;
 use tracing::debug;
 
@@ -26,6 +26,18 @@ impl Operation {
             Self::Storefront(operation) => operation.is_exclusive(),
         }
     }
+
+    /// Whether `status` permits this operation, ignoring what is already
+    /// running.
+    pub(super) fn allowed_by(self, status: &Status) -> bool {
+        match self {
+            Self::Init => status.can_init(),
+            Self::Login => status.can_login(),
+            Self::Logout => status.can_logout(),
+            Self::Configure => status.can_configure(),
+            Self::Storefront(_) => status.is_active(),
+        }
+    }
 }
 
 /// The operations running on a component right now.
@@ -36,11 +48,11 @@ pub(crate) struct InFlight {
 }
 
 impl InFlight {
-    pub fn is_idle(&self) -> bool {
+    pub(super) fn is_idle(&self) -> bool {
         self.exclusive.is_none() && self.shared.is_empty()
     }
 
-    pub fn exclusive(&self) -> Option<Operation> {
+    pub(super) fn exclusive(&self) -> Option<Operation> {
         self.exclusive
     }
 
@@ -49,18 +61,18 @@ impl InFlight {
         &self.shared
     }
 
-    pub fn blocking(&self) -> Option<Operation> {
+    pub(super) fn blocking(&self) -> Option<Operation> {
         self.exclusive.or_else(|| self.shared.first().copied())
     }
 
-    fn accepts(&self, operation: Operation) -> bool {
+    pub(super) fn accepts(&self, operation: Operation) -> bool {
         match operation.is_exclusive() {
             true => self.is_idle(),
             false => self.exclusive.is_none(),
         }
     }
 
-    fn acquire(&mut self, operation: Operation) -> bool {
+    pub(super) fn acquire(&mut self, operation: Operation) -> bool {
         if !self.accepts(operation) {
             return false;
         }
@@ -88,6 +100,11 @@ pub struct Claim {
 }
 
 impl Claim {
+    pub(super) fn new(handle: ComponentHandle, operation: Operation) -> Self {
+        Self { handle, operation }
+    }
+
+    /// Re-tags the claim for `operation`.
     pub(super) fn transition(&mut self, operation: Operation) -> Result<(), String> {
         if self.operation == operation {
             return Ok(());
@@ -141,81 +158,6 @@ impl Drop for Claim {
             "claim released"
         );
         event::emit("component");
-    }
-}
-
-impl ComponentHandle {
-    /// The exclusive operation running on this component, if any.
-    pub fn running(&self) -> Option<Operation> {
-        self.in_flight_read().exclusive()
-    }
-
-    /// Whether `operation` could be started right now.
-    pub fn can(&self, operation: Operation) -> bool {
-        self.allows(operation) && self.in_flight_read().accepts(operation)
-    }
-
-    /// Claims the component for `operation`. `None` if the status forbids it or
-    /// the component is busy with something incompatible.
-    pub fn begin(&self, operation: Operation) -> Option<Claim> {
-        if !self.allows(operation) {
-            debug!(
-                component = self.id(),
-                %operation,
-                status = %self.status(),
-                "operation rejected"
-            );
-            return None;
-        }
-
-        let acquired = {
-            let mut in_flight = self.in_flight_write();
-            match in_flight.acquire(operation) {
-                true => Ok(()),
-                false => Err(in_flight.blocking()),
-            }
-        };
-
-        if let Err(busy_with) = acquired {
-            debug!(
-                component = self.id(),
-                %operation,
-                busy_with = busy_with.map(display),
-                "component is busy"
-            );
-            return None;
-        }
-
-        debug!(component = self.id(), %operation, "claim acquired");
-        event::emit("component");
-        Some(Claim {
-            handle: self.clone(),
-            operation,
-        })
-    }
-
-    /// Whether the status allows `operation`, ignoring what is already running.
-    fn allows(&self, operation: Operation) -> bool {
-        let status = self.status();
-        match operation {
-            Operation::Init => status.can_init(),
-            Operation::Login => status.can_login(),
-            Operation::Logout => status.can_logout(),
-            Operation::Configure => status.can_configure(),
-            Operation::Storefront(_) => status.is_active(),
-        }
-    }
-
-    fn in_flight_read(&self) -> RwLockReadGuard<'_, InFlight> {
-        self.in_flight
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    fn in_flight_write(&self) -> RwLockWriteGuard<'_, InFlight> {
-        self.in_flight
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

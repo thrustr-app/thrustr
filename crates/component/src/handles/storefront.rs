@@ -5,7 +5,7 @@ use domain::{
 };
 use std::sync::Arc;
 use strum::Display;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// An operation that runs against a component's storefront.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
@@ -53,17 +53,8 @@ impl StorefrontHandle {
     }
 
     pub async fn sync_games(&self, claim: &mut Claim) -> Result<(), String> {
-        claim.transition(StorefrontOperation::Sync.into())?;
-
-        let status = self.component.status();
-        if !status.is_active() {
-            debug!(
-                component = self.component.id(),
-                %status,
-                "game sync rejected"
-            );
-            return Err("Storefront is not active.".into());
-        }
+        self.component
+            .enter(claim, StorefrontOperation::Sync.into())?;
 
         let new_games = self.storefront.list_games().await.map_err(|e| {
             let error = e.to_string();

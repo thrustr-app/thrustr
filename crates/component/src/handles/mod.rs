@@ -4,7 +4,7 @@ use domain::component::{
 };
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use tracing::{debug, info, warn};
 
@@ -58,8 +58,50 @@ impl ComponentHandle {
             .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
     }
 
+    /// The exclusive operation running on this component.
+    pub fn running(&self) -> Option<Operation> {
+        self.in_flight_read().exclusive()
+    }
+
+    /// Whether `operation` could be started right now.
+    pub fn can(&self, operation: Operation) -> bool {
+        operation.allowed_by(&self.status()) && self.in_flight_read().accepts(operation)
+    }
+
+    /// Claims the component for `operation`. `None` if the status forbids it or
+    /// the component is busy with something incompatible.
+    pub fn begin(&self, operation: Operation) -> Option<Claim> {
+        let status = self.status();
+        if !operation.allowed_by(&status) {
+            debug!(component = self.id(), %operation, %status, "operation rejected");
+            return None;
+        }
+
+        let acquired = {
+            let mut in_flight = self.in_flight_write();
+            match in_flight.acquire(operation) {
+                true => Ok(()),
+                false => Err(in_flight.blocking()),
+            }
+        };
+
+        if let Err(busy_with) = acquired {
+            debug!(
+                component = self.id(),
+                %operation,
+                busy_with = busy_with.map(display),
+                "component is busy"
+            );
+            return None;
+        }
+
+        debug!(component = self.id(), %operation, "claim acquired");
+        event::emit("component");
+        Some(Claim::new(self.clone(), operation))
+    }
+
     pub async fn init(&self, claim: &mut Claim) -> Result<(), String> {
-        claim.transition(Operation::Init)?;
+        self.enter(claim, Operation::Init)?;
 
         self.transition(StatusEvent::InitStarted)
             .ok_or("Cannot initialize from current state")?;
@@ -82,13 +124,7 @@ impl ComponentHandle {
     }
 
     pub async fn login(&self, claim: &mut Claim, request: LoginRequest) -> Result<(), String> {
-        claim.transition(Operation::Login)?;
-
-        let status = self.status();
-        if !status.can_login() {
-            debug!(component = self.id(), %status,"login rejected");
-            return Err("Cannot login from current state".into());
-        }
+        self.enter(claim, Operation::Login)?;
 
         self.component
             .login(request)
@@ -106,13 +142,7 @@ impl ComponentHandle {
     }
 
     pub async fn logout(&self, claim: &mut Claim) -> Result<(), String> {
-        claim.transition(Operation::Logout)?;
-
-        let status = self.status();
-        if !status.can_logout() {
-            debug!(component = self.id(), %status,"logout rejected");
-            return Err("Cannot logout from current state".into());
-        }
+        self.enter(claim, Operation::Logout)?;
 
         self.component.logout().await.map_err(|e| e.to_string())?;
 
@@ -155,13 +185,7 @@ impl ComponentHandle {
         claim: &mut Claim,
         fields: HashMap<String, String>,
     ) -> Result<(), String> {
-        claim.transition(Operation::Configure)?;
-
-        let status = self.status();
-        if !status.can_configure() {
-            debug!(component = self.id(), %status,"config save rejected");
-            return Err("Cannot configure from current state".into());
-        }
+        self.enter(claim, Operation::Configure)?;
 
         self.validate_config(fields.clone()).await?;
         self.context
@@ -182,6 +206,19 @@ impl ComponentHandle {
             return self.init(claim).await;
         }
 
+        Ok(())
+    }
+
+    pub(super) fn enter(&self, claim: &mut Claim, operation: Operation) -> Result<(), String> {
+        claim.transition(operation)?;
+
+        let status = self.status();
+        if !operation.allowed_by(&status) {
+            debug!(component = self.id(), %operation, %status, "operation rejected");
+            return Err(format!(
+                "Cannot start {operation} while the component is {status}"
+            ));
+        }
         Ok(())
     }
 
@@ -235,5 +272,17 @@ impl ComponentHandle {
             event::emit("component");
         }
         Some(status)
+    }
+
+    fn in_flight_read(&self) -> RwLockReadGuard<'_, InFlight> {
+        self.in_flight
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn in_flight_write(&self) -> RwLockWriteGuard<'_, InFlight> {
+        self.in_flight
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
