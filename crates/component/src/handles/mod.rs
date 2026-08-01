@@ -8,15 +8,19 @@ use std::{
 };
 use tracing::{debug, info, warn};
 
+mod claim;
 mod storefront;
 
-pub use storefront::StorefrontHandle;
+pub(crate) use claim::InFlight;
+pub use claim::{Claim, Operation};
+pub use storefront::{StorefrontHandle, StorefrontOperation};
 
 #[derive(Clone)]
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
     context: RegistryContext,
     status: Arc<RwLock<Status>>,
+    in_flight: Arc<RwLock<InFlight>>,
 }
 
 impl ComponentHandle {
@@ -25,6 +29,7 @@ impl ComponentHandle {
             component,
             context,
             status: Arc::new(RwLock::new(Status::Inactive)),
+            in_flight: Arc::new(RwLock::new(InFlight::default())),
         }
     }
 
@@ -53,7 +58,9 @@ impl ComponentHandle {
             .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
     }
 
-    pub async fn init(&self) -> Result<(), String> {
+    pub async fn init(&self, claim: &mut Claim) -> Result<(), String> {
+        claim.transition(Operation::Init)?;
+
         self.transition(StatusEvent::InitStarted)
             .ok_or("Cannot initialize from current state")?;
 
@@ -64,18 +71,22 @@ impl ComponentHandle {
         });
         result.map_err(|e| e.to_string())?;
 
+        // Game sync downgrades the claim to shared, so it no longer holds the
+        // component exclusively for the rest of init.
         if let Some(storefront) = self.storefront()
-            && let Err(err) = storefront.sync_games().await
+            && let Err(err) = storefront.sync_games(claim).await
         {
             warn!(component = self.id(), error = %err, "initial game sync failed");
         }
         Ok(())
     }
 
-    pub async fn login(&self, request: LoginRequest) -> Result<(), String> {
+    pub async fn login(&self, claim: &mut Claim, request: LoginRequest) -> Result<(), String> {
+        claim.transition(Operation::Login)?;
+
         let status = self.status();
         if !status.can_login() {
-            debug!(component = self.id(), ?status, "login rejected");
+            debug!(component = self.id(), %status,"login rejected");
             return Err("Cannot login from current state".into());
         }
 
@@ -89,15 +100,17 @@ impl ComponentHandle {
             .ok_or("Logged in, but the component changed state meanwhile")?;
 
         if status.can_init() {
-            return self.init().await;
+            return self.init(claim).await;
         }
         Ok(())
     }
 
-    pub async fn logout(&self) -> Result<(), String> {
+    pub async fn logout(&self, claim: &mut Claim) -> Result<(), String> {
+        claim.transition(Operation::Logout)?;
+
         let status = self.status();
         if !status.can_logout() {
-            debug!(component = self.id(), ?status, "logout rejected");
+            debug!(component = self.id(), %status,"logout rejected");
             return Err("Cannot logout from current state".into());
         }
 
@@ -137,10 +150,16 @@ impl ComponentHandle {
             .map_err(|e| e.to_string())
     }
 
-    pub async fn save_config(&self, fields: HashMap<String, String>) -> Result<(), String> {
+    pub async fn save_config(
+        &self,
+        claim: &mut Claim,
+        fields: HashMap<String, String>,
+    ) -> Result<(), String> {
+        claim.transition(Operation::Configure)?;
+
         let status = self.status();
         if !status.can_configure() {
-            debug!(component = self.id(), ?status, "config save rejected");
+            debug!(component = self.id(), %status,"config save rejected");
             return Err("Cannot configure from current state".into());
         }
 
@@ -148,14 +167,19 @@ impl ComponentHandle {
         self.context
             .component_storage
             .set_config_values(self.id(), &fields)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                warn!(component = self.id(), error = %e, "storing configuration failed");
+                e.to_string()
+            })?;
+
+        info!(component = self.id(), "configuration saved");
 
         let status = self
             .transition(StatusEvent::ConfigSaved)
             .ok_or("Configuration saved, but the component changed state meanwhile")?;
 
         if status.can_init() {
-            return self.init().await;
+            return self.init(claim).await;
         }
 
         Ok(())
@@ -183,7 +207,7 @@ impl ComponentHandle {
         let Some(previous) = previous else {
             warn!(
                 component = self.id(),
-                status = ?status,
+                %status,
                 event = event_debug,
                 "ignoring invalid status transition"
             );
@@ -191,19 +215,20 @@ impl ComponentHandle {
         };
 
         if previous != status {
-            if status.is_any_error() {
+            if let Some(error) = status.error_message() {
                 warn!(
                     component = self.id(),
-                    from = ?previous,
-                    to = ?status,
+                    from = %previous,
+                    to = %status,
+                    error,
                     event = event_debug,
                     "component entered error state"
                 );
             } else {
                 info!(
                     component = self.id(),
-                    from = ?previous,
-                    to = ?status,
+                    from = %previous,
+                    to = %status,
                     "component status changed"
                 );
             }

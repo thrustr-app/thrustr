@@ -1,10 +1,33 @@
-use crate::ComponentHandle;
+use crate::{Claim, ComponentHandle, Operation};
 use domain::{
     component::{StatusEvent, capabilities::Storefront},
     game::NewGame,
 };
 use std::sync::Arc;
+use strum::Display;
 use tracing::{debug, info, warn};
+
+/// An operation that runs against a component's storefront.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[strum(serialize_all = "lowercase")]
+pub enum StorefrontOperation {
+    #[strum(to_string = "game sync")]
+    Sync,
+}
+
+impl StorefrontOperation {
+    pub(super) fn is_exclusive(self) -> bool {
+        match self {
+            Self::Sync => false,
+        }
+    }
+}
+
+impl From<StorefrontOperation> for Operation {
+    fn from(operation: StorefrontOperation) -> Self {
+        Self::Storefront(operation)
+    }
+}
 
 #[derive(Clone)]
 pub struct StorefrontHandle {
@@ -24,12 +47,19 @@ impl StorefrontHandle {
         &self.component
     }
 
-    pub async fn sync_games(&self) -> Result<(), String> {
+    /// Claims the component for a storefront operation.
+    pub fn begin(&self, operation: StorefrontOperation) -> Option<Claim> {
+        self.component.begin(operation.into())
+    }
+
+    pub async fn sync_games(&self, claim: &mut Claim) -> Result<(), String> {
+        claim.transition(StorefrontOperation::Sync.into())?;
+
         let status = self.component.status();
         if !status.is_active() {
             debug!(
                 component = self.component.id(),
-                ?status,
+                %status,
                 "game sync rejected"
             );
             return Err("Storefront is not active.".into());

@@ -10,5 +10,6 @@ dashmap.workspace = true
 domain.workspace = true
 event.workspace = true
 runtime.workspace = true
+strum.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

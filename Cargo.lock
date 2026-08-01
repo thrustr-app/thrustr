@@ -1235,6 +1235,7 @@ dependencies = [
  "domain",
  "event",
  "runtime",
+ "strum 0.28.0",
  "thiserror 2.0.19",
  "tracing",
 ]
@@ -1283,6 +1284,7 @@ name = "connectivity"
 version = "0.1.0"
 dependencies = [
  "runtime",
+ "strum 0.28.0",
  "tokio",
  "tracing",
 ]
@@ -7911,6 +7913,7 @@ dependencies = [
  "gpui",
  "paste",
  "serde",
+ "thiserror 2.0.19",
  "toml 1.1.4+spec-1.1.0",
 ]
 
