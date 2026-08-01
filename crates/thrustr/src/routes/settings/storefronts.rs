@@ -5,6 +5,7 @@ use crate::{
     navigation::{NavigatorExt, SettingsPage},
 };
 use domain::component::Status;
+use event::Topic;
 use gpui::{
     Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
     SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
@@ -36,7 +37,7 @@ impl Storefronts {
             _tasks: Vec::new(),
         };
 
-        let task = cx.listen("component", |page, cx| {
+        let task = cx.listen(Topic::Component, |page, cx| {
             page.refresh_storefronts(cx);
         });
         page._tasks.push(task);

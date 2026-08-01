@@ -4,6 +4,7 @@ use domain::{
     component::{StatusEvent, capabilities::Storefront},
     game::NewGame,
 };
+use event::Topic;
 use std::sync::Arc;
 use strum::Display;
 use tracing::{info, warn};
@@ -79,7 +80,7 @@ impl StorefrontHandle {
             return Ok(());
         }
 
-        event::emit("games");
+        event::emit(Topic::Games);
 
         self.component.context.artwork_service.trigger_backfill();
 

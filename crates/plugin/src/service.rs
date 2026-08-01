@@ -2,6 +2,7 @@ use crate::manager::PluginManager;
 use anyhow::{Result, anyhow};
 use component::{ComponentRegistry, Operation};
 use domain::component::ComponentStorage;
+use event::Topic;
 use futures::StreamExt;
 use runtime::TokioHandle;
 use std::{
@@ -62,7 +63,7 @@ impl PluginService {
 
     async fn load_and_init_plugin(&self, path: &Path) -> Result<()> {
         let plugin = self.manager.load_plugin(path.to_path_buf()).await?;
-        event::emit("plugin");
+        event::emit(Topic::Plugin);
 
         let component = self.component_registry.register(Arc::new(plugin))?;
 

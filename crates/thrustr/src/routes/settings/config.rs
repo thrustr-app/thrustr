@@ -9,6 +9,7 @@ use domain::component::{
     AuthFlow, Field as ConfigField, LoginForm, LoginMethod, LoginRequest, Section as ConfigSection,
     Status,
 };
+use event::Topic;
 use gpui::{
     AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
     IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled, Task, Window, div, img,
@@ -70,7 +71,7 @@ impl Config {
             .map(|c| c.sections.into_iter().map(Into::into).collect())
             .unwrap_or_default();
 
-        let _tasks = vec![cx.listen("component", Self::refresh_status)];
+        let _tasks = vec![cx.listen(Topic::Component, Self::refresh_status)];
 
         let status = component.status();
         let mut page = Self {

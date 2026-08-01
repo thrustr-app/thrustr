@@ -13,6 +13,7 @@ use crate::{
 };
 use artwork::ArtworkReady;
 use domain::game::{GameId, SectionIndex};
+use event::Topic;
 use gpui::{
     AnyElement, AppContext, Context, Entity, FocusHandle, Image, InteractiveElement, IntoElement,
     ParentElement, Pixels, Rems, Render, Resource, ScrollStrategy, SharedString, Styled, Task,
@@ -112,7 +113,7 @@ impl Library {
             _tasks: Vec::new(),
         };
 
-        let task = cx.listen("games", |page, cx| {
+        let task = cx.listen(Topic::Games, |page, cx| {
             page.refresh_icons(cx);
             page.refresh_games(cx);
         });

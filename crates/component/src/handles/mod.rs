@@ -3,6 +3,7 @@ use crate::RegistryContext;
 use domain::component::{
     AuthFlow, Component, ComponentConfig, LoginMethod, LoginRequest, Metadata, Status, StatusEvent,
 };
+use event::Topic;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
@@ -118,7 +119,7 @@ impl ComponentHandle {
         }
 
         debug!(component = self.id(), %operation, "claim acquired");
-        event::emit("component");
+        event::emit(Topic::Component);
         Some(Claim::new(self.clone(), operation))
     }
 
@@ -267,7 +268,7 @@ impl ComponentHandle {
                     "component status changed"
                 );
             }
-            event::emit("component");
+            event::emit(Topic::Component);
         }
         Some(status)
     }

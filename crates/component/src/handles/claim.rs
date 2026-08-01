@@ -1,6 +1,7 @@
 use super::error::{OperationError, Result};
 use crate::{ComponentHandle, StorefrontOperation};
 use domain::component::Status;
+use event::Topic;
 use strum::Display;
 use tracing::debug;
 
@@ -142,7 +143,7 @@ impl Claim {
             "claim moved"
         );
         self.operation = operation;
-        event::emit("component");
+        event::emit(Topic::Component);
         Ok(())
     }
 }
@@ -156,7 +157,7 @@ impl Drop for Claim {
             operation = %self.operation,
             "claim released"
         );
-        event::emit("component");
+        event::emit(Topic::Component);
     }
 }
 

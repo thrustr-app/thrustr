@@ -1,3 +1,4 @@
+use event::Topic;
 use gpui::{AppContext, Context, Task};
 use std::future::Future;
 
@@ -37,10 +38,10 @@ impl<'a, T: 'static> SpawnTaskExt<T> for Context<'a, T> {
 
 /// Extension trait for event listener operations.
 pub trait EventListenerExt<T: 'static> {
-    /// Listens for an event and updates the entity with the given handler.
+    /// Listens for a topic and updates the entity with the given handler.
     fn listen(
         &mut self,
-        event: &'static str,
+        topic: Topic,
         handler: impl Fn(&mut T, &mut Context<T>) + Send + 'static,
     ) -> Task<()>;
 }
@@ -48,10 +49,10 @@ pub trait EventListenerExt<T: 'static> {
 impl<'a, T: 'static> EventListenerExt<T> for Context<'a, T> {
     fn listen(
         &mut self,
-        event: &'static str,
+        topic: Topic,
         handler: impl Fn(&mut T, &mut Context<T>) + Send + 'static,
     ) -> Task<()> {
-        let mut receiver = event::listen(event);
+        let mut receiver = event::listen(topic);
         self.spawn(async move |entity, cx| {
             while receiver.recv().await.is_ok() {
                 let _ = entity.update(cx, &handler);
