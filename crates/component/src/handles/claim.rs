@@ -56,11 +56,6 @@ impl InFlight {
         self.exclusive
     }
 
-    #[cfg(test)]
-    fn shared(&self) -> &[Operation] {
-        &self.shared
-    }
-
     pub(super) fn blocking(&self) -> Option<Operation> {
         self.exclusive.or_else(|| self.shared.first().copied())
     }
@@ -90,6 +85,11 @@ impl InFlight {
         } else if let Some(index) = self.shared.iter().position(|o| *o == operation) {
             self.shared.remove(index);
         }
+    }
+
+    #[cfg(test)]
+    fn shared(&self) -> &[Operation] {
+        &self.shared
     }
 }
 

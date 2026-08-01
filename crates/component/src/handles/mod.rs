@@ -58,6 +58,34 @@ impl ComponentHandle {
             .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
     }
 
+    pub async fn login_method(&self) -> Result<Option<LoginMethod>, String> {
+        self.component
+            .login_method()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn logout_flow(&self) -> Result<Option<AuthFlow>, String> {
+        self.component
+            .logout_flow()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn validate_config(&self, fields: HashMap<String, String>) -> Result<(), String> {
+        self.component
+            .validate_config(fields)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn config_values(&self) -> Result<HashMap<String, String>, String> {
+        self.context
+            .component_storage
+            .get_config_values(self.id())
+            .map_err(|e| e.to_string())
+    }
+
     /// The exclusive operation running on this component.
     pub fn running(&self) -> Option<Operation> {
         self.in_flight_read().exclusive()
@@ -150,34 +178,6 @@ impl ComponentHandle {
             .ok_or("Logged out, but the component changed state meanwhile")?;
 
         Ok(())
-    }
-
-    pub async fn login_method(&self) -> Result<Option<LoginMethod>, String> {
-        self.component
-            .login_method()
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    pub async fn logout_flow(&self) -> Result<Option<AuthFlow>, String> {
-        self.component
-            .logout_flow()
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    pub async fn validate_config(&self, fields: HashMap<String, String>) -> Result<(), String> {
-        self.component
-            .validate_config(fields)
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    pub fn config_values(&self) -> Result<HashMap<String, String>, String> {
-        self.context
-            .component_storage
-            .get_config_values(self.id())
-            .map_err(|e| e.to_string())
     }
 
     pub async fn save_config(
