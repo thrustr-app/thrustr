@@ -1,3 +1,4 @@
+use super::error::{OperationError, Result};
 use crate::{ComponentHandle, StorefrontOperation};
 use domain::component::Status;
 use strum::Display;
@@ -105,7 +106,7 @@ impl Claim {
     }
 
     /// Re-tags the claim for `operation`.
-    pub(super) fn transition(&mut self, operation: Operation) -> Result<(), String> {
+    pub(super) fn transition(&mut self, operation: Operation) -> Result<()> {
         if self.operation == operation {
             return Ok(());
         }
@@ -131,9 +132,7 @@ impl Claim {
                 blocked_by = blocked_by.map(display),
                 "cannot upgrade claim"
             );
-            return Err(format!(
-                "Cannot start {operation} while another operation is running"
-            ));
+            return Err(OperationError::Busy { operation });
         }
 
         debug!(

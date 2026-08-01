@@ -1,3 +1,4 @@
+use self::error::Result;
 use crate::RegistryContext;
 use domain::component::{
     AuthFlow, Component, ComponentConfig, LoginMethod, LoginRequest, Metadata, Status, StatusEvent,
@@ -9,10 +10,12 @@ use std::{
 use tracing::{debug, info, warn};
 
 mod claim;
+mod error;
 mod storefront;
 
 pub(crate) use claim::InFlight;
 pub use claim::{Claim, Operation};
+pub use error::OperationError;
 pub use storefront::{StorefrontHandle, StorefrontOperation};
 
 #[derive(Clone)]
@@ -58,32 +61,23 @@ impl ComponentHandle {
             .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
     }
 
-    pub async fn login_method(&self) -> Result<Option<LoginMethod>, String> {
-        self.component
-            .login_method()
-            .await
-            .map_err(|e| e.to_string())
+    pub async fn login_method(&self) -> Result<Option<LoginMethod>> {
+        Ok(self.component.login_method().await?)
     }
 
-    pub async fn logout_flow(&self) -> Result<Option<AuthFlow>, String> {
-        self.component
-            .logout_flow()
-            .await
-            .map_err(|e| e.to_string())
+    pub async fn logout_flow(&self) -> Result<Option<AuthFlow>> {
+        Ok(self.component.logout_flow().await?)
     }
 
-    pub async fn validate_config(&self, fields: HashMap<String, String>) -> Result<(), String> {
-        self.component
-            .validate_config(fields)
-            .await
-            .map_err(|e| e.to_string())
+    pub async fn validate_config(&self, fields: HashMap<String, String>) -> Result<()> {
+        Ok(self.component.validate_config(fields).await?)
     }
 
-    pub fn config_values(&self) -> Result<HashMap<String, String>, String> {
-        self.context
+    pub fn config_values(&self) -> Result<HashMap<String, String>> {
+        Ok(self
+            .context
             .component_storage
-            .get_config_values(self.id())
-            .map_err(|e| e.to_string())
+            .get_config_values(self.id())?)
     }
 
     /// The exclusive operation running on this component.
@@ -128,18 +122,21 @@ impl ComponentHandle {
         Some(Claim::new(self.clone(), operation))
     }
 
-    pub async fn init(&self, claim: &mut Claim) -> Result<(), String> {
+    pub async fn init(&self, claim: &mut Claim) -> Result<()> {
         self.enter(claim, Operation::Init)?;
 
         self.transition(StatusEvent::InitStarted)
-            .ok_or("Cannot initialize from current state")?;
+            .ok_or_else(|| OperationError::NotAllowed {
+                operation: Operation::Init,
+                status: self.status(),
+            })?;
 
         let result = self.component.init().await;
         self.transition(match &result {
             Ok(_) => StatusEvent::InitSucceeded,
             Err(e) => StatusEvent::InitFailed(e.clone()),
         });
-        result.map_err(|e| e.to_string())?;
+        result?;
 
         // Game sync downgrades the claim to shared, so it no longer holds the
         // component exclusively for the rest of init.
@@ -151,17 +148,16 @@ impl ComponentHandle {
         Ok(())
     }
 
-    pub async fn login(&self, claim: &mut Claim, request: LoginRequest) -> Result<(), String> {
+    pub async fn login(&self, claim: &mut Claim, request: LoginRequest) -> Result<()> {
         self.enter(claim, Operation::Login)?;
 
-        self.component
-            .login(request)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.component.login(request).await?;
 
-        let status = self
-            .transition(StatusEvent::LoggedIn)
-            .ok_or("Logged in, but the component changed state meanwhile")?;
+        let status =
+            self.transition(StatusEvent::LoggedIn)
+                .ok_or(OperationError::StatusChanged {
+                    operation: Operation::Login,
+                })?;
 
         if status.can_init() {
             return self.init(claim).await;
@@ -169,13 +165,15 @@ impl ComponentHandle {
         Ok(())
     }
 
-    pub async fn logout(&self, claim: &mut Claim) -> Result<(), String> {
+    pub async fn logout(&self, claim: &mut Claim) -> Result<()> {
         self.enter(claim, Operation::Logout)?;
 
-        self.component.logout().await.map_err(|e| e.to_string())?;
+        self.component.logout().await?;
 
         self.transition(StatusEvent::LoggedOut)
-            .ok_or("Logged out, but the component changed state meanwhile")?;
+            .ok_or(OperationError::StatusChanged {
+                operation: Operation::Logout,
+            })?;
 
         Ok(())
     }
@@ -184,7 +182,7 @@ impl ComponentHandle {
         &self,
         claim: &mut Claim,
         fields: HashMap<String, String>,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         self.enter(claim, Operation::Configure)?;
 
         self.validate_config(fields.clone()).await?;
@@ -193,14 +191,16 @@ impl ComponentHandle {
             .set_config_values(self.id(), &fields)
             .map_err(|e| {
                 warn!(component = self.id(), error = %e, "storing configuration failed");
-                e.to_string()
+                e
             })?;
 
         info!(component = self.id(), "configuration saved");
 
-        let status = self
-            .transition(StatusEvent::ConfigSaved)
-            .ok_or("Configuration saved, but the component changed state meanwhile")?;
+        let status =
+            self.transition(StatusEvent::ConfigSaved)
+                .ok_or(OperationError::StatusChanged {
+                    operation: Operation::Configure,
+                })?;
 
         if status.can_init() {
             return self.init(claim).await;
@@ -209,15 +209,13 @@ impl ComponentHandle {
         Ok(())
     }
 
-    pub(super) fn enter(&self, claim: &mut Claim, operation: Operation) -> Result<(), String> {
+    pub(super) fn enter(&self, claim: &mut Claim, operation: Operation) -> Result<()> {
         claim.transition(operation)?;
 
         let status = self.status();
         if !operation.allowed_by(&status) {
             debug!(component = self.id(), %operation, %status, "operation rejected");
-            return Err(format!(
-                "Cannot start {operation} while the component is {status}"
-            ));
+            return Err(OperationError::NotAllowed { operation, status });
         }
         Ok(())
     }

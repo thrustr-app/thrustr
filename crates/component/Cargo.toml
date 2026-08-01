@@ -5,6 +5,7 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 artwork.workspace = true
 dashmap.workspace = true
 domain.workspace = true

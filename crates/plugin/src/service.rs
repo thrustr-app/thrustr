@@ -69,10 +69,7 @@ impl PluginService {
         let mut claim = component
             .begin(Operation::Init)
             .ok_or_else(|| anyhow!("component {} cannot be initialized", component.id()))?;
-        component
-            .init(&mut claim)
-            .await
-            .map_err(|err| anyhow!(err))?;
+        component.init(&mut claim).await?;
 
         Ok(())
     }

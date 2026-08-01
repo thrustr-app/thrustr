@@ -60,7 +60,7 @@ impl Config {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
             Err(err) => {
-                local_error = Some(err.into());
+                local_error = Some(err.to_string().into());
                 HashMap::new()
             }
         };
@@ -107,7 +107,7 @@ impl Config {
                 config.login_method = match result {
                     Ok(method) => method,
                     Err(err) => {
-                        config.local_error = Some(err.into());
+                        config.local_error = Some(err.to_string().into());
                         None
                     }
                 };
@@ -155,17 +155,16 @@ impl Config {
                 let result =
                     unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
                 match result {
-                    Ok((url, body)) => {
-                        component
-                            .login(&mut claim, LoginRequest::Flow { url, body })
-                            .await
-                    }
+                    Ok((url, body)) => component
+                        .login(&mut claim, LoginRequest::Flow { url, body })
+                        .await
+                        .map_err(|e| e.to_string()),
                     Err(WebviewError::UserCancelled) => Ok(()),
                     Err(WebviewError::Internal(e)) => Err(e),
                 }
             },
             |config, result, _| {
-                config.local_error = result.err().map(|e| e.to_string().into());
+                config.local_error = result.err().map(Into::into);
             },
         );
         self.refresh_status(cx);
@@ -245,17 +244,20 @@ impl Config {
         let component = self.component.clone();
         cx.spawn_and_update(
             async move {
-                if let Some(flow) = component.logout_flow().await? {
+                if let Some(flow) = component.logout_flow().await.map_err(|e| e.to_string())? {
                     match unblock(move || open_auth_webview(&flow.url, &flow.target)).await {
                         Ok(_) => {}
                         Err(WebviewError::UserCancelled) => return Ok(()),
                         Err(WebviewError::Internal(e)) => return Err(e),
                     }
                 }
-                component.logout(&mut claim).await
+                component
+                    .logout(&mut claim)
+                    .await
+                    .map_err(|e| e.to_string())
             },
             |this, result, _| {
-                this.local_error = result.err().map(|e| e.to_string().into());
+                this.local_error = result.err().map(Into::into);
             },
         );
         self.refresh_status(cx);

@@ -1,3 +1,4 @@
+use super::error::{OperationError, Result};
 use crate::{Claim, ComponentHandle, Operation};
 use domain::{
     component::{StatusEvent, capabilities::Storefront},
@@ -52,15 +53,15 @@ impl StorefrontHandle {
         self.component.begin(operation.into())
     }
 
-    pub async fn sync_games(&self, claim: &mut Claim) -> Result<(), String> {
+    pub async fn sync_games(&self, claim: &mut Claim) -> Result<()> {
         self.component
             .enter(claim, StorefrontOperation::Sync.into())?;
 
         let new_games = self.storefront.list_games().await.map_err(|e| {
-            let error = e.to_string();
             warn!(component = self.component.id(), error = %e, "listing games failed");
-            self.component.transition(StatusEvent::OperationFailed(e));
-            error
+            self.component
+                .transition(StatusEvent::OperationFailed(e.clone()));
+            OperationError::Component(e)
         })?;
 
         let listed = new_games.len();
@@ -85,17 +86,20 @@ impl StorefrontHandle {
         Ok(())
     }
 
-    async fn store_games(&self, games: Vec<NewGame>) -> Result<usize, String> {
+    async fn store_games(&self, games: Vec<NewGame>) -> Result<usize> {
         let repository = self.component.context.game_repository.clone();
-        self.component
+        let inserted = self
+            .component
             .context
             .tokio_handle
             .spawn_blocking(move || repository.insert_many(&games))
             .await
-            .map_err(|err| err.to_string())?
+            .map_err(anyhow::Error::from)?
             .map_err(|err| {
                 warn!(component = self.component.id(), error = %err, "storing games failed");
-                err.to_string()
-            })
+                err
+            })?;
+
+        Ok(inserted)
     }
 }
