@@ -184,7 +184,7 @@ async fn run_with_retry(
                 }
 
                 if is_network_error(&e) {
-                    connectivity.report_error();
+                    connectivity.report_error().await;
                     connectivity.wait_until_online().await;
                 }
 

@@ -1,6 +1,6 @@
 use crate::tokio::Tokio;
 use artwork::ArtworkService;
-use connectivity::ConnectivityManager;
+use connectivity::{ConnectivityConfig, ConnectivityManager};
 use gpui::App;
 use sqlite::SqliteStorage;
 use std::sync::Arc;
@@ -20,7 +20,8 @@ pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
     let artwork_repo = storage.clone();
     let game_repo = storage.clone();
 
-    let connectivity = ConnectivityManager::builder(tokio_handle.clone()).build_probing();
+    let connectivity =
+        ConnectivityManager::spawn_probing(tokio_handle.clone(), ConnectivityConfig::default());
     let artwork_service =
         ArtworkService::new(tokio_handle.clone(), connectivity, artwork_repo, game_repo);
 

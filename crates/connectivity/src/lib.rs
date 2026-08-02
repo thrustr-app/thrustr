@@ -1,44 +1,55 @@
+use futures::{StreamExt, stream::FuturesUnordered};
 use runtime::TokioHandle;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use strum::Display;
 use tokio::{
     net::TcpStream,
-    sync::{Semaphore, watch},
-    task::JoinSet,
+    sync::{Mutex as AsyncMutex, watch},
+    task::JoinHandle,
     time::{Instant, MissedTickBehavior},
 };
 use tracing::{debug, info, warn};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
-#[strum(serialize_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConnectivityState {
     Online,
     Offline,
 }
 
 impl ConnectivityState {
-    pub fn is_online(&self) -> bool {
+    pub fn is_online(self) -> bool {
         matches!(self, Self::Online)
     }
 
-    pub fn is_offline(&self) -> bool {
+    pub fn is_offline(self) -> bool {
         matches!(self, Self::Offline)
     }
 }
 
-pub struct ConnectivityWatcher(watch::Receiver<ConnectivityState>);
+#[derive(Debug, Clone)]
+pub struct ConnectivityConfig {
+    pub min_probe_interval: Duration,
+    /// Only read by [`ConnectivityManager::spawn_probing`].
+    pub poll_interval: Duration,
+    pub probe_endpoints: Vec<String>,
+    pub probe_timeout: Duration,
+    pub initial_state: ConnectivityState,
+}
 
-impl ConnectivityWatcher {
-    pub fn current(&mut self) -> ConnectivityState {
-        *self.0.borrow_and_update()
-    }
-
-    pub async fn changed(&mut self) -> Option<ConnectivityState> {
-        self.0.changed().await.ok()?;
-        Some(*self.0.borrow_and_update())
+impl Default for ConnectivityConfig {
+    fn default() -> Self {
+        Self {
+            min_probe_interval: Duration::from_secs(5),
+            poll_interval: Duration::from_secs(15),
+            probe_endpoints: ["1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            probe_timeout: Duration::from_secs(3),
+            initial_state: ConnectivityState::Online,
+        }
     }
 }
 
@@ -48,143 +59,29 @@ pub struct ConnectivityManager {
 }
 
 impl ConnectivityManager {
-    pub fn builder(tokio_handle: TokioHandle) -> ConnectivityManagerBuilder {
-        ConnectivityManagerBuilder::new(tokio_handle)
-    }
-
-    /// Instant snapshot of the current connectivity state.
-    pub fn state(&self) -> ConnectivityState {
-        self.inner.state()
-    }
-
-    /// Subscribe to state changes. The watcher always holds the current
-    /// value, so new subscribers never miss the state that was set before
-    /// they subscribed.
-    pub fn subscribe(&self) -> ConnectivityWatcher {
-        ConnectivityWatcher(self.inner.subscribe())
-    }
-
-    /// Blocks until online. Resolves immediately if already online.
-    pub async fn wait_until_online(&self) {
-        let mut watcher = self.subscribe();
-        let mut state = watcher.current();
-
-        loop {
-            if state.is_online() {
-                return;
-            }
-
-            tokio::select! {
-                changed = watcher.changed() => {
-                    let Some(new) = changed else { return };
-                    state = new;
-                }
-                _ = tokio::time::sleep(self.inner.min_probe_interval) => {
-                    state = self.check_if_stale().await;
-                }
-            }
+    pub fn new(tokio_handle: TokioHandle, config: ConnectivityConfig) -> Self {
+        if config.probe_endpoints.is_empty() {
+            warn!("no probe endpoints configured, every probe will report offline");
         }
-    }
 
-    /// Reports an error, triggering a probe if the interval guard is not active.
-    pub fn report_error(&self) {
-        let permit = match Arc::clone(&self.inner.probe_sem).try_acquire_owned() {
-            Ok(p) => p,
-            Err(_) => return,
-        };
+        let (tx, _rx) = watch::channel(config.initial_state);
 
-        let inner = Arc::clone(&self.inner);
-        self.inner.tokio_handle.spawn(async move {
-            let _permit = permit;
-            inner.run_probe_if_stale().await;
-        });
-    }
-
-    /// Runs a probe unless one finished within the interval guard, in which
-    /// case the current state is returned untouched.
-    async fn check_if_stale(&self) -> ConnectivityState {
-        let _permit = Arc::clone(&self.inner.probe_sem)
-            .acquire_owned()
-            .await
-            .expect("probe semaphore closed");
-
-        self.inner.run_probe_if_stale().await
-    }
-}
-
-pub struct ConnectivityManagerBuilder {
-    tokio_handle: TokioHandle,
-    min_probe_interval: Duration,
-    poll_interval: Duration,
-    probe_endpoints: Vec<String>,
-    probe_timeout: Duration,
-    initial_state: ConnectivityState,
-}
-
-impl ConnectivityManagerBuilder {
-    pub fn new(tokio_handle: TokioHandle) -> Self {
         Self {
-            tokio_handle,
-            min_probe_interval: Duration::from_secs(5),
-            poll_interval: Duration::from_secs(15),
-            probe_endpoints: ["1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"]
-                .map(String::from)
-                .into(),
-            probe_timeout: Duration::from_secs(3),
-            initial_state: ConnectivityState::Online,
-        }
-    }
-
-    pub fn min_probe_interval(mut self, duration: Duration) -> Self {
-        self.min_probe_interval = duration;
-        self
-    }
-
-    pub fn poll_interval(mut self, duration: Duration) -> Self {
-        self.poll_interval = duration;
-        self
-    }
-
-    pub fn probe_endpoints<I>(mut self, endpoints: I) -> Self
-    where
-        I: IntoIterator,
-        I::Item: Into<String>,
-    {
-        self.probe_endpoints = endpoints.into_iter().map(Into::into).collect();
-        self
-    }
-
-    pub fn probe_timeout(mut self, duration: Duration) -> Self {
-        self.probe_timeout = duration;
-        self
-    }
-
-    pub fn initial_state(mut self, state: ConnectivityState) -> Self {
-        self.initial_state = state;
-        self
-    }
-
-    pub fn build(self) -> ConnectivityManager {
-        let (tx, _rx) = watch::channel(self.initial_state);
-
-        ConnectivityManager {
             inner: Arc::new(Inner {
-                tokio_handle: self.tokio_handle,
+                tokio_handle,
                 tx,
-                probe_sem: Arc::new(Semaphore::new(1)),
+                probe_slot: AsyncMutex::new(()),
                 last_probe: Mutex::new(None),
-                min_probe_interval: self.min_probe_interval,
-                probe_endpoints: self.probe_endpoints,
-                probe_timeout: self.probe_timeout,
+                min_probe_interval: config.min_probe_interval,
+                probe_endpoints: config.probe_endpoints,
+                probe_timeout: config.probe_timeout,
             }),
         }
     }
 
-    /// Builds the manager and spawns a background poller that probes
-    /// immediately and then on every `poll_interval` tick.
-    pub fn build_probing(self) -> ConnectivityManager {
-        let poll_interval = self.poll_interval;
-        let manager = self.build();
+    pub fn spawn_probing(tokio_handle: TokioHandle, config: ConnectivityConfig) -> Self {
+        let poll_interval = config.poll_interval;
+        let manager = Self::new(tokio_handle, config);
 
         let weak = Arc::downgrade(&manager.inner);
         manager.inner.tokio_handle.spawn(async move {
@@ -198,23 +95,91 @@ impl ConnectivityManagerBuilder {
                     debug!("connectivity poller stopped");
                     return;
                 };
-                let _permit = inner
-                    .probe_sem
-                    .acquire()
-                    .await
-                    .expect("probe semaphore closed");
-                inner.run_probe_if_stale().await;
+                inner.probe_if_stale().await;
             }
         });
 
         manager
+    }
+
+    pub fn state(&self) -> ConnectivityState {
+        self.inner.state()
+    }
+
+    pub fn subscribe(&self) -> ConnectivityWatcher {
+        ConnectivityWatcher(self.inner.tx.subscribe())
+    }
+
+    /// Resolves immediately if already online. While waiting, re-probes once
+    /// the `min_probe_interval` guard expires. Also resolves if the Tokio
+    /// runtime shuts down.
+    pub async fn wait_until_online(&self) {
+        let mut watcher = self.subscribe();
+        let mut state = watcher.current();
+
+        loop {
+            if state.is_online() {
+                return;
+            }
+
+            tokio::select! {
+                changed = watcher.changed() => {
+                    state = changed.expect("sender should outlive the borrow of self");
+                }
+                probed = self.probe_after_interval() => {
+                    // Must return, not continue, otherwise after runtime shutdown
+                    // the spawn resolves instantly and a retry loop would spin.
+                    let Some(new) = probed else { return };
+                    state = new;
+                }
+            }
+        }
+    }
+
+    /// Awaiting this guarantees the state has been re-checked, so a following
+    /// [`Self::wait_until_online`] never acts on a pre-error reading. Skipped
+    /// if a probe already ran within `min_probe_interval`.
+    pub async fn report_error(&self) {
+        let _ = self.spawn_probe(Duration::ZERO).await;
+    }
+
+    async fn probe_after_interval(&self) -> Option<ConnectivityState> {
+        self.spawn_probe(self.inner.probe_guard_remaining())
+            .await
+            .ok()
+    }
+
+    fn spawn_probe(&self, delay: Duration) -> JoinHandle<ConnectivityState> {
+        // Probing touches the Tokio reactor and timer, so it must run on the
+        // handle rather than the caller's executor.
+        let inner = Arc::clone(&self.inner);
+        self.inner.tokio_handle.spawn(async move {
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
+            inner.probe_if_stale().await
+        })
+    }
+}
+
+pub struct ConnectivityWatcher(watch::Receiver<ConnectivityState>);
+
+impl ConnectivityWatcher {
+    pub fn current(&mut self) -> ConnectivityState {
+        *self.0.borrow_and_update()
+    }
+
+    /// `None` once the manager is dropped and no further changes can arrive.
+    pub async fn changed(&mut self) -> Option<ConnectivityState> {
+        self.0.changed().await.ok()?;
+        Some(*self.0.borrow_and_update())
     }
 }
 
 struct Inner {
     tokio_handle: TokioHandle,
     tx: watch::Sender<ConnectivityState>,
-    probe_sem: Arc<Semaphore>,
+    probe_slot: AsyncMutex<()>,
     last_probe: Mutex<Option<Instant>>,
     min_probe_interval: Duration,
     probe_endpoints: Vec<String>,
@@ -226,18 +191,10 @@ impl Inner {
         *self.tx.borrow()
     }
 
-    fn subscribe(&self) -> watch::Receiver<ConnectivityState> {
-        self.tx.subscribe()
-    }
-
-    fn apply(&self, new: ConnectivityState) {
-        let changed = self.tx.send_if_modified(|cur| {
-            if *cur == new {
-                return false;
-            }
-            *cur = new;
-            true
-        });
+    fn set_state(&self, new: ConnectivityState) {
+        let changed = self
+            .tx
+            .send_if_modified(|cur| std::mem::replace(cur, new) != new);
 
         if changed {
             match new {
@@ -247,43 +204,42 @@ impl Inner {
         }
     }
 
-    fn within_interval(&self) -> bool {
+    fn probe_guard_remaining(&self) -> Duration {
         self.last_probe
             .lock()
             .unwrap()
-            .is_some_and(|t| t.elapsed() < self.min_probe_interval)
+            .and_then(|t| self.min_probe_interval.checked_sub(t.elapsed()))
+            .unwrap_or(Duration::ZERO)
     }
 
-    async fn run_probe(&self) -> ConnectivityState {
-        let state = probe_all(&self.probe_endpoints, self.probe_timeout).await;
-        self.apply(state);
-        *self.last_probe.lock().unwrap() = Some(Instant::now());
-        state
-    }
+    async fn probe_if_stale(&self) -> ConnectivityState {
+        let _guard = self.probe_slot.lock().await;
 
-    async fn run_probe_if_stale(&self) -> ConnectivityState {
-        if self.within_interval() {
+        if !self.probe_guard_remaining().is_zero() {
             return self.state();
         }
 
-        self.run_probe().await
+        let state = probe_any(&self.probe_endpoints, self.probe_timeout).await;
+        // Update the timestamp before notifying. A waiter woken by the change
+        // could see an expired guard and probe again immediately.
+        *self.last_probe.lock().unwrap() = Some(Instant::now());
+        self.set_state(state);
+        state
     }
 }
 
-async fn probe_all(endpoints: &[String], timeout: Duration) -> ConnectivityState {
-    let mut set = JoinSet::new();
-
-    for endpoint in endpoints {
-        let endpoint = endpoint.clone();
-        set.spawn(async move {
-            tokio::time::timeout(timeout, TcpStream::connect(&endpoint))
+async fn probe_any(endpoints: &[String], timeout: Duration) -> ConnectivityState {
+    let mut probes: FuturesUnordered<_> = endpoints
+        .iter()
+        .map(|endpoint| async move {
+            tokio::time::timeout(timeout, TcpStream::connect(endpoint))
                 .await
                 .is_ok_and(|r| r.is_ok())
-        });
-    }
+        })
+        .collect();
 
-    while let Some(res) = set.join_next().await {
-        if res.unwrap_or(false) {
+    while let Some(reachable) = probes.next().await {
+        if reachable {
             return ConnectivityState::Online;
         }
     }
@@ -294,10 +250,8 @@ async fn probe_all(endpoints: &[String], timeout: Duration) -> ConnectivityState
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        sync::atomic::{AtomicUsize, Ordering},
-        time::Duration,
-    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::task::JoinSet;
 
     async fn counting_listener() -> (String, Arc<AtomicUsize>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -315,27 +269,29 @@ mod tests {
         (endpoint, probes)
     }
 
-    fn offline_manager() -> ConnectivityManager {
-        ConnectivityManager::builder(TokioHandle::current())
-            .initial_state(ConnectivityState::Offline)
-            .probe_endpoints(vec!["127.0.0.1:1"])
-            .probe_timeout(Duration::from_millis(100))
-            .build()
+    fn dead_endpoints() -> Vec<String> {
+        vec!["127.0.0.1:1".to_owned()]
     }
 
-    #[tokio::test]
-    async fn starts_with_given_state() {
-        let m = ConnectivityManager::builder(TokioHandle::current())
-            .initial_state(ConnectivityState::Offline)
-            .build();
-        assert!(m.state().is_offline());
+    fn manager(config: ConnectivityConfig) -> ConnectivityManager {
+        ConnectivityManager::new(TokioHandle::current(), config)
+    }
+
+    fn offline_manager() -> ConnectivityManager {
+        manager(ConnectivityConfig {
+            initial_state: ConnectivityState::Offline,
+            probe_endpoints: dead_endpoints(),
+            probe_timeout: Duration::from_millis(100),
+            ..Default::default()
+        })
     }
 
     #[tokio::test]
     async fn wait_until_online_returns_immediately_when_online() {
-        let m = ConnectivityManager::builder(TokioHandle::current())
-            .initial_state(ConnectivityState::Online)
-            .build();
+        let m = manager(ConnectivityConfig {
+            initial_state: ConnectivityState::Online,
+            ..Default::default()
+        });
 
         tokio::time::timeout(Duration::from_millis(50), m.wait_until_online())
             .await
@@ -352,7 +308,7 @@ mod tests {
         let m2 = m.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
-            m2.inner.apply(ConnectivityState::Online);
+            m2.inner.set_state(ConnectivityState::Online);
         });
 
         assert_eq!(watcher.changed().await, Some(ConnectivityState::Online));
@@ -363,7 +319,7 @@ mod tests {
         let m = offline_manager();
         let mut watcher = m.subscribe();
 
-        m.inner.apply(ConnectivityState::Online);
+        m.inner.set_state(ConnectivityState::Online);
         assert!(watcher.current().is_online());
 
         tokio::time::timeout(Duration::from_millis(50), watcher.changed())
@@ -382,11 +338,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_probing_starts_optimistic_and_corrects_in_background() {
-        let m = ConnectivityManager::builder(TokioHandle::current())
-            .probe_endpoints(vec!["127.0.0.1:1"])
-            .probe_timeout(Duration::from_millis(100))
-            .build_probing();
+    async fn spawn_probing_corrects_optimistic_start() {
+        let m = ConnectivityManager::spawn_probing(
+            TokioHandle::current(),
+            ConnectivityConfig {
+                probe_endpoints: dead_endpoints(),
+                probe_timeout: Duration::from_millis(100),
+                ..Default::default()
+            },
+        );
 
         assert!(m.state().is_online());
 
@@ -401,11 +361,12 @@ mod tests {
     async fn concurrent_waiters_share_single_probe() {
         let (endpoint, probes) = counting_listener().await;
 
-        let m = ConnectivityManager::builder(TokioHandle::current())
-            .initial_state(ConnectivityState::Offline)
-            .probe_endpoints(vec![endpoint])
-            .min_probe_interval(Duration::from_millis(100))
-            .build();
+        let m = manager(ConnectivityConfig {
+            initial_state: ConnectivityState::Offline,
+            probe_endpoints: vec![endpoint],
+            min_probe_interval: Duration::from_secs(1),
+            ..Default::default()
+        });
 
         let mut waiters = JoinSet::new();
         for _ in 0..50 {
@@ -424,37 +385,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn report_error_deduplicated_within_interval() {
-        let m = ConnectivityManager::builder(TokioHandle::current())
-            .initial_state(ConnectivityState::Online)
-            .min_probe_interval(Duration::from_secs(60))
-            .probe_endpoints(vec!["127.0.0.1:1"])
-            .probe_timeout(Duration::from_millis(50))
-            .build();
+    async fn report_error_skipped_within_interval() {
+        let m = manager(ConnectivityConfig {
+            initial_state: ConnectivityState::Online,
+            min_probe_interval: Duration::from_secs(60),
+            probe_endpoints: dead_endpoints(),
+            probe_timeout: Duration::from_millis(50),
+            ..Default::default()
+        });
 
         *m.inner.last_probe.lock().unwrap() = Some(Instant::now());
 
-        m.report_error();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        m.report_error().await;
 
         assert!(m.state().is_online());
     }
 
     #[tokio::test]
     async fn report_error_probes_when_stale() {
-        let m = ConnectivityManager::builder(TokioHandle::current())
-            .initial_state(ConnectivityState::Online)
-            .probe_endpoints(vec!["127.0.0.1:1"])
-            .probe_timeout(Duration::from_millis(50))
-            .build();
+        let m = manager(ConnectivityConfig {
+            initial_state: ConnectivityState::Online,
+            probe_endpoints: dead_endpoints(),
+            probe_timeout: Duration::from_millis(50),
+            ..Default::default()
+        });
 
-        let mut watcher = m.subscribe();
-        m.report_error();
+        m.report_error().await;
 
-        let state = tokio::time::timeout(Duration::from_secs(2), watcher.changed())
-            .await
-            .expect("probe should flip the state");
-        assert_eq!(state, Some(ConnectivityState::Offline));
+        assert!(m.state().is_offline());
     }
 
     #[tokio::test]
@@ -467,7 +425,7 @@ mod tests {
         });
 
         tokio::time::sleep(Duration::from_millis(20)).await;
-        m.inner.apply(ConnectivityState::Online);
+        m.inner.set_state(ConnectivityState::Online);
 
         tokio::time::timeout(Duration::from_millis(200), waiter)
             .await
@@ -476,14 +434,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_probing_polls_periodically() {
+    async fn spawn_probing_polls_periodically() {
         let (endpoint, probes) = counting_listener().await;
 
-        let _m = ConnectivityManager::builder(TokioHandle::current())
-            .probe_endpoints(vec![endpoint])
-            .min_probe_interval(Duration::from_millis(10))
-            .poll_interval(Duration::from_millis(50))
-            .build_probing();
+        let _m = ConnectivityManager::spawn_probing(
+            TokioHandle::current(),
+            ConnectivityConfig {
+                probe_endpoints: vec![endpoint],
+                min_probe_interval: Duration::from_millis(10),
+                poll_interval: Duration::from_millis(50),
+                ..Default::default()
+            },
+        );
 
         tokio::time::timeout(Duration::from_secs(2), async {
             while probes.load(Ordering::SeqCst) < 3 {
@@ -498,11 +460,15 @@ mod tests {
     async fn poller_stops_when_manager_dropped() {
         let (endpoint, probes) = counting_listener().await;
 
-        let m = ConnectivityManager::builder(TokioHandle::current())
-            .probe_endpoints(vec![endpoint])
-            .min_probe_interval(Duration::from_millis(10))
-            .poll_interval(Duration::from_millis(25))
-            .build_probing();
+        let m = ConnectivityManager::spawn_probing(
+            TokioHandle::current(),
+            ConnectivityConfig {
+                probe_endpoints: vec![endpoint],
+                min_probe_interval: Duration::from_millis(10),
+                poll_interval: Duration::from_millis(25),
+                ..Default::default()
+            },
+        );
 
         tokio::time::timeout(Duration::from_secs(2), async {
             while probes.load(Ordering::SeqCst) == 0 {
@@ -518,5 +484,15 @@ mod tests {
         let after_drop = probes.load(Ordering::SeqCst);
         tokio::time::sleep(Duration::from_millis(150)).await;
         assert_eq!(probes.load(Ordering::SeqCst), after_drop);
+    }
+
+    #[tokio::test]
+    async fn probe_any_succeeds_when_one_endpoint_is_reachable() {
+        let (endpoint, _probes) = counting_listener().await;
+        let endpoints = vec!["127.0.0.1:1".to_owned(), endpoint];
+
+        let state = probe_any(&endpoints, Duration::from_millis(100)).await;
+
+        assert!(state.is_online());
     }
 }
