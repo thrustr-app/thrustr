@@ -5,7 +5,8 @@ use assets::Assets;
 use config::{logging, paths, tls};
 use gpui::{AppContext, CursorHideMode, TitlebarOptions, WindowDecorations, WindowOptions};
 use sqlite::SqliteStorage;
-use std::sync::Arc;
+use std::{fs, sync::Arc};
+use tracing::warn;
 use ui::{TRAFFIC_LIGHT_POSITION, UiProvider};
 
 mod app;
@@ -20,6 +21,11 @@ mod webview;
 fn main() {
     let _guard = logging::init();
     tls::init();
+
+    let plugins_dir = paths::plugins_dir();
+    if let Err(e) = fs::create_dir_all(&plugins_dir) {
+        warn!(path = %plugins_dir.display(), error = %e, "failed to create plugins directory");
+    }
 
     let db_path = paths::db_path();
     let sqlite_storage = SqliteStorage::new(&db_path)

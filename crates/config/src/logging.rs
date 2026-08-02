@@ -1,12 +1,6 @@
 use crate::paths;
 use chrono::Local;
-use std::{
-    backtrace::Backtrace,
-    cmp::Reverse,
-    fs, panic,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{backtrace::Backtrace, cmp::Reverse, fs, panic, path::Path};
 use tracing::error;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
@@ -14,20 +8,17 @@ use tracing_subscriber::{
 };
 
 const LOG_FILE_PREFIX: &str = "thrustr";
-const LOG_FILE_EXT: &str = "log";
+const LOG_FILE_SUFFIX: &str = ".log";
 const MAX_LOG_FILES: usize = 10;
 
 pub fn init() -> WorkerGuard {
     let dir = paths::logs_dir();
+    fs::create_dir_all(&dir).expect("application logs directory should be creatable");
 
-    prune_old_logs(&dir, MAX_LOG_FILES.saturating_sub(1));
+    prune_old_logs(&dir, MAX_LOG_FILES - 1);
 
-    let date = Local::now().format("%Y%m%d");
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-
-    let filename = format!("{LOG_FILE_PREFIX}-{date}-{timestamp}.{LOG_FILE_EXT}");
+    let started_at = Local::now().format("%Y%m%d-%H%M%S");
+    let filename = format!("{LOG_FILE_PREFIX}-{started_at}{LOG_FILE_SUFFIX}");
 
     let file_appender = tracing_appender::rolling::never(&dir, filename);
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
@@ -78,7 +69,7 @@ fn prune_old_logs(dir: &Path, keep: usize) {
         .flatten()
         .filter(|entry| {
             entry.file_name().to_str().is_some_and(|name| {
-                name.starts_with(LOG_FILE_PREFIX) && name.ends_with(LOG_FILE_EXT)
+                name.starts_with(LOG_FILE_PREFIX) && name.ends_with(LOG_FILE_SUFFIX)
             })
         })
         .filter_map(|entry| {
@@ -92,7 +83,7 @@ fn prune_old_logs(dir: &Path, keep: usize) {
     }
 
     logs.sort_by_key(|(_, modified)| Reverse(*modified));
-    for (path, _) in logs.drain(keep..) {
+    for (path, _) in logs.into_iter().skip(keep) {
         let _ = fs::remove_file(path);
     }
 }

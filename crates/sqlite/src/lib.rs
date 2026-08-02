@@ -5,7 +5,7 @@ use diesel::{
     r2d2::{ConnectionManager, CustomizeConnection, Error as R2d2Error, Pool},
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use std::{path::Path, time::Duration};
+use std::{fs, path::Path, time::Duration};
 
 mod id;
 mod models;
@@ -39,8 +39,13 @@ pub struct SqliteStorage {
 
 impl SqliteStorage {
     pub fn new(sqlite_file_path: impl AsRef<Path>) -> Result<Self> {
-        let path = sqlite_file_path
-            .as_ref()
+        let path = sqlite_file_path.as_ref();
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let path = path
             .to_str()
             .ok_or_else(|| anyhow!("non UTF-8 database path"))?;
 

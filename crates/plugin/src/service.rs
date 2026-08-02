@@ -7,6 +7,7 @@ use futures::StreamExt;
 use runtime::TokioHandle;
 use std::{
     ffi::OsStr,
+    io,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -40,7 +41,11 @@ impl PluginService {
     }
 
     async fn load_dir(&self, dir: PathBuf) -> Result<()> {
-        let mut read_dir = tokio::fs::read_dir(&dir).await?;
+        let mut read_dir = match tokio::fs::read_dir(&dir).await {
+            Ok(read_dir) => read_dir,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
         let mut paths: Vec<PathBuf> = Vec::new();
 
         while let Some(entry) = read_dir.next_entry().await? {

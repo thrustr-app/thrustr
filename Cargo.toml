@@ -32,6 +32,7 @@ blake3 = "1"
 bytes = "1"
 chrono = "0.4"
 dashmap = "6"
+directories = "6"
 futures = "0.3"
 gpui = { git = "https://github.com/zed-industries/zed", features = ["test-support"] }
 gpui_macros = { git = "https://github.com/zed-industries/zed" }

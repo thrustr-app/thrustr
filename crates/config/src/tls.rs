@@ -1,7 +1,5 @@
-use rustls::crypto::{CryptoProvider, ring};
+use rustls::crypto::ring;
 
 pub fn init() {
-    if CryptoProvider::get_default().is_none() {
-        let _ = ring::default_provider().install_default();
-    }
+    let _ = ring::default_provider().install_default();
 }

@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 chrono.workspace = true
-directories = "6.0.0"
+directories.workspace = true
 rustls.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
