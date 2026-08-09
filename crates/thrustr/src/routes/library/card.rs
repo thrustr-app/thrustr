@@ -142,7 +142,7 @@ impl RenderOnce for GameCard {
             .text_ellipsis()
             .text_color(theme.colors.primary)
             .text_size(CARD_TEXT_SIZE)
-            .font_weight(FontWeight::LIGHT);
+            .font_weight(FontWeight::MEDIUM);
 
         let mut icon_row = div().h(CARD_ICON_SIZE).flex_shrink_0();
 
