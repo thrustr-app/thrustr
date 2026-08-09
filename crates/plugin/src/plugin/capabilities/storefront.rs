@@ -1,7 +1,7 @@
 use crate::{plugin::Plugin, wit::thrustr::plugin::types};
 use async_trait::async_trait;
 use domain::{
-    component::{Error, capabilities::Storefront},
+    component::{Error, Storefront},
     game::{Game, GameSource, GameVersion, NewGame},
     platform::Platform,
 };

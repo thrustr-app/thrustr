@@ -4,10 +4,9 @@ use crate::wit::exports::thrustr::plugin::base::{
 };
 use crate::wit::{StorefrontPlugin, StorefrontPluginPre};
 use async_trait::async_trait;
-use domain::component::capabilities::Storefront;
 use domain::component::{
     AuthFlow, Component, ComponentConfig, ComponentStorage, Error as ComponentError, Image,
-    LoginMethod, LoginRequest, Metadata, Origin,
+    LoginMethod, LoginRequest, Metadata, Origin, Storefront,
 };
 use reqwest::Client;
 use runtime::TokioHandle;

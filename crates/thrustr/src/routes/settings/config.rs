@@ -6,8 +6,7 @@ use crate::{
 };
 use component::{ComponentHandle, Operation};
 use domain::component::{
-    AuthFlow, Field as ConfigField, LoginForm, LoginMethod, LoginRequest, Section as ConfigSection,
-    Status,
+    AuthFlow, ConfigSection, Field as ConfigField, LoginForm, LoginMethod, LoginRequest, Status,
 };
 use event::Topic;
 use gpui::{

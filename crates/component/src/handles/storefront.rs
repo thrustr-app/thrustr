@@ -1,7 +1,7 @@
 use super::error::{OperationError, Result};
 use crate::{Claim, ComponentHandle, Operation};
 use domain::{
-    component::{StatusEvent, capabilities::Storefront},
+    component::{StatusEvent, Storefront},
     game::NewGame,
 };
 use event::Topic;

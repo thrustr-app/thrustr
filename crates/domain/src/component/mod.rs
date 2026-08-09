@@ -1,9 +1,8 @@
-use crate::component::capabilities::Storefront;
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 
 mod auth;
-pub mod capabilities;
+mod capabilities;
 mod config;
 mod error;
 mod image;
@@ -12,6 +11,7 @@ mod status;
 mod storage;
 
 pub use auth::*;
+pub use capabilities::*;
 pub use config::*;
 pub use error::*;
 pub use image::*;
@@ -29,7 +29,6 @@ pub trait Component: Send + Sync {
         None
     }
 
-    /// Returns a storefront capability instance if this component exposes one.
     fn storefront(self: Arc<Self>) -> Option<Arc<dyn Storefront>> {
         None
     }

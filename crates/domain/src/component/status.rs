@@ -1,7 +1,7 @@
 use crate::component::Error;
 use strum::Display;
 
-#[derive(Debug, Clone, PartialEq, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum Status {
     Inactive,
@@ -61,12 +61,12 @@ impl Status {
     }
 
     pub fn can_logout(&self) -> bool {
-        matches!(self, Self::Active)
-            || matches!(
-                self,
-                Self::Error(e) | Self::InitError(e)
-                if !matches!(e, Error::Auth(_))
-            )
+        matches!(
+            self,
+            Self::Active
+                | Self::Error(Error::Config(_) | Error::Other(_))
+                | Self::InitError(Error::Config(_) | Error::Other(_))
+        )
     }
 
     pub fn can_configure(&self) -> bool {
@@ -124,25 +124,29 @@ mod tests {
     }
 
     #[test]
-    fn init_lifecycle() {
+    fn init_advances_from_inactive_to_active() {
         let status = Status::Inactive.apply(StatusEvent::InitStarted).unwrap();
         assert!(status.is_initializing());
 
         let status = status.apply(StatusEvent::InitSucceeded).unwrap();
         assert!(status.is_active());
-
-        let failed = Status::Initializing
-            .apply(StatusEvent::InitFailed(config_error()))
-            .unwrap();
-        assert!(failed.is_init_error());
     }
 
     #[test]
-    fn init_auth_failure_lands_init_error() {
+    fn init_failure_lands_init_error() {
+        for error in [auth_error(), config_error(), other_error()] {
+            let status = Status::Initializing
+                .apply(StatusEvent::InitFailed(error))
+                .unwrap();
+            assert!(status.is_init_error());
+        }
+    }
+
+    #[test]
+    fn init_auth_failure_allows_login() {
         let status = Status::Initializing
             .apply(StatusEvent::InitFailed(auth_error()))
             .unwrap();
-        assert!(status.is_init_error());
         assert!(status.can_login());
     }
 

@@ -24,7 +24,7 @@ pub struct Game {
 pub struct GameSource {
     /// The identifier for the game source (e.g. "steam", "gog").
     pub id: String,
-    /// The unique identifier for the game in the source. This usually is a specific
+    /// The unique identifier for the game in the source. This is usually a specific
     /// identifier (e.g. Steam App ID) or a combination of multiple identifiers.
     pub lookup_id: String,
     /// Arbitrary external identifiers to be consumed by components.
@@ -56,11 +56,8 @@ pub struct GameListItem {
     pub cover: Option<Artwork>,
 }
 
-/// The ordered id list backing the library, plus the section boundaries within
-/// it.
-///
-/// Both are produced together because the sections must describe exactly the
-/// order `ids` is in.
+/// The ordered game IDs and their section boundaries.
+/// Sections describe exactly the order `ids` is in.
 #[derive(Debug, Default)]
 pub struct GameIndex {
     pub ids: Vec<GameId>,
@@ -75,10 +72,26 @@ pub struct Section {
 }
 
 /// Section boundaries over an ordered game list.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct SectionIndex(Vec<Section>);
 
 impl SectionIndex {
+    pub fn from_buckets(buckets: impl IntoIterator<Item = char>) -> Self {
+        let mut sections = Vec::new();
+        let mut current = None;
+        for (start, bucket) in buckets.into_iter().enumerate() {
+            if current == Some(bucket) {
+                continue;
+            }
+            current = Some(bucket);
+            sections.push(Section {
+                label: bucket.to_string(),
+                start,
+            });
+        }
+        Self(sections)
+    }
+
     pub fn sections(&self) -> &[Section] {
         &self.0
     }
@@ -102,24 +115,6 @@ impl SectionIndex {
     }
 }
 
-impl FromIterator<char> for SectionIndex {
-    fn from_iter<I: IntoIterator<Item = char>>(buckets: I) -> Self {
-        let mut sections = Vec::new();
-        let mut current = None;
-        for (start, bucket) in buckets.into_iter().enumerate() {
-            if current == Some(bucket) {
-                continue;
-            }
-            current = Some(bucket);
-            sections.push(Section {
-                label: bucket.to_string(),
-                start,
-            });
-        }
-        Self(sections)
-    }
-}
-
 /// Groups a game name under `#` or `A`-`Z` for the library index.
 pub fn name_bucket(name: &str) -> char {
     name.chars()
@@ -130,6 +125,7 @@ pub fn name_bucket(name: &str) -> char {
 }
 
 pub trait GameRepository: Send + Sync {
+    /// `None` if the game already exists.
     fn insert(&self, game: &NewGame) -> Result<Option<Game>>;
 
     fn insert_many(&self, games: &[NewGame]) -> Result<usize>;
@@ -140,6 +136,9 @@ pub trait GameRepository: Send + Sync {
 
     fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>>;
 
+    /// Games with a source URL for `kind` but no stored artwork yet, as
+    /// `(id, source url)` pairs. Ordered by id, starting after `after`, so the
+    /// last id returned is the cursor for the next page.
     fn list_missing_artwork(
         &self,
         kind: ArtworkKind,
@@ -153,16 +152,21 @@ mod tests {
     use super::*;
 
     fn index(names: &[&str]) -> SectionIndex {
-        names.iter().map(|name| name_bucket(name)).collect()
+        SectionIndex::from_buckets(names.iter().map(|name| name_bucket(name)))
     }
 
     #[test]
-    fn buckets_names() {
+    fn names_bucket_under_their_first_letter() {
         assert_eq!(name_bucket("Portal"), 'P');
         assert_eq!(name_bucket("portal"), 'P');
         assert_eq!(name_bucket("  Portal"), 'P');
+    }
+
+    #[test]
+    fn non_ascii_alphabetic_names_bucket_under_hash() {
         assert_eq!(name_bucket("7 Days to Die"), '#');
         assert_eq!(name_bucket("!Sokoban"), '#');
+        assert_eq!(name_bucket("Ábaco"), '#');
         assert_eq!(name_bucket(""), '#');
     }
 

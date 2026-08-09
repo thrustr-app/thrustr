@@ -10,7 +10,9 @@ use diesel::{
     sql_types::{BigInt, Text, Untyped},
 };
 use domain::artwork::{Artwork, ArtworkKind};
-use domain::game::{Game, GameId, GameIndex, GameListItem, GameRepository, NewGame, name_bucket};
+use domain::game::{
+    Game, GameId, GameIndex, GameListItem, GameRepository, NewGame, SectionIndex, name_bucket,
+};
 use std::collections::HashMap;
 use tracing::warn;
 
@@ -166,12 +168,10 @@ struct IndexRow {
 fn build_index(rows: impl IntoIterator<Item = (i64, String)>) -> GameIndex {
     let rows = rows.into_iter();
     let mut ids = Vec::with_capacity(rows.size_hint().0);
-    let sections = rows
-        .map(|(id, name)| {
-            ids.push(from_row_id(id));
-            name_bucket(&name)
-        })
-        .collect();
+    let sections = SectionIndex::from_buckets(rows.map(|(id, name)| {
+        ids.push(from_row_id(id));
+        name_bucket(&name)
+    }));
 
     GameIndex { ids, sections }
 }

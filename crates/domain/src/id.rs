@@ -9,7 +9,7 @@ use std::{
 #[serde(transparent, bound = "")]
 pub struct Id<T> {
     value: u64,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<fn() -> T>,
 }
 
 impl<T> PartialEq for Id<T> {

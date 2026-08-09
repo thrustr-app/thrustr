@@ -21,7 +21,7 @@ impl Field {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct Section {
+pub struct ConfigSection {
     pub name: String,
     #[serde(rename = "field")]
     pub fields: Vec<Field>,
@@ -30,5 +30,5 @@ pub struct Section {
 #[derive(Deserialize, Clone, Debug)]
 pub struct ComponentConfig {
     #[serde(rename = "section")]
-    pub sections: Vec<Section>,
+    pub sections: Vec<ConfigSection>,
 }
