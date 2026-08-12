@@ -4,12 +4,14 @@ use bytes::Bytes;
 use domain::artwork::Color;
 use image::{DynamicImage, imageops::FilterType};
 use reqwest::Client;
-use std::{path::Path, time::Duration};
-use tokio::{fs, task::spawn_blocking};
+use std::time::Duration;
+use tokio::task::spawn_blocking;
 use webp::Encoder;
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
+
 const MAX_HEIGHT: u32 = 600;
+const COVER_ASPECT: (u32, u32) = (2, 3);
 
 pub struct ProcessedArtwork {
     pub bytes: Vec<u8>,
@@ -17,7 +19,7 @@ pub struct ProcessedArtwork {
     pub color: Option<Color>,
 }
 
-pub async fn process_task(task: ArtworkTask, client: Client) -> Result<ProcessedArtwork> {
+pub async fn process_task(task: &ArtworkTask, client: Client) -> Result<ProcessedArtwork> {
     let bytes = download_image(&task.url, client).await?;
     encode(bytes, task.quality).await
 }
@@ -51,7 +53,7 @@ async fn download_image(url: &str, client: Client) -> Result<Bytes> {
 
 fn decode_and_process(bytes: &[u8]) -> Result<DynamicImage> {
     let img = image::load_from_memory(bytes).context("Failed to decode image")?;
-    let img = crop_to_aspect_ratio(img, 2, 3);
+    let img = crop_to_aspect_ratio(img, COVER_ASPECT);
     let img = resize_to_max_height(img, MAX_HEIGHT);
     Ok(img)
 }
@@ -69,7 +71,7 @@ fn encode_webp(img: &DynamicImage, quality: f32) -> Result<Vec<u8>> {
         .to_vec())
 }
 
-fn crop_to_aspect_ratio(img: DynamicImage, target_w: u32, target_h: u32) -> DynamicImage {
+fn crop_to_aspect_ratio(img: DynamicImage, (target_w, target_h): (u32, u32)) -> DynamicImage {
     let (w, h) = (img.width(), img.height());
 
     let (crop_w, crop_h) = if w * target_h > h * target_w {
@@ -89,22 +91,53 @@ fn resize_to_max_height(img: DynamicImage, max_h: u32) -> DynamicImage {
     img.resize(u32::MAX, max_h, FilterType::Lanczos3)
 }
 
-pub(crate) async fn write_file(path: impl AsRef<Path>, data: &[u8]) -> Result<()> {
-    let path = path.as_ref();
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
-
-    fs::write(path, data).await?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{GrayImage, Luma, Rgba, RgbaImage};
+    use image::{GrayImage, Luma, Rgb, RgbImage, Rgba, RgbaImage};
+
+    fn image(w: u32, h: u32) -> DynamicImage {
+        DynamicImage::ImageRgb8(RgbImage::from_pixel(w, h, Rgb([200, 30, 30])))
+    }
+
+    #[test]
+    fn wide_images_lose_their_sides() {
+        let cropped = crop_to_aspect_ratio(image(900, 600), COVER_ASPECT);
+        assert_eq!((cropped.width(), cropped.height()), (400, 600));
+    }
+
+    #[test]
+    fn tall_images_lose_their_top_and_bottom() {
+        let cropped = crop_to_aspect_ratio(image(400, 900), COVER_ASPECT);
+        assert_eq!((cropped.width(), cropped.height()), (400, 600));
+    }
+
+    #[test]
+    fn images_already_in_shape_are_left_alone() {
+        let cropped = crop_to_aspect_ratio(image(400, 600), COVER_ASPECT);
+        assert_eq!((cropped.width(), cropped.height()), (400, 600));
+    }
+
+    #[test]
+    fn crops_are_centered() {
+        let mut img = RgbImage::from_pixel(3, 1, Rgb([0, 0, 0]));
+        img.put_pixel(1, 0, Rgb([200, 30, 30]));
+
+        let cropped = crop_to_aspect_ratio(DynamicImage::ImageRgb8(img), (1, 1));
+        assert_eq!(cropped.to_rgb8().get_pixel(0, 0), &Rgb([200, 30, 30]));
+    }
+
+    #[test]
+    fn oversized_images_shrink_and_keep_their_shape() {
+        let resized = resize_to_max_height(image(400, 1200), MAX_HEIGHT);
+        assert_eq!((resized.width(), resized.height()), (200, MAX_HEIGHT));
+    }
+
+    #[test]
+    fn small_images_are_not_upscaled() {
+        let resized = resize_to_max_height(image(200, 300), MAX_HEIGHT);
+        assert_eq!((resized.width(), resized.height()), (200, 300));
+    }
 
     #[test]
     fn grayscale_images_survive_encoding() {

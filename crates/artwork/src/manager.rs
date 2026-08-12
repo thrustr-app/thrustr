@@ -1,6 +1,6 @@
 use crate::{
     ArtworkReady, ArtworkTask,
-    processing::{ProcessedArtwork, process_task, write_file},
+    processing::{ProcessedArtwork, process_task},
 };
 use config::paths::artwork_path;
 use connectivity::ConnectivityManager;
@@ -9,19 +9,22 @@ use domain::{
     artwork::{Artwork, ArtworkKind, ArtworkRepository},
     game::GameId,
 };
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use runtime::TokioHandle;
 use std::{
+    path::Path,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
+    fs,
     sync::{Notify, broadcast, mpsc},
     task::{JoinSet, spawn_blocking},
 };
+use tracing::{error, warn};
 
 const MAX_ATTEMPTS: u32 = 3;
 const RECOVERY_JITTER_MAX_MS: u64 = 500;
@@ -60,7 +63,7 @@ impl ArtworkManager {
         tokio_handle: TokioHandle,
         max_concurrency: usize,
         connectivity: ConnectivityManager,
-        artwork: Arc<dyn ArtworkRepository>,
+        repository: Arc<dyn ArtworkRepository>,
     ) -> Self {
         let (sender, mut receiver) = mpsc::unbounded_channel::<ArtworkTask>();
         let (updates, _) = broadcast::channel(128);
@@ -102,7 +105,7 @@ impl ArtworkManager {
                     tokio::select! {
                         task = receiver.recv() => match task {
                             Some(task) => {
-                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), artwork.clone(), updates.clone(), inner.clone()));
+                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), repository.clone(), updates.clone(), inner.clone()));
                             }
                             None => break,
                         },
@@ -154,7 +157,7 @@ async fn run_with_retry(
     task: ArtworkTask,
     client: Client,
     connectivity: ConnectivityManager,
-    artwork: Arc<dyn ArtworkRepository>,
+    repository: Arc<dyn ArtworkRepository>,
     updates: broadcast::Sender<ArtworkReady>,
     inner: Arc<Inner>,
 ) {
@@ -165,35 +168,33 @@ async fn run_with_retry(
 
     let mut attempts = 0;
     loop {
-        match process_task(task.clone(), client.clone()).await {
+        match process_task(&task, client.clone()).await {
             Ok(processed) => {
                 let game_id = task.game_id;
-                if let Err(e) = finalize(task, processed, artwork, &updates).await {
-                    eprintln!("Failed to persist cover for game {}: {}", game_id, e);
+                if let Err(e) = finalize(&task, processed, repository, &updates).await {
+                    error!(%game_id, error = %e, "failed to persist cover");
                 }
                 return;
             }
             Err(e) => {
                 attempts += 1;
-                if attempts >= MAX_ATTEMPTS {
-                    eprintln!(
-                        "Task {} failed after {} attempts, giving up: {}",
-                        task.url, MAX_ATTEMPTS, e
-                    );
+                if !is_retryable(&e) {
+                    warn!(url = %task.url, error = %e, "artwork task failed permanently");
                     return;
                 }
 
-                if is_network_error(&e) {
+                if attempts >= MAX_ATTEMPTS {
+                    warn!(url = %task.url, attempts, error = %e, "artwork task gave up");
+                    return;
+                }
+
+                if is_offline_error(&e) {
                     connectivity.report_error().await;
                     connectivity.wait_until_online().await;
                 }
 
-                let delay = Duration::from_secs(2u64.pow(attempts - 1));
-                eprintln!(
-                    "Task {} attempt {}/{} failed, retrying in {:?}: {}",
-                    task.url, attempts, MAX_ATTEMPTS, delay, e
-                );
-                tokio::time::sleep(delay).await;
+                warn!(url = %task.url, attempts, error = %e, "artwork task failed, retrying");
+                tokio::time::sleep(Duration::from_secs(2u64.pow(attempts - 1))).await;
                 jitter().await;
             }
         }
@@ -201,33 +202,68 @@ async fn run_with_retry(
 }
 
 async fn finalize(
-    task: ArtworkTask,
+    task: &ArtworkTask,
     processed: ProcessedArtwork,
-    artwork: Arc<dyn ArtworkRepository>,
+    repository: Arc<dyn ArtworkRepository>,
     updates: &broadcast::Sender<ArtworkReady>,
 ) -> anyhow::Result<()> {
-    let path = artwork_path(&processed.hash, "webp");
-    write_file(&path, &processed.bytes).await?;
+    let ProcessedArtwork { bytes, hash, color } = processed;
+    write_artwork(&artwork_path(&hash, "webp"), &bytes).await?;
 
-    let hash = processed.hash.clone();
-    let accent_color = processed.color;
+    let game_id = task.game_id;
     let record = Artwork {
-        hash: processed.hash,
+        hash: hash.clone(),
         kind: task.kind,
         position: task.position,
-        accent_color: processed.color,
+        accent_color: color,
     };
-    spawn_blocking(move || artwork.insert(task.game_id, &record)).await??;
+    spawn_blocking(move || repository.insert(game_id, &record)).await??;
 
     let _ = updates.send(ArtworkReady {
-        game_id: task.game_id,
+        game_id,
         hash,
-        accent_color,
+        accent_color: color,
     });
     Ok(())
 }
 
-fn is_network_error(e: &anyhow::Error) -> bool {
+async fn write_artwork(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    if fs::try_exists(path).await? {
+        return Ok(());
+    }
+
+    // Two games can share a cover, so the hash alone does not make the
+    // temporary name unique.
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let temp = path.with_extension(format!("{}.tmp", SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
+    fs::write(&temp, bytes).await?;
+    if let Err(e) = fs::rename(&temp, path).await {
+        let _ = fs::remove_file(&temp).await;
+        return Err(e.into());
+    }
+
+    Ok(())
+}
+
+fn is_retryable(e: &anyhow::Error) -> bool {
+    let Some(e) = e.downcast_ref::<reqwest::Error>() else {
+        return false;
+    };
+
+    e.is_connect()
+        || e.is_timeout()
+        || e.is_request()
+        || e.status().is_some_and(|status| {
+            status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
+        })
+}
+
+fn is_offline_error(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
         .is_some_and(|e| e.is_connect() || e.is_timeout())
 }
