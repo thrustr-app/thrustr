@@ -57,6 +57,12 @@ fn decode_and_process(bytes: &[u8]) -> Result<DynamicImage> {
 }
 
 fn encode_webp(img: &DynamicImage, quality: f32) -> Result<Vec<u8>> {
+    let img = match img {
+        DynamicImage::ImageRgb8(_) | DynamicImage::ImageRgba8(_) => img,
+        other if other.color().has_alpha() => &DynamicImage::ImageRgba8(other.to_rgba8()),
+        other => &DynamicImage::ImageRgb8(other.to_rgb8()),
+    };
+
     Ok(Encoder::from_image(img)
         .map_err(|e| anyhow::anyhow!("Failed to create WebP encoder: {e}"))?
         .encode(quality)
@@ -93,4 +99,28 @@ pub(crate) async fn write_file(path: impl AsRef<Path>, data: &[u8]) -> Result<()
     fs::write(path, data).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{GrayImage, Luma, Rgba, RgbaImage};
+
+    #[test]
+    fn grayscale_images_survive_encoding() {
+        let mut img = GrayImage::new(60, 90);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            *pixel = Luma([((x + y) % 256) as u8]);
+        }
+
+        let webp = encode_webp(&DynamicImage::ImageLuma8(img), 75.).expect("grayscale encodes");
+        assert!(!webp.is_empty());
+    }
+
+    #[test]
+    fn transparency_survives_encoding() {
+        let img = RgbaImage::from_pixel(60, 90, Rgba([200, 30, 30, 40]));
+        let webp = encode_webp(&DynamicImage::ImageRgba8(img), 75.).expect("rgba encodes");
+        assert!(!webp.is_empty());
+    }
 }

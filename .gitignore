@@ -1,2 +1,6 @@
 /target
 .DS_Store
+
+# Dev plugins used to test stuff
+/plugins/*-sample/
+/plugins/*-dev/

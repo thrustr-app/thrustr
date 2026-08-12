@@ -7,9 +7,9 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 base64.workspace = true
 futures.workspace = true
+pdk.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-pdk.workspace = true
 thiserror.workspace = true
 wasi-fetch.workspace = true
 

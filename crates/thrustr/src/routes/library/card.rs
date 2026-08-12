@@ -183,7 +183,7 @@ impl RenderOnce for GameCard {
         let accent = game
             .accent_color
             .unwrap_or(theme.colors.card_background)
-            .opacity(0.25);
+            .opacity(0.3);
 
         base.id(game.element_id.clone())
             .on_click(move |_, _, cx| {
