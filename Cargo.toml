@@ -39,6 +39,7 @@ gpui_macros = { git = "https://github.com/zed-industries/zed" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
 lru = "0.18"
 paste = "1"
+rand = "0.10"
 reqwest = { version = "0.13", features = ["json"] }
 rustls = { version = "0.23", features = ["ring"] }
 semver = { version = "1", features = ["serde"] }

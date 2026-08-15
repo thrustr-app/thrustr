@@ -57,19 +57,10 @@ impl ArtworkService {
         service
     }
 
-    pub fn max_concurrency(&self) -> usize {
-        self.0.manager.max_concurrency()
-    }
-
-    pub fn set_max_concurrency(&self, max: usize) {
-        self.0.manager.set_max_concurrency(max);
-    }
-
     pub fn subscribe(&self) -> broadcast::Receiver<ArtworkReady> {
         self.0.manager.subscribe()
     }
 
-    /// Tasks that are queued or downloading right now.
     pub fn pending(&self) -> usize {
         self.0.manager.pending()
     }

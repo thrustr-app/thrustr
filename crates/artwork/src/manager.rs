@@ -1,44 +1,142 @@
 use crate::{
-    ArtworkReady, ArtworkTask,
-    processing::{ProcessedArtwork, process_task},
+    ArtworkReady, ArtworkTask, TaskKey,
+    processing::{ProcessedArtwork, ProcessingError, process_task},
 };
 use config::paths::artwork_path;
 use connectivity::ConnectivityManager;
-use dashmap::DashSet;
-use domain::{
-    artwork::{Artwork, ArtworkKind, ArtworkRepository},
-    game::GameId,
-};
+use dashmap::{DashMap, DashSet};
+use domain::artwork::{Artwork, ArtworkRepository};
+use image::ImageError;
+use lru::LruCache;
+use rand::RngExt;
 use reqwest::{Client, StatusCode};
 use runtime::TokioHandle;
 use std::{
+    future::Future,
+    hash::{DefaultHasher, Hash, Hasher},
+    num::NonZeroUsize,
     path::Path,
     sync::{
-        Arc,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 use tokio::{
     fs,
-    sync::{Notify, broadcast, mpsc},
+    sync::{OwnedSemaphorePermit, Semaphore, broadcast, mpsc},
     task::{JoinSet, spawn_blocking},
+    time::sleep,
 };
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
+use url::Url;
 
+/// Tries within a single run, before the url is set aside for later.
 const MAX_ATTEMPTS: u32 = 3;
-const RECOVERY_JITTER_MAX_MS: u64 = 500;
 
-type TaskKey = (GameId, ArtworkKind, u32);
+/// A url may fail this many times before it is dropped for the rest of the session.
+const MAX_URL_ATTEMPTS: u32 = 4;
 
-fn task_key(task: &ArtworkTask) -> TaskKey {
-    (task.game_id, task.kind, task.position)
+/// The amount of times a throttled host can be retried
+const MAX_HOST_THROTTLES: u32 = 5;
+const DEFAULT_THROTTLE: Duration = Duration::from_secs(10);
+
+/// A server may be incorrectly configured and return huge waiting times.
+const MAX_THROTTLE: Duration = Duration::from_mins(10);
+
+const MAX_TRACKED_URLS: usize = 1024;
+
+const RECOVERY_JITTER_MAX: Duration = Duration::from_millis(500);
+
+fn cooldown(attempts: u32) -> Duration {
+    match attempts {
+        0..=1 => Duration::from_secs(60),
+        2 => Duration::from_secs(15 * 60),
+        _ => Duration::from_secs(60 * 60),
+    }
+}
+
+struct Cooldown {
+    attempts: u32,
+    until: Instant,
+}
+
+impl Cooldown {
+    fn is_active(&self) -> bool {
+        self.attempts >= MAX_URL_ATTEMPTS || Instant::now() < self.until
+    }
+}
+
+fn url_key(url: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    hasher.finish()
 }
 
 struct Inner {
     inflight: DashSet<TaskKey>,
-    max_concurrency: AtomicUsize,
-    wakeup: Notify,
+    cooldowns: Mutex<LruCache<u64, Cooldown>>,
+    throttled_hosts: DashMap<String, Instant>,
+    slots: Arc<Semaphore>,
+}
+
+impl Inner {
+    async fn slot(&self) -> OwnedSemaphorePermit {
+        self.slots
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("slot semaphore should stay open")
+    }
+
+    fn is_cooling_down(&self, url: &str) -> bool {
+        let mut cache = self
+            .cooldowns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // `get` over `peek`, so the urls the library keeps asking for are the
+        // ones that stay tracked.
+        cache.get(&url_key(url)).is_some_and(Cooldown::is_active)
+    }
+
+    /// `None` when the URL has failed too many times and should not be retried again.
+    fn cool_down(&self, url: &str) -> Option<Duration> {
+        let key = url_key(url);
+        let mut cache = self
+            .cooldowns
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+
+        let entry = cache.get_or_insert_mut(key, || Cooldown {
+            attempts: 0,
+            until: Instant::now(),
+        });
+
+        entry.attempts += 1;
+        let delay = (entry.attempts < MAX_URL_ATTEMPTS).then(|| cooldown(entry.attempts));
+        entry.until = Instant::now() + delay.unwrap_or_default();
+        delay
+    }
+
+    fn throttle_host(&self, host: &str, delay: Duration) {
+        let until = Instant::now() + delay;
+        self.throttled_hosts
+            .entry(host.to_string())
+            .and_modify(|current| *current = (*current).max(until))
+            .or_insert(until);
+    }
+
+    fn remaining_host_throttle(&self, host: &str) -> Option<Duration> {
+        let until = *self.throttled_hosts.get(host)?;
+
+        let remaining = until.checked_duration_since(Instant::now());
+        if remaining.is_none() {
+            self.throttled_hosts
+                .remove_if(host, |_, until| *until <= Instant::now());
+        }
+
+        remaining
+    }
 }
 
 struct InflightGuard {
@@ -69,9 +167,13 @@ impl ArtworkManager {
         let (updates, _) = broadcast::channel(128);
 
         let inner = Arc::new(Inner {
-            max_concurrency: AtomicUsize::new(max_concurrency),
-            wakeup: Notify::new(),
+            slots: Arc::new(Semaphore::new(max_concurrency)),
             inflight: DashSet::new(),
+            cooldowns: Mutex::new(LruCache::new(
+                NonZeroUsize::new(MAX_TRACKED_URLS)
+                    .expect("tracked url capacity should not be zero"),
+            )),
+            throttled_hosts: DashMap::new(),
         });
 
         let client = Client::new();
@@ -85,32 +187,33 @@ impl ArtworkManager {
                 let mut join_set = JoinSet::new();
 
                 loop {
-                    while join_set.try_join_next().is_some() {}
-
                     while connectivity_watcher.current().is_offline() {
                         tokio::select! {
-                            _ = connectivity_watcher.changed() => {}
-                            Some(_) = join_set.join_next() => {}
-                        }
-                    }
-
-                    if join_set.len() >= inner.max_concurrency.load(Ordering::Acquire) {
-                        tokio::select! {
-                            Some(_) = join_set.join_next() => {}
-                            _ = inner.wakeup.notified() => {}
-                        }
-                        continue;
-                    }
-
-                    tokio::select! {
-                        task = receiver.recv() => match task {
-                            Some(task) => {
-                                join_set.spawn(run_with_retry(task, client.clone(), connectivity.clone(), repository.clone(), updates.clone(), inner.clone()));
+                            changed = connectivity_watcher.changed() => {
+                                changed.expect("connectivity manager should outlive its watcher");
                             }
+                            Some(_) = join_set.join_next() => {}
+                        }
+                    }
+
+                    let task = tokio::select! {
+                        task = receiver.recv() => match task {
+                            Some(task) => task,
                             None => break,
                         },
-                        _ = inner.wakeup.notified() => {}
-                    }
+                        Some(_) = join_set.join_next() => continue,
+                    };
+
+                    let permit = inner.slot().await;
+                    join_set.spawn(run_with_retry(
+                        task,
+                        client.clone(),
+                        connectivity.clone(),
+                        repository.clone(),
+                        updates.clone(),
+                        inner.clone(),
+                        permit,
+                    ));
                 }
 
                 while join_set.join_next().await.is_some() {}
@@ -129,7 +232,11 @@ impl ArtworkManager {
     }
 
     pub fn enqueue(&self, task: ArtworkTask) -> Result<(), mpsc::error::SendError<ArtworkTask>> {
-        let key = task_key(&task);
+        if self.inner.is_cooling_down(&task.url) {
+            return Ok(());
+        }
+
+        let key = task.key();
         if !self.inner.inflight.insert(key) {
             return Ok(());
         }
@@ -137,15 +244,6 @@ impl ArtworkManager {
         self.sender.send(task).inspect_err(|_| {
             self.inner.inflight.remove(&key);
         })
-    }
-
-    pub fn max_concurrency(&self) -> usize {
-        self.inner.max_concurrency.load(Ordering::Acquire)
-    }
-
-    pub fn set_max_concurrency(&self, max: usize) {
-        self.inner.max_concurrency.store(max, Ordering::Release);
-        self.inner.wakeup.notify_one();
     }
 
     pub fn pending(&self) -> usize {
@@ -160,45 +258,160 @@ async fn run_with_retry(
     repository: Arc<dyn ArtworkRepository>,
     updates: broadcast::Sender<ArtworkReady>,
     inner: Arc<Inner>,
+    mut permit: OwnedSemaphorePermit,
 ) {
     let _guard = InflightGuard {
-        inner,
-        key: task_key(&task),
+        inner: inner.clone(),
+        key: task.key(),
     };
 
+    // If the host cannot be obtained, building the request will fail anyway so
+    // the key doesn't really matter.
+    let host = host_of(&task.url).unwrap_or_else(|| task.url.clone());
     let mut attempts = 0;
+    let mut throttles = 0;
+
     loop {
-        match process_task(&task, client.clone()).await {
+        permit = wait_out_throttle(&inner, &host, permit).await;
+
+        // Another game may share this URL and have already set it aside.
+        // Probably not a common case, but since the idea is to support metadata
+        // providers, where different games (storefronts) can resolve to the same
+        // URL, it doesn't hurt to keep it.
+        if inner.is_cooling_down(&task.url) {
+            return;
+        }
+
+        let error = match process_task(&task, client.clone()).await {
             Ok(processed) => {
-                let game_id = task.game_id;
                 if let Err(e) = finalize(&task, processed, repository, &updates).await {
-                    error!(%game_id, error = %e, "failed to persist cover");
+                    error!(game_id = %task.game_id, error = %e, "failed to persist artwork");
                 }
                 return;
             }
-            Err(e) => {
+            Err(e) => e,
+        };
+
+        match Recovery::for_error(&error) {
+            Recovery::ThrottleHost(delay) => {
+                inner.throttle_host(&host, delay.min(MAX_THROTTLE));
+
+                throttles += 1;
+                if throttles >= MAX_HOST_THROTTLES || delay > MAX_THROTTLE {
+                    warn!(%host, ?delay, throttles, "artwork task dropped while throttled");
+                    return;
+                }
+
+                debug!(%host, ?delay, "artwork host is rate limiting us");
+            }
+
+            Recovery::ThrottleUrl => {
+                set_aside(&inner, &task.url, &error);
+                return;
+            }
+
+            recovery @ (Recovery::Reconnect | Recovery::Retry) => {
                 attempts += 1;
-                if !is_retryable(&e) {
-                    warn!(url = %task.url, error = %e, "artwork task failed permanently");
-                    return;
-                }
-
                 if attempts >= MAX_ATTEMPTS {
-                    warn!(url = %task.url, attempts, error = %e, "artwork task gave up");
+                    warn!(url = %task.url, attempts, error = %error, "artwork task gave up");
+                    set_aside(&inner, &task.url, &error);
                     return;
                 }
 
-                if is_offline_error(&e) {
-                    connectivity.report_error().await;
-                    connectivity.wait_until_online().await;
+                debug!(url = %task.url, attempts, error = %error, "artwork task failed, retrying");
+
+                if recovery == Recovery::Reconnect {
+                    permit = without_slot(&inner, permit, async {
+                        connectivity.report_error().await;
+                        connectivity.wait_until_online().await;
+                    })
+                    .await;
                 }
 
-                warn!(url = %task.url, attempts, error = %e, "artwork task failed, retrying");
-                tokio::time::sleep(Duration::from_secs(2u64.pow(attempts - 1))).await;
-                jitter().await;
+                // We hold the slot here since the wait is short and it prevents
+                // the dispatcher from sending a new task at a host that just failed.
+                sleep(backoff(attempts)).await;
             }
         }
     }
+}
+
+fn backoff(attempts: u32) -> Duration {
+    Duration::from_secs(2u64.pow(attempts.saturating_sub(1))) + jitter()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Recovery {
+    ThrottleHost(Duration),
+    ThrottleUrl,
+    Reconnect,
+    Retry,
+}
+
+impl Recovery {
+    fn for_error(error: &ProcessingError) -> Self {
+        match error {
+            ProcessingError::Request(e) if e.is_builder() || e.is_redirect() => Self::ThrottleUrl,
+            ProcessingError::Request(e) if e.is_connect() || e.is_timeout() => Self::Reconnect,
+
+            ProcessingError::Status {
+                status,
+                retry_after,
+            } if *status == StatusCode::TOO_MANY_REQUESTS
+                || (*status == StatusCode::SERVICE_UNAVAILABLE && retry_after.is_some()) =>
+            {
+                Self::ThrottleHost(retry_after.unwrap_or(DEFAULT_THROTTLE))
+            }
+            ProcessingError::Status { status, .. } if status.is_client_error() => Self::ThrottleUrl,
+
+            // Only try again if the download might have been cut short.
+            // These errors mean the file is broken in a way that retrying won't fix.
+            ProcessingError::Decode(
+                ImageError::Unsupported(_) | ImageError::Limits(_) | ImageError::Parameter(_),
+            ) => Self::ThrottleUrl,
+
+            // A panic in the decoder repeats on the same bytes.
+            ProcessingError::Task(e) if e.is_panic() => Self::ThrottleUrl,
+
+            _ => Self::Retry,
+        }
+    }
+}
+
+fn set_aside(inner: &Inner, url: &str, error: &ProcessingError) {
+    match inner.cool_down(url) {
+        Some(delay) => debug!(url, ?delay, error = %error, "artwork url set aside"),
+        None => debug!(url, error = %error, "artwork url will not be retried"),
+    }
+}
+
+async fn wait_out_throttle(
+    inner: &Inner,
+    host: &str,
+    mut permit: OwnedSemaphorePermit,
+) -> OwnedSemaphorePermit {
+    // The host may have been throttled again while this task was asleep.
+    while let Some(remaining) = inner.remaining_host_throttle(host) {
+        permit = without_slot(inner, permit, sleep(remaining + jitter())).await;
+    }
+
+    permit
+}
+
+/// Gives the slot back while waiting, so other tasks can use it.
+/// Gets a new slot when the wait is over.
+async fn without_slot(
+    inner: &Inner,
+    permit: OwnedSemaphorePermit,
+    wait: impl Future<Output = ()>,
+) -> OwnedSemaphorePermit {
+    drop(permit);
+    wait.await;
+    inner.slot().await
+}
+
+fn host_of(url: &str) -> Option<String> {
+    Url::parse(url).ok()?.host_str().map(str::to_string)
 }
 
 async fn finalize(
@@ -232,17 +445,22 @@ async fn write_artwork(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
     // Two games can share a cover, so the hash alone does not make the
     // temporary name unique.
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     let temp = path.with_extension(format!("{}.tmp", SEQUENCE.fetch_add(1, Ordering::Relaxed)));
 
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
+    let written = fs::write(&temp, bytes).await;
+    let renamed = match written {
+        Ok(()) => fs::rename(&temp, path).await,
+        Err(e) => Err(e),
+    };
 
-    fs::write(&temp, bytes).await?;
-    if let Err(e) = fs::rename(&temp, path).await {
+    if let Err(e) = renamed {
         let _ = fs::remove_file(&temp).await;
         return Err(e.into());
     }
@@ -250,30 +468,338 @@ async fn write_artwork(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn is_retryable(e: &anyhow::Error) -> bool {
-    let Some(e) = e.downcast_ref::<reqwest::Error>() else {
-        return false;
+/// A short random delay, so tasks that were held back by the same thing do not
+/// all come back at once.
+fn jitter() -> Duration {
+    rand::rng().random_range(Duration::ZERO..RECOVERY_JITTER_MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{
+        ImageError,
+        error::{LimitError, LimitErrorKind},
     };
+    use std::io;
 
-    e.is_connect()
-        || e.is_timeout()
-        || e.is_request()
-        || e.status().is_some_and(|status| {
-            status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS
+    const COVER: &str = "https://cdn.example.com/covers/a.jpg";
+    const OTHER: &str = "https://cdn.example.com/covers/b.jpg";
+
+    fn inner(tracked: usize) -> Inner {
+        Inner {
+            inflight: DashSet::new(),
+            cooldowns: Mutex::new(LruCache::new(
+                NonZeroUsize::new(tracked).expect("capacity should not be zero"),
+            )),
+            throttled_hosts: DashMap::new(),
+            slots: Arc::new(Semaphore::new(1)),
+        }
+    }
+
+    #[test]
+    fn a_url_waits_longer_after_every_failure() {
+        let inner = inner(MAX_TRACKED_URLS);
+
+        assert_eq!(inner.cool_down(COVER), Some(Duration::from_secs(60)));
+        assert_eq!(inner.cool_down(COVER), Some(Duration::from_secs(15 * 60)));
+        assert_eq!(inner.cool_down(COVER), Some(Duration::from_secs(60 * 60)));
+        assert_eq!(
+            inner.cool_down(COVER),
+            None,
+            "a url that keeps failing is eventually left alone"
+        );
+    }
+
+    #[test]
+    fn failures_are_counted_per_url() {
+        let inner = inner(MAX_TRACKED_URLS);
+        inner.cool_down(COVER);
+
+        assert_eq!(inner.cool_down(OTHER), Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn a_url_is_left_alone_until_its_cooldown_passes() {
+        let inner = inner(MAX_TRACKED_URLS);
+        assert!(!inner.is_cooling_down(COVER));
+
+        inner.cool_down(COVER);
+        assert!(inner.is_cooling_down(COVER));
+        assert!(!inner.is_cooling_down(OTHER));
+    }
+
+    #[test]
+    fn a_url_is_asked_for_again_once_its_cooldown_passes() {
+        let inner = inner(MAX_TRACKED_URLS);
+        inner.cooldowns.lock().unwrap().put(
+            url_key(COVER),
+            Cooldown {
+                attempts: 1,
+                until: Instant::now(),
+            },
+        );
+
+        assert!(!inner.is_cooling_down(COVER));
+    }
+
+    #[test]
+    fn a_url_that_failed_too_often_is_not_asked_for_again() {
+        let inner = inner(MAX_TRACKED_URLS);
+        inner.cooldowns.lock().unwrap().put(
+            url_key(COVER),
+            Cooldown {
+                attempts: MAX_URL_ATTEMPTS,
+                until: Instant::now(),
+            },
+        );
+
+        assert!(
+            inner.is_cooling_down(COVER),
+            "a deadline in the past should not bring back a url that was given up on"
+        );
+    }
+
+    #[test]
+    fn asking_for_a_url_that_was_given_up_on_keeps_it_out() {
+        let inner = inner(2);
+        for _ in 0..MAX_URL_ATTEMPTS {
+            inner.cool_down(COVER);
+        }
+
+        inner.cool_down(OTHER);
+        assert!(inner.is_cooling_down(COVER));
+        inner.cool_down("https://cdn.example.com/covers/c.jpg");
+
+        assert!(inner.is_cooling_down(COVER));
+        assert!(
+            !inner.is_cooling_down(OTHER),
+            "the url nothing asked about is the one that fell out"
+        );
+    }
+
+    #[test]
+    fn tracked_urls_stop_growing() {
+        let inner = inner(2);
+        inner.cool_down(COVER);
+        inner.cool_down(OTHER);
+        inner.cool_down("https://cdn.example.com/covers/c.jpg");
+
+        assert!(
+            !inner.is_cooling_down(COVER),
+            "the oldest url should be gone"
+        );
+        assert!(inner.is_cooling_down(OTHER));
+    }
+
+    #[test]
+    fn hosts_are_only_throttled_until_their_deadline() {
+        let inner = inner(MAX_TRACKED_URLS);
+        assert_eq!(inner.remaining_host_throttle("cdn.example.com"), None);
+
+        inner.throttle_host("cdn.example.com", Duration::from_secs(30));
+        assert!(inner.remaining_host_throttle("cdn.example.com").is_some());
+        assert_eq!(
+            inner.remaining_host_throttle("other.example.com"),
+            None,
+            "throttles should not spill over to another host"
+        );
+
+        inner.throttle_host("elapsed.example.com", Duration::ZERO);
+        assert_eq!(inner.remaining_host_throttle("elapsed.example.com"), None);
+    }
+
+    #[test]
+    fn a_host_that_is_no_longer_throttled_is_forgotten() {
+        let inner = inner(MAX_TRACKED_URLS);
+        inner.throttle_host("cdn.example.com", Duration::ZERO);
+
+        assert_eq!(inner.remaining_host_throttle("cdn.example.com"), None);
+        assert!(
+            inner.throttled_hosts.is_empty(),
+            "every host that was ever throttled would otherwise be remembered"
+        );
+    }
+
+    #[test]
+    fn throttles_keep_the_longest_wait() {
+        let inner = inner(MAX_TRACKED_URLS);
+        inner.throttle_host("cdn.example.com", Duration::from_secs(60));
+        inner.throttle_host("cdn.example.com", Duration::from_secs(1));
+
+        let remaining = inner
+            .remaining_host_throttle("cdn.example.com")
+            .expect("the longer throttle should still be running");
+        assert!(remaining > Duration::from_secs(30));
+    }
+
+    #[tokio::test]
+    async fn a_task_waiting_out_a_throttle_leaves_its_slot_to_someone_else() {
+        let inner = Arc::new(inner(MAX_TRACKED_URLS));
+        let permit = inner.slot().await;
+        inner.throttle_host("cdn.example.com", Duration::from_millis(50));
+
+        let waiting = tokio::spawn({
+            let inner = inner.clone();
+            async move { wait_out_throttle(&inner, "cdn.example.com", permit).await }
+        });
+
+        tokio::task::yield_now().await;
+        assert_eq!(
+            inner.slots.available_permits(),
+            1,
+            "the slot should be free while the host is being left alone"
+        );
+
+        let permit = waiting.await.expect("waiting should not panic");
+        assert_eq!(
+            inner.slots.available_permits(),
+            0,
+            "the slot should be taken again before asking the host anything"
+        );
+        drop(permit);
+    }
+
+    #[test]
+    fn hosts_come_from_the_url() {
+        assert_eq!(host_of(COVER).as_deref(), Some("cdn.example.com"));
+        assert_eq!(host_of("not a url"), None);
+    }
+
+    fn status(status: StatusCode, retry_after: Option<Duration>) -> ProcessingError {
+        ProcessingError::Status {
+            status,
+            retry_after,
+        }
+    }
+
+    #[test]
+    fn refusals_are_not_worth_repeating() {
+        assert_eq!(
+            Recovery::for_error(&status(StatusCode::NOT_FOUND, None)),
+            Recovery::ThrottleUrl
+        );
+        assert_eq!(
+            Recovery::for_error(&status(StatusCode::FORBIDDEN, None)),
+            Recovery::ThrottleUrl
+        );
+    }
+
+    #[test]
+    fn server_faults_are_worth_another_go() {
+        assert_eq!(
+            Recovery::for_error(&status(StatusCode::INTERNAL_SERVER_ERROR, None)),
+            Recovery::Retry
+        );
+    }
+
+    #[test]
+    fn rate_limits_are_honored_for_as_long_as_asked() {
+        let asked = Duration::from_secs(90);
+        assert_eq!(
+            Recovery::for_error(&status(StatusCode::TOO_MANY_REQUESTS, Some(asked))),
+            Recovery::ThrottleHost(asked)
+        );
+        assert_eq!(
+            Recovery::for_error(&status(StatusCode::TOO_MANY_REQUESTS, None)),
+            Recovery::ThrottleHost(DEFAULT_THROTTLE),
+            "a rate limit still holds the host back without a deadline"
+        );
+    }
+
+    #[test]
+    fn an_unavailable_server_only_throttles_when_it_says_so() {
+        let asked = Duration::from_secs(30);
+        assert_eq!(
+            Recovery::for_error(&status(StatusCode::SERVICE_UNAVAILABLE, Some(asked))),
+            Recovery::ThrottleHost(asked)
+        );
+        assert_eq!(
+            Recovery::for_error(&status(StatusCode::SERVICE_UNAVAILABLE, None)),
+            Recovery::Retry
+        );
+    }
+
+    #[test]
+    fn bytes_that_are_not_an_image_are_set_aside_rather_than_retried() {
+        let error = image::load_from_memory(b"not an image").expect_err("bytes should not decode");
+
+        assert!(matches!(error, ImageError::Unsupported(_)));
+        assert_eq!(
+            Recovery::for_error(&ProcessingError::Decode(error)),
+            Recovery::ThrottleUrl,
+            "asking straight back for an error page would only get the error page again"
+        );
+    }
+
+    #[test]
+    fn an_image_that_ran_out_early_is_worth_asking_for_again() {
+        let error = ImageError::IoError(io::Error::from(io::ErrorKind::UnexpectedEof));
+
+        assert_eq!(
+            Recovery::for_error(&ProcessingError::Decode(error)),
+            Recovery::Retry
+        );
+    }
+
+    #[test]
+    fn an_image_beyond_what_can_be_decoded_is_set_aside() {
+        let error = ImageError::Limits(LimitError::from_kind(LimitErrorKind::DimensionError));
+
+        assert_eq!(
+            Recovery::for_error(&ProcessingError::Decode(error)),
+            Recovery::ThrottleUrl
+        );
+    }
+
+    #[tokio::test]
+    async fn a_decoder_that_panicked_is_not_asked_to_try_again() {
+        let error = spawn_blocking(|| {
+            panic!("bytes the decoder cannot handle");
         })
-}
+        .await
+        .expect_err("the task should have panicked");
 
-fn is_offline_error(e: &anyhow::Error) -> bool {
-    e.downcast_ref::<reqwest::Error>()
-        .is_some_and(|e| e.is_connect() || e.is_timeout())
-}
+        assert_eq!(
+            Recovery::for_error(&ProcessingError::Task(error)),
+            Recovery::ThrottleUrl,
+            "the same bytes would only panic the decoder again"
+        );
+    }
 
-/// Sleeps for a random short duration to avoid multiple waiting tasks from retrying at the same time.
-async fn jitter() {
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    let ms = seed % RECOVERY_JITTER_MAX_MS as u32;
-    tokio::time::sleep(Duration::from_millis(ms as u64)).await;
+    #[tokio::test]
+    async fn artwork_is_written_once_and_leaves_nothing_behind() {
+        let dir = std::env::temp_dir().join(format!("thrustr-artwork-{}", url_key(COVER)));
+        let path = dir.join("cover.webp");
+        let _ = fs::remove_dir_all(&dir).await;
+
+        write_artwork(&path, b"first").await.expect("a first write");
+        write_artwork(&path, b"second")
+            .await
+            .expect("a write of artwork already on disk");
+
+        assert_eq!(
+            fs::read(&path)
+                .await
+                .expect("the artwork should be on disk"),
+            b"first",
+            "the name already holds the bytes it is addressed by"
+        );
+
+        let mut entries = fs::read_dir(&dir)
+            .await
+            .expect("the directory should exist");
+        let mut count = 0;
+        while entries
+            .next_entry()
+            .await
+            .expect("the directory should be readable")
+            .is_some()
+        {
+            count += 1;
+        }
+        assert_eq!(count, 1, "no temporary file should be left behind");
+
+        fs::remove_dir_all(&dir).await.expect("cleanup should work");
+    }
 }

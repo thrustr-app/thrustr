@@ -1,11 +1,15 @@
 use crate::{ArtworkTask, color::extract_accent};
-use anyhow::{Context, Result};
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use domain::artwork::Color;
-use image::{DynamicImage, imageops::FilterType};
-use reqwest::Client;
+use image::{DynamicImage, ImageError, RgbImage, RgbaImage, imageops::FilterType};
+use reqwest::{
+    Client, StatusCode,
+    header::{HeaderMap, RETRY_AFTER},
+};
 use std::time::Duration;
-use tokio::task::spawn_blocking;
+use thiserror::Error;
+use tokio::task::{JoinError, spawn_blocking};
 use webp::Encoder;
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
@@ -13,22 +17,45 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_HEIGHT: u32 = 600;
 const COVER_ASPECT: (u32, u32) = (2, 3);
 
+#[derive(Debug, Error)]
+pub enum ProcessingError {
+    /// No response arrived at all.
+    #[error(transparent)]
+    Request(#[from] reqwest::Error),
+
+    /// A response arrived, but it was not an image.
+    #[error("server responded with {status}")]
+    Status {
+        status: StatusCode,
+        retry_after: Option<Duration>,
+    },
+
+    #[error(transparent)]
+    Decode(#[from] ImageError),
+
+    #[error(transparent)]
+    Task(#[from] JoinError),
+}
+
 pub struct ProcessedArtwork {
     pub bytes: Vec<u8>,
     pub hash: String,
     pub color: Option<Color>,
 }
 
-pub async fn process_task(task: &ArtworkTask, client: Client) -> Result<ProcessedArtwork> {
+pub async fn process_task(
+    task: &ArtworkTask,
+    client: Client,
+) -> Result<ProcessedArtwork, ProcessingError> {
     let bytes = download_image(&task.url, client).await?;
     encode(bytes, task.quality).await
 }
 
-async fn encode(bytes: Bytes, quality: f32) -> Result<ProcessedArtwork> {
+async fn encode(bytes: Bytes, quality: f32) -> Result<ProcessedArtwork, ProcessingError> {
     spawn_blocking(move || {
         let img = decode_and_process(&bytes)?;
         let color = extract_accent(&img);
-        let webp = encode_webp(&img, quality)?;
+        let webp = encode_webp(&img, quality);
         let hash = blake3::hash(&webp).to_hex().to_string();
         Ok(ProcessedArtwork {
             bytes: webp,
@@ -39,36 +66,57 @@ async fn encode(bytes: Bytes, quality: f32) -> Result<ProcessedArtwork> {
     .await?
 }
 
-async fn download_image(url: &str, client: Client) -> Result<Bytes> {
-    let response = client
-        .get(url)
-        .timeout(DOWNLOAD_TIMEOUT)
-        .send()
-        .await?
-        .error_for_status()
-        .with_context(|| format!("Failed to download image from {url}"))?;
+async fn download_image(url: &str, client: Client) -> Result<Bytes, ProcessingError> {
+    let response = client.get(url).timeout(DOWNLOAD_TIMEOUT).send().await?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(ProcessingError::Status {
+            status,
+            retry_after: retry_after(response.headers()),
+        });
+    }
 
     Ok(response.bytes().await?)
 }
 
-fn decode_and_process(bytes: &[u8]) -> Result<DynamicImage> {
-    let img = image::load_from_memory(bytes).context("Failed to decode image")?;
+fn retry_after(headers: &HeaderMap) -> Option<Duration> {
+    let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
+
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+
+    let deadline = DateTime::parse_from_rfc2822(value).ok()?;
+    (deadline.to_utc() - Utc::now()).to_std().ok()
+}
+
+fn decode_and_process(bytes: &[u8]) -> Result<DynamicImage, ImageError> {
+    let img = image::load_from_memory(bytes)?;
     let img = crop_to_aspect_ratio(img, COVER_ASPECT);
     let img = resize_to_max_height(img, MAX_HEIGHT);
     Ok(img)
 }
 
-fn encode_webp(img: &DynamicImage, quality: f32) -> Result<Vec<u8>> {
-    let img = match img {
-        DynamicImage::ImageRgb8(_) | DynamicImage::ImageRgba8(_) => img,
-        other if other.color().has_alpha() => &DynamicImage::ImageRgba8(other.to_rgba8()),
-        other => &DynamicImage::ImageRgb8(other.to_rgb8()),
-    };
+fn encode_webp(img: &DynamicImage, quality: f32) -> Vec<u8> {
+    match img {
+        DynamicImage::ImageRgb8(rgb) => encode_rgb(rgb, quality),
+        DynamicImage::ImageRgba8(rgba) => encode_rgba(rgba, quality),
+        other if other.color().has_alpha() => encode_rgba(&other.to_rgba8(), quality),
+        other => encode_rgb(&other.to_rgb8(), quality),
+    }
+}
 
-    Ok(Encoder::from_image(img)
-        .map_err(|e| anyhow::anyhow!("Failed to create WebP encoder: {e}"))?
+fn encode_rgb(img: &RgbImage, quality: f32) -> Vec<u8> {
+    Encoder::from_rgb(img.as_raw(), img.width(), img.height())
         .encode(quality)
-        .to_vec())
+        .to_vec()
+}
+
+fn encode_rgba(img: &RgbaImage, quality: f32) -> Vec<u8> {
+    Encoder::from_rgba(img.as_raw(), img.width(), img.height())
+        .encode(quality)
+        .to_vec()
 }
 
 fn crop_to_aspect_ratio(img: DynamicImage, (target_w, target_h): (u32, u32)) -> DynamicImage {
@@ -94,7 +142,40 @@ fn resize_to_max_height(img: DynamicImage, max_h: u32) -> DynamicImage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{GrayImage, Luma, Rgb, RgbImage, Rgba, RgbaImage};
+    use image::{GrayImage, Luma, Rgb, Rgba};
+    use reqwest::header::HeaderValue;
+
+    fn headers(retry_after: &'static str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static(retry_after));
+        headers
+    }
+
+    #[test]
+    fn retry_after_reads_a_delay_in_seconds() {
+        assert_eq!(retry_after(&headers("120")), Some(Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn retry_after_reads_a_date() {
+        let delay = retry_after(&headers("Wed, 21 Oct 2099 07:28:00 GMT"))
+            .expect("an http date should parse");
+
+        // Far enough out that the exact value is not worth pinning down.
+        assert!(delay > Duration::from_secs(60 * 60 * 24));
+    }
+
+    #[test]
+    fn retry_after_ignores_a_date_that_has_passed() {
+        assert_eq!(retry_after(&headers("Wed, 21 Oct 2015 07:28:00 GMT")), None);
+    }
+
+    #[test]
+    fn retry_after_ignores_what_it_cannot_read() {
+        assert_eq!(retry_after(&HeaderMap::new()), None);
+        assert_eq!(retry_after(&headers("soon")), None);
+        assert_eq!(retry_after(&headers("-5")), None);
+    }
 
     fn image(w: u32, h: u32) -> DynamicImage {
         DynamicImage::ImageRgb8(RgbImage::from_pixel(w, h, Rgb([200, 30, 30])))
@@ -146,14 +227,14 @@ mod tests {
             *pixel = Luma([((x + y) % 256) as u8]);
         }
 
-        let webp = encode_webp(&DynamicImage::ImageLuma8(img), 75.).expect("grayscale encodes");
+        let webp = encode_webp(&DynamicImage::ImageLuma8(img), 75.);
         assert!(!webp.is_empty());
     }
 
     #[test]
     fn transparency_survives_encoding() {
         let img = RgbaImage::from_pixel(60, 90, Rgba([200, 30, 30, 40]));
-        let webp = encode_webp(&DynamicImage::ImageRgba8(img), 75.).expect("rgba encodes");
+        let webp = encode_webp(&DynamicImage::ImageRgba8(img), 75.);
         assert!(!webp.is_empty());
     }
 }
