@@ -370,6 +370,8 @@ impl Recovery {
                 ImageError::Unsupported(_) | ImageError::Limits(_) | ImageError::Parameter(_),
             ) => Self::ThrottleUrl,
 
+            ProcessingError::TooSmall { .. } => Self::ThrottleUrl,
+
             // A panic in the decoder repeats on the same bytes.
             ProcessingError::Task(e) if e.is_panic() => Self::ThrottleUrl,
 

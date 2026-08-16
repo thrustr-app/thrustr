@@ -16,6 +16,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 
 const MAX_HEIGHT: u32 = 600;
 const COVER_ASPECT: (u32, u32) = (2, 3);
+const MIN_SIZE: (u32, u32) = COVER_ASPECT;
 
 #[derive(Debug, Error)]
 pub enum ProcessingError {
@@ -33,6 +34,9 @@ pub enum ProcessingError {
     #[error(transparent)]
     Decode(#[from] ImageError),
 
+    #[error("image is {width}x{height}, too small for a cover")]
+    TooSmall { width: u32, height: u32 },
+
     #[error(transparent)]
     Task(#[from] JoinError),
 }
@@ -48,22 +52,18 @@ pub async fn process_task(
     client: Client,
 ) -> Result<ProcessedArtwork, ProcessingError> {
     let bytes = download_image(&task.url, client).await?;
-    encode(bytes, task.quality).await
+    let quality = task.quality;
+
+    spawn_blocking(move || build_cover(&bytes, quality)).await?
 }
 
-async fn encode(bytes: Bytes, quality: f32) -> Result<ProcessedArtwork, ProcessingError> {
-    spawn_blocking(move || {
-        let img = decode_and_process(&bytes)?;
-        let color = extract_accent(&img);
-        let webp = encode_webp(&img, quality);
-        let hash = blake3::hash(&webp).to_hex().to_string();
-        Ok(ProcessedArtwork {
-            bytes: webp,
-            hash,
-            color,
-        })
-    })
-    .await?
+fn build_cover(bytes: &[u8], quality: f32) -> Result<ProcessedArtwork, ProcessingError> {
+    let img = decode_and_fit(bytes)?;
+    let color = extract_accent(&img);
+    let bytes = encode_webp(&img, quality);
+    let hash = blake3::hash(&bytes).to_hex().to_string();
+
+    Ok(ProcessedArtwork { bytes, hash, color })
 }
 
 async fn download_image(url: &str, client: Client) -> Result<Bytes, ProcessingError> {
@@ -73,14 +73,15 @@ async fn download_image(url: &str, client: Client) -> Result<Bytes, ProcessingEr
     if !status.is_success() {
         return Err(ProcessingError::Status {
             status,
-            retry_after: retry_after(response.headers()),
+            retry_after: retry_after(response.headers(), Utc::now()),
         });
     }
 
     Ok(response.bytes().await?)
 }
 
-fn retry_after(headers: &HeaderMap) -> Option<Duration> {
+/// `now` is passed as a parameter so tests are deterministic.
+fn retry_after(headers: &HeaderMap, now: DateTime<Utc>) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
 
     if let Ok(seconds) = value.parse::<u64>() {
@@ -88,14 +89,19 @@ fn retry_after(headers: &HeaderMap) -> Option<Duration> {
     }
 
     let deadline = DateTime::parse_from_rfc2822(value).ok()?;
-    (deadline.to_utc() - Utc::now()).to_std().ok()
+    (deadline.to_utc() - now).to_std().ok()
 }
 
-fn decode_and_process(bytes: &[u8]) -> Result<DynamicImage, ImageError> {
+fn decode_and_fit(bytes: &[u8]) -> Result<DynamicImage, ProcessingError> {
     let img = image::load_from_memory(bytes)?;
+
+    let (width, height) = (img.width(), img.height());
+    if width < MIN_SIZE.0 || height < MIN_SIZE.1 {
+        return Err(ProcessingError::TooSmall { width, height });
+    }
+
     let img = crop_to_aspect_ratio(img, COVER_ASPECT);
-    let img = resize_to_max_height(img, MAX_HEIGHT);
-    Ok(img)
+    Ok(resize_to_max_height(img, MAX_HEIGHT))
 }
 
 fn encode_webp(img: &DynamicImage, quality: f32) -> Vec<u8> {
@@ -142,82 +148,203 @@ fn resize_to_max_height(img: DynamicImage, max_h: u32) -> DynamicImage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{GrayImage, Luma, Rgb, Rgba};
+    use image::{GrayImage, ImageFormat, Luma, Rgb, Rgba};
     use reqwest::header::HeaderValue;
+    use std::io::Cursor;
 
-    fn headers(retry_after: &'static str) -> HeaderMap {
+    const RED: Rgb<u8> = Rgb([200, 30, 30]);
+    const BLUE: Rgb<u8> = Rgb([30, 120, 200]);
+
+    /// Tests are measured agains this date.
+    fn now() -> DateTime<Utc> {
+        DateTime::parse_from_rfc2822("Wed, 21 Oct 2099 03:46:00 GMT")
+            .expect("the test date should parse")
+            .to_utc()
+    }
+
+    #[track_caller]
+    fn check_retry_after(header: Option<&'static str>, expected: Option<Duration>) {
         let mut headers = HeaderMap::new();
-        headers.insert(RETRY_AFTER, HeaderValue::from_static(retry_after));
-        headers
+        if let Some(value) = header {
+            headers.insert(RETRY_AFTER, HeaderValue::from_static(value));
+        }
+
+        assert_eq!(retry_after(&headers, now()), expected, "header {header:?}");
     }
 
     #[test]
-    fn retry_after_reads_a_delay_in_seconds() {
-        assert_eq!(retry_after(&headers("120")), Some(Duration::from_secs(120)));
+    fn retry_after_reads_a_delay() {
+        for (header, expected) in [
+            ("120", Duration::from_secs(120)),
+            ("0", Duration::ZERO),
+            ("  120  ", Duration::from_secs(120)),
+            ("Wed, 21 Oct 2099 03:48:00 GMT", Duration::from_secs(120)),
+        ] {
+            check_retry_after(Some(header), Some(expected));
+        }
     }
 
     #[test]
-    fn retry_after_reads_a_date() {
-        let delay = retry_after(&headers("Wed, 21 Oct 2099 03:48:00 GMT"))
-            .expect("an http date should parse");
+    fn retry_after_ignores_what_it_cannot_use() {
+        for header in [
+            None,
+            Some("soon"),
+            Some("-5"),
+            // A date that has already passed.
+            Some("Wed, 30 Jun 2015 16:13:00 GMT"),
+        ] {
+            check_retry_after(header, None);
+        }
+    }
 
-        // The exact delay depends on when the test runs, so just check that it is reasonable.
-        assert!(delay > Duration::from_secs(60 * 60 * 24));
+    fn image(w: u32, h: u32, color: Rgb<u8>) -> DynamicImage {
+        DynamicImage::ImageRgb8(RgbImage::from_pixel(w, h, color))
+    }
+
+    fn png(w: u32, h: u32, color: Rgb<u8>) -> Vec<u8> {
+        encode_png(image(w, h, color))
+    }
+
+    fn gradient_png(w: u32, h: u32) -> Vec<u8> {
+        let mut img = RgbImage::new(w, h);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            *pixel = Rgb([(x % 256) as u8, (y % 256) as u8, ((x * y) % 256) as u8]);
+        }
+
+        encode_png(DynamicImage::ImageRgb8(img))
+    }
+
+    fn encode_png(img: DynamicImage) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .expect("the png should encode");
+
+        bytes
+    }
+
+    #[track_caller]
+    fn check_cover(bytes: &[u8], quality: f32) -> ProcessedArtwork {
+        build_cover(bytes, quality).expect("the image should become a cover")
+    }
+
+    #[track_caller]
+    fn check_crop(size: (u32, u32), aspect: (u32, u32), expected: (u32, u32)) {
+        let cropped = crop_to_aspect_ratio(image(size.0, size.1, RED), aspect);
+
+        assert_eq!(
+            (cropped.width(), cropped.height()),
+            expected,
+            "cropping {size:?} to {aspect:?}"
+        );
+    }
+
+    /// Marks one pixel and checks that cropping the image to a square keeps it.
+    #[track_caller]
+    fn check_centered_crop(size: (u32, u32), keeps: (u32, u32)) {
+        let mut img = RgbImage::from_pixel(size.0, size.1, Rgb([0, 0, 0]));
+        img.put_pixel(keeps.0, keeps.1, RED);
+
+        let cropped = crop_to_aspect_ratio(DynamicImage::ImageRgb8(img), (1, 1));
+
+        assert_eq!(
+            cropped.to_rgb8().get_pixel(0, 0),
+            &RED,
+            "cropping {size:?} should have kept the pixel at {keeps:?}"
+        );
+    }
+
+    #[track_caller]
+    fn check_resize(size: (u32, u32), max_h: u32, expected: (u32, u32)) {
+        let resized = resize_to_max_height(image(size.0, size.1, RED), max_h);
+
+        assert_eq!(
+            (resized.width(), resized.height()),
+            expected,
+            "resizing {size:?} to fit {max_h}"
+        );
     }
 
     #[test]
-    fn retry_after_ignores_a_date_that_has_passed() {
-        assert_eq!(retry_after(&headers("Wed, 30 Jun 2015 16:13:00 GMT")), None);
+    fn image_bytes_become_covers() {
+        let cover = check_cover(&png(1800, 1200, RED), 75.);
+
+        let decoded = image::load_from_memory(&cover.bytes).expect("the cover should be a webp");
+        assert_eq!((decoded.width(), decoded.height()), (400, MAX_HEIGHT));
+
+        let color = cover.color.expect("a red cover should have an accent");
+        assert!(
+            color.r > color.g && color.r > color.b,
+            "expected a red accent, got {color:?}"
+        );
     }
 
     #[test]
-    fn retry_after_ignores_what_it_cannot_read() {
-        assert_eq!(retry_after(&HeaderMap::new()), None);
-        assert_eq!(retry_after(&headers("soon")), None);
-        assert_eq!(retry_after(&headers("-5")), None);
-    }
+    fn the_same_image_always_hashes_the_same() {
+        let red = check_cover(&png(400, 600, RED), 75.);
 
-    fn image(w: u32, h: u32) -> DynamicImage {
-        DynamicImage::ImageRgb8(RgbImage::from_pixel(w, h, Rgb([200, 30, 30])))
+        assert_eq!(red.hash, check_cover(&png(400, 600, RED), 75.).hash);
+        assert_ne!(red.hash, check_cover(&png(400, 600, BLUE), 75.).hash);
     }
 
     #[test]
-    fn wide_images_lose_their_sides() {
-        let cropped = crop_to_aspect_ratio(image(900, 600), COVER_ASPECT);
-        assert_eq!((cropped.width(), cropped.height()), (400, 600));
+    fn covers_are_hashed_by_the_bytes_they_carry() {
+        let sharp = check_cover(&gradient_png(400, 600), 90.);
+        let rough = check_cover(&gradient_png(400, 600), 10.);
+        assert_ne!(sharp.bytes, rough.bytes, "quality should change the bytes");
+        assert_ne!(sharp.hash, rough.hash);
     }
 
     #[test]
-    fn tall_images_lose_their_top_and_bottom() {
-        let cropped = crop_to_aspect_ratio(image(400, 900), COVER_ASPECT);
-        assert_eq!((cropped.width(), cropped.height()), (400, 600));
+    fn non_images_are_turned_away() {
+        let Err(error) = build_cover(b"<html>404</html>", 75.) else {
+            panic!("a page of html should not become a cover");
+        };
+
+        assert!(matches!(error, ProcessingError::Decode(_)), "{error:?}");
     }
 
     #[test]
-    fn images_already_in_shape_are_left_alone() {
-        let cropped = crop_to_aspect_ratio(image(400, 600), COVER_ASPECT);
-        assert_eq!((cropped.width(), cropped.height()), (400, 600));
+    fn images_too_small_for_a_cover_are_turned_away() {
+        for (w, h) in [(400, 1), (1, 1), (1, 600)] {
+            let Err(error) = build_cover(&png(w, h, RED), 75.) else {
+                panic!("a {w}x{h} image should not become a cover");
+            };
+
+            assert!(
+                matches!(error, ProcessingError::TooSmall { width, height } if (width, height) == (w, h)),
+                "{error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_smallest_allowed_image_still_becomes_a_cover() {
+        let cover = check_cover(&png(MIN_SIZE.0, MIN_SIZE.1, RED), 75.);
+        let decoded = image::load_from_memory(&cover.bytes).expect("the cover should be a webp");
+
+        assert_eq!((decoded.width(), decoded.height()), MIN_SIZE);
+    }
+
+    #[test]
+    fn crops_reach_the_target_shape() {
+        check_crop((900, 600), COVER_ASPECT, (400, 600));
+        check_crop((400, 900), COVER_ASPECT, (400, 600));
+        check_crop((400, 600), COVER_ASPECT, (400, 600));
     }
 
     #[test]
     fn crops_are_centered() {
-        let mut img = RgbImage::from_pixel(3, 1, Rgb([0, 0, 0]));
-        img.put_pixel(1, 0, Rgb([200, 30, 30]));
-
-        let cropped = crop_to_aspect_ratio(DynamicImage::ImageRgb8(img), (1, 1));
-        assert_eq!(cropped.to_rgb8().get_pixel(0, 0), &Rgb([200, 30, 30]));
+        check_centered_crop((3, 1), (1, 0));
+        check_centered_crop((1, 3), (0, 1));
+        // Odd margin so there is no middle pixel.
+        check_centered_crop((4, 1), (1, 0));
     }
 
     #[test]
-    fn oversized_images_shrink_and_keep_their_shape() {
-        let resized = resize_to_max_height(image(400, 1200), MAX_HEIGHT);
-        assert_eq!((resized.width(), resized.height()), (200, MAX_HEIGHT));
-    }
-
-    #[test]
-    fn small_images_are_not_upscaled() {
-        let resized = resize_to_max_height(image(200, 300), MAX_HEIGHT);
-        assert_eq!((resized.width(), resized.height()), (200, 300));
+    fn resizing_only_shrinks() {
+        check_resize((400, 1200), MAX_HEIGHT, (200, MAX_HEIGHT));
+        check_resize((200, 300), MAX_HEIGHT, (200, 300));
+        check_resize((400, MAX_HEIGHT), MAX_HEIGHT, (400, MAX_HEIGHT));
     }
 
     #[test]
@@ -228,13 +355,24 @@ mod tests {
         }
 
         let webp = encode_webp(&DynamicImage::ImageLuma8(img), 75.);
-        assert!(!webp.is_empty());
+        let decoded = image::load_from_memory(&webp).expect("the result should be a webp");
+
+        assert_eq!((decoded.width(), decoded.height()), (60, 90));
     }
 
     #[test]
     fn transparency_survives_encoding() {
         let img = RgbaImage::from_pixel(60, 90, Rgba([200, 30, 30, 40]));
+
         let webp = encode_webp(&DynamicImage::ImageRgba8(img), 75.);
-        assert!(!webp.is_empty());
+        let decoded = image::load_from_memory(&webp).expect("the result should be a webp");
+
+        assert_eq!((decoded.width(), decoded.height()), (60, 90));
+        // The encoder is lossy, so the alpha value may change a little.
+        let alpha = decoded.to_rgba8().get_pixel(30, 45).0[3];
+        assert!(
+            alpha.abs_diff(40) < 16,
+            "expected a translucent cover, got alpha {alpha}"
+        );
     }
 }
