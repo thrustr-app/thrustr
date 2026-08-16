@@ -158,16 +158,16 @@ mod tests {
 
     #[test]
     fn retry_after_reads_a_date() {
-        let delay = retry_after(&headers("Wed, 21 Oct 2099 07:28:00 GMT"))
+        let delay = retry_after(&headers("Wed, 21 Oct 2099 03:48:00 GMT"))
             .expect("an http date should parse");
 
-        // Far enough out that the exact value is not worth pinning down.
+        // The exact delay depends on when the test runs, so just check that it is reasonable.
         assert!(delay > Duration::from_secs(60 * 60 * 24));
     }
 
     #[test]
     fn retry_after_ignores_a_date_that_has_passed() {
-        assert_eq!(retry_after(&headers("Wed, 21 Oct 2015 07:28:00 GMT")), None);
+        assert_eq!(retry_after(&headers("Wed, 30 Jun 2015 16:13:00 GMT")), None);
     }
 
     #[test]
