@@ -62,6 +62,7 @@ fn greets_a_user() {
     check_greet("Alice", "Hello, Alice!");
 }
 ```
+
 Always annotate harnesses with `#[track_caller]` so failures point at the test case and not at the assertion inside `check`.
 
 ### 3. Make writing new tests cheap
@@ -158,6 +159,39 @@ fn refresh_covers_in_background(library: Library) {
 ### 8. Be exhaustive in cheap cases
 
 When a specific function is cheap and the possible input values are small, just check all of them.
+
+### 9. Serve HTTP with `wiremock`, never call the real thing
+
+Tests should never talk to real hosts since that can fail, be slow or non-deterministic. Use [`wiremock`](https://docs.rs/wiremock) to mock servers instead of doing it manually.
+
+```rust
+async fn serve(response: ResponseTemplate) -> (MockServer, String) {
+    const PATH: &str = "/cover.png";
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(PATH))
+        .respond_with(response)
+        .mount(&server)
+        .await;
+
+    let url = format!("{}{PATH}", server.uri());
+
+    (server, url)
+}
+
+#[tokio::test]
+async fn test_download() {
+    let (_server, url) = serve(
+        ResponseTemplate::new(429)
+            .insert_header(RETRY_AFTER, "120")
+            .set_body_string("slow down"),
+    )
+    .await;
+
+    // ...
+}
+```
 
 ## Naming
 

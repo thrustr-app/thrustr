@@ -88,9 +88,6 @@ pub fn extract_accent(img: &DynamicImage) -> Option<Color> {
 enum Source {
     Hue,
     Monochrome,
-    /// No hue collected any weight at all.
-    /// This is a guard and should not be encountered by regular use.
-    NoDominantHue,
 }
 
 fn accent(img: &DynamicImage) -> Option<(Color, Source)> {
@@ -143,13 +140,14 @@ fn accent(img: &DynamicImage) -> Option<(Color, Source)> {
         return Some((gray(total_lightness / opaque), Source::Monochrome));
     }
 
+    // Any pixel that's colorful enough to get past the ckeck above
+    // has positive weight.
     let winner = neighborhood(&hues, strongest(&hues));
-    if winner.weight <= 0.0 {
-        return Some((gray(total_lightness / opaque), Source::NoDominantHue));
-    }
+    assert!(
+        winner.weight > 0.0,
+        "a colorful image should have a dominant hue"
+    );
 
-    // Divide the totals by the total weight to get the average color of the pixels
-    // in the winning hue.
     let color = oklch(
         (winner.lightness / winner.weight).clamp(MIN_ACCENT_LIGHTNESS, MAX_ACCENT_LIGHTNESS),
         (winner.chroma / winner.weight).clamp(MIN_ACCENT_CHROMA, MAX_ACCENT_CHROMA),
@@ -233,11 +231,7 @@ fn oklch(lightness: f32, chroma: f32, hue: f32) -> Color {
     }
 
     let (r, g, b) = fitted;
-    Color {
-        r: encode_srgb(r),
-        g: encode_srgb(g),
-        b: encode_srgb(b),
-    }
+    Color::rgb(encode_srgb(r), encode_srgb(g), encode_srgb(b))
 }
 
 /// Whether a color can actually be shown on an sRGB screen.
@@ -307,14 +301,24 @@ mod tests {
     use image::{Rgb, RgbImage, Rgba, RgbaImage};
 
     // Hues only need to be close enough, tests do not need the exact hue.
-    const HUE_SLACK: f32 = 20.0;
-    const ACCENT_BRIGHTNESS: std::ops::RangeInclusive<f32> = 0.35..=0.75;
+    const HUE_SLACK: f32 = 4.0;
+    const EXPECTED_LIGHTNESS_RANGE: std::ops::RangeInclusive<f32> =
+        (MIN_ACCENT_LIGHTNESS - 0.01)..=(MAX_ACCENT_LIGHTNESS + 0.01);
+    const MIN_ACCENT_SATURATION: f32 = 0.2;
+
+    const RED: Color = Color::rgb(200, 30, 30);
+    const GREEN: Color = Color::rgb(40, 160, 60);
+    const BLUE: Color = Color::rgb(30, 120, 200);
+    const SKIN: Color = Color::rgb(222, 176, 148);
+
+    const SMALL: (u32, u32) = (64, 96);
+    const COVER: (u32, u32) = (600, 900);
 
     #[derive(Debug)]
     enum Expected {
         None,
         Gray(Source),
-        Hue(f32),
+        Hue(Color),
     }
 
     #[track_caller]
@@ -327,10 +331,10 @@ mod tests {
             return;
         };
 
-        let brightness = brightness(color);
+        let lightness = lightness(color);
         assert!(
-            ACCENT_BRIGHTNESS.contains(&brightness),
-            "{color:?} has brightness {brightness}, outside the UI band {ACCENT_BRIGHTNESS:?}"
+            EXPECTED_LIGHTNESS_RANGE.contains(&lightness),
+            "{color:?} has lightness {lightness}, outside the expected range {EXPECTED_LIGHTNESS_RANGE:?}"
         );
 
         match expected {
@@ -339,52 +343,77 @@ mod tests {
                 assert!(saturation(color) < 0.02, "expected a gray, got {color:?}");
                 assert_eq!(source, path, "gray came from the wrong path");
             }
-            Expected::Hue(degrees) => {
+            Expected::Hue(wanted) => {
                 assert_eq!(source, Source::Hue, "expected a hue, got {source:?}");
-                let distance = hue_distance(hue_degrees(color), degrees);
+
+                let saturation = saturation(color);
                 assert!(
-                    distance < HUE_SLACK,
-                    "expected hue near {degrees}, got {} ({color:?})",
-                    hue_degrees(color)
+                    saturation > MIN_ACCENT_SATURATION,
+                    "{color:?} has saturation {saturation}, too washed out for an accent"
+                );
+
+                let (wanted, got) = (hue(wanted), hue(color));
+                assert!(
+                    hue_distance(got, wanted) < HUE_SLACK,
+                    "expected the hue of {wanted} degrees, got {got} ({color:?})"
                 );
             }
         }
     }
 
-    fn solid(r: u8, g: u8, b: u8) -> DynamicImage {
-        DynamicImage::ImageRgb8(RgbImage::from_pixel(64, 96, Rgb([r, g, b])))
+    fn solid(color: Color) -> DynamicImage {
+        filled(SMALL, color)
+    }
+
+    fn filled((w, h): (u32, u32), color: Color) -> DynamicImage {
+        DynamicImage::ImageRgb8(RgbImage::from_pixel(w, h, Rgb([color.r, color.g, color.b])))
     }
 
     /// Paints the top `share` of the image with the first color and the rest
     /// with the second one.
-    fn split(share: f32, top: (u8, u8, u8), bottom: (u8, u8, u8)) -> DynamicImage {
-        let mut img = RgbImage::new(64, 96);
+    fn split((w, h): (u32, u32), share: f32, top: Color, bottom: Color) -> DynamicImage {
+        let mut img = RgbImage::new(w, h);
         let edge = (img.height() as f32 * share) as u32;
         for (_, y, pixel) in img.enumerate_pixels_mut() {
-            let (r, g, b) = if y < edge { top } else { bottom };
-            *pixel = Rgb([r, g, b]);
+            let color = if y < edge { top } else { bottom };
+            *pixel = Rgb([color.r, color.g, color.b]);
         }
 
         DynamicImage::ImageRgb8(img)
     }
 
-    fn hue_degrees(color: Color) -> f32 {
-        let (r, g, b) = channels(color);
-        let max = r.max(g).max(b);
-        let span = max - r.min(g).min(b);
-        if span == 0.0 {
-            return 0.0;
+    /// Paints a square of `color` in the corner of a gray image.
+    fn patch(side: u32, color: Color) -> DynamicImage {
+        let mut img = RgbImage::from_pixel(SMALL.0, SMALL.1, Rgb([128, 128, 128]));
+        for y in 0..side {
+            for x in 0..side {
+                img.put_pixel(x, y, Rgb([color.r, color.g, color.b]));
+            }
         }
 
-        let sextant = if max == r {
-            (g - b) / span
-        } else if max == g {
-            2.0 + (b - r) / span
-        } else {
-            4.0 + (r - g) / span
-        };
+        DynamicImage::ImageRgb8(img)
+    }
 
-        (sextant * 60.0).rem_euclid(360.0)
+    fn hsv(degrees: f32) -> Color {
+        let sector = degrees.rem_euclid(360.0) / 60.0;
+        let byte = |value: f32| (value * 255.0).round() as u8;
+        let (rise, fall) = (byte(sector.fract()), byte(1.0 - sector.fract()));
+
+        match sector as u32 {
+            0 => Color::rgb(255, rise, 0),
+            1 => Color::rgb(fall, 255, 0),
+            2 => Color::rgb(0, 255, rise),
+            3 => Color::rgb(0, fall, 255),
+            4 => Color::rgb(rise, 0, 255),
+            _ => Color::rgb(255, 0, fall),
+        }
+    }
+
+    /// Where the color sits on the wheel, in degrees.
+    fn hue(color: Color) -> f32 {
+        let (_, green_red, blue_yellow) = srgb_to_oklab(color.r, color.g, color.b);
+
+        blue_yellow.atan2(green_red).to_degrees().rem_euclid(360.0)
     }
 
     fn hue_distance(a: f32, b: f32) -> f32 {
@@ -393,56 +422,45 @@ mod tests {
     }
 
     fn saturation(color: Color) -> f32 {
-        let (r, g, b) = channels(color);
+        let (r, g, b, _) = color.normalized();
         r.max(g).max(b) - r.min(g).min(b)
     }
 
-    fn brightness(color: Color) -> f32 {
-        let (r, g, b) = channels(color);
-        (r.max(g).max(b) + r.min(g).min(b)) / 2.0
-    }
-
-    fn channels(color: Color) -> (f32, f32, f32) {
-        (
-            color.r as f32 / 255.0,
-            color.g as f32 / 255.0,
-            color.b as f32 / 255.0,
-        )
+    fn lightness(color: Color) -> f32 {
+        srgb_to_oklab(color.r, color.g, color.b).0
     }
 
     #[test]
     fn accents_keep_the_hue_of_the_source() {
-        for (r, g, b) in [(200, 30, 30), (30, 120, 200), (40, 160, 60)] {
-            check(
-                solid(r, g, b),
-                Expected::Hue(hue_degrees(Color { r, g, b })),
-            );
+        for color in [RED, BLUE, GREEN] {
+            check(solid(color), Expected::Hue(color));
         }
     }
 
     #[test]
     fn dark_and_light_sources_still_land_in_the_ui_band() {
-        for (r, g, b) in [(12, 4, 40), (250, 246, 200)] {
-            check(
-                solid(r, g, b),
-                Expected::Hue(hue_degrees(Color { r, g, b })),
-            );
+        for color in [Color::rgb(12, 4, 40), Color::rgb(250, 246, 200)] {
+            check(solid(color), Expected::Hue(color));
         }
     }
 
     #[test]
-    fn saturated_sources_keep_their_hue() {
-        for (r, g, b) in [(255, 0, 0), (0, 0, 255), (0, 255, 0)] {
-            check(
-                solid(r, g, b),
-                Expected::Hue(hue_degrees(Color { r, g, b })),
-            );
+    fn every_hue_on_the_wheel_comes_back_as_itself() {
+        for degrees in (0..360).step_by(5) {
+            let color = hsv(degrees as f32);
+            check(solid(color), Expected::Hue(color));
         }
+    }
+
+    #[test]
+    fn covers_larger_than_the_sample_keep_their_hue() {
+        check(filled(COVER, BLUE), Expected::Hue(BLUE));
+        check(split(COVER, 0.5, SKIN, BLUE), Expected::Hue(BLUE));
     }
 
     #[test]
     fn grayscale_images_do_not_invent_a_hue() {
-        let mut img = RgbImage::new(64, 96);
+        let mut img = RgbImage::new(SMALL.0, SMALL.1);
         for (x, y, pixel) in img.enumerate_pixels_mut() {
             let value = ((x + y) * 2) as u8;
             *pixel = Rgb([value, value, value]);
@@ -455,68 +473,64 @@ mod tests {
     }
 
     #[test]
+    fn black_and_white_images_get_a_gray_the_ui_can_use() {
+        for color in [Color::BLACK, Color::WHITE] {
+            check(solid(color), Expected::Gray(Source::Monochrome));
+        }
+    }
+
+    #[test]
+    fn a_speck_of_color_does_not_carry_a_gray_image() {
+        check(patch(4, BLUE), Expected::Gray(Source::Monochrome));
+        check(patch(16, BLUE), Expected::Hue(BLUE));
+    }
+
+    #[test]
     fn skin_tones_lose_to_real_colors() {
-        check(
-            split(0.9, (222, 176, 148), (30, 120, 200)),
-            Expected::Hue(hue_degrees(Color {
-                r: 30,
-                g: 120,
-                b: 200,
-            })),
-        );
+        check(split(SMALL, 0.9, SKIN, BLUE), Expected::Hue(BLUE));
+    }
+
+    #[test]
+    fn an_image_of_nothing_but_skin_still_gets_an_accent() {
+        check(solid(SKIN), Expected::Hue(SKIN));
     }
 
     #[test]
     fn hues_average_around_the_wheel() {
-        let (left, right) = ((214, 33, 118), (222, 41, 76));
+        let (left, right) = (Color::rgb(214, 33, 118), Color::rgb(222, 41, 76));
         check(
-            split(0.5, left, right),
-            Expected::Hue(hue_degrees(Color {
-                r: 218,
-                g: 37,
-                b: 97,
-            })),
+            split(SMALL, 0.5, left, right),
+            Expected::Hue(Color::rgb(218, 37, 97)),
         );
     }
 
     #[test]
     fn transparent_pixels_are_ignored() {
-        let mut img = RgbaImage::from_pixel(64, 96, Rgba([0, 0, 0, 0]));
+        let mut img = RgbaImage::from_pixel(SMALL.0, SMALL.1, Rgba([0, 0, 0, 0]));
         for (_, y, pixel) in img.enumerate_pixels_mut() {
-            if y >= 80 {
-                *pixel = Rgba([30, 120, 200, 255]);
+            if y >= SMALL.1 - 16 {
+                *pixel = Rgba(BLUE.to_rgba());
             }
         }
 
-        check(
-            DynamicImage::ImageRgba8(img),
-            Expected::Hue(hue_degrees(Color {
-                r: 30,
-                g: 120,
-                b: 200,
-            })),
-        );
+        check(DynamicImage::ImageRgba8(img), Expected::Hue(BLUE));
     }
 
     #[test]
     fn the_alpha_cutoff_decides_whether_a_pixel_counts() {
-        let faint = RgbaImage::from_pixel(64, 96, Rgba([200, 30, 30, MIN_ALPHA - 1]));
-        check(DynamicImage::ImageRgba8(faint), Expected::None);
+        for (alpha, expected) in [
+            (MIN_ALPHA - 1, Expected::None),
+            (MIN_ALPHA, Expected::Hue(RED)),
+        ] {
+            let img = RgbaImage::from_pixel(SMALL.0, SMALL.1, Rgba([RED.r, RED.g, RED.b, alpha]));
 
-        let solid = RgbaImage::from_pixel(64, 96, Rgba([200, 30, 30, MIN_ALPHA]));
-        check(
-            DynamicImage::ImageRgba8(solid),
-            Expected::Hue(hue_degrees(Color {
-                r: 200,
-                g: 30,
-                b: 30,
-            })),
-        );
+            check(DynamicImage::ImageRgba8(img), expected);
+        }
     }
 
     #[test]
     fn fully_transparent_images_have_no_accent() {
-        let img = RgbaImage::from_pixel(64, 96, Rgba([200, 30, 30, 0]));
+        let img = RgbaImage::from_pixel(SMALL.0, SMALL.1, Rgba([RED.r, RED.g, RED.b, 0]));
         check(DynamicImage::ImageRgba8(img), Expected::None);
     }
 
@@ -525,16 +539,5 @@ mod tests {
         for value in 0..=u8::MAX {
             assert_eq!(encode_srgb(decode_srgb(value)), value);
         }
-    }
-
-    #[test]
-    fn every_angle_lands_in_a_bin() {
-        for step in -720..=720 {
-            let hue = (step as f32).to_radians();
-            assert!(hue_bin(hue) < HUE_BINS, "{hue} fell outside the bins");
-        }
-
-        assert_eq!(hue_bin(0.0), hue_bin(TAU));
-        assert_eq!(hue_bin(0.0), hue_bin(-TAU));
     }
 }

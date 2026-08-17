@@ -24,7 +24,11 @@ pub fn logs_dir() -> PathBuf {
 }
 
 pub fn artwork_path(hash: &str, extension: &str) -> PathBuf {
-    let mut path = artwork_dir();
+    artwork_path_in(&artwork_dir(), hash, extension)
+}
+
+pub fn artwork_path_in(dir: &Path, hash: &str, extension: &str) -> PathBuf {
+    let mut path = dir.to_path_buf();
     path.push(&hash[0..2]);
     path.push(&hash[2..4]);
     path.push(hash);

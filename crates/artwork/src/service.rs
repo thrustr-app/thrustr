@@ -1,4 +1,5 @@
 use crate::{ArtworkReady, ArtworkTask, manager::ArtworkManager};
+use config::paths::artwork_dir;
 use connectivity::ConnectivityManager;
 use domain::{
     artwork::{ArtworkKind, ArtworkRepository},
@@ -35,6 +36,7 @@ impl ArtworkService {
         let manager = ArtworkManager::new(
             tokio_handle.clone(),
             DEFAULT_MAX_CONCURRENCY,
+            artwork_dir(),
             connectivity,
             artwork,
         );

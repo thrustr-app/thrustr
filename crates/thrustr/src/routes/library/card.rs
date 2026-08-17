@@ -14,7 +14,7 @@ use domain::{
 use gpui::{
     App, Empty, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement, ObjectFit,
     ParentElement, RenderOnce, Resource, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, Window, div, img, prelude::FluentBuilder, rgb, transparent_black,
+    StyledImage, Window, div, img, prelude::FluentBuilder, rgba, transparent_black,
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
 use theme::ThemeExt;
@@ -24,7 +24,7 @@ pub(super) fn cover_path(hash: &str) -> Arc<Path> {
 }
 
 pub(super) fn accent_hsla(color: Color) -> Hsla {
-    rgb(color.into()).into()
+    rgba(color.to_argb()).into()
 }
 
 #[derive(Clone)]

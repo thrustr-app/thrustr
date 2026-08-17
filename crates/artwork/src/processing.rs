@@ -148,14 +148,21 @@ fn resize_to_max_height(img: DynamicImage, max_h: u32) -> DynamicImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::{artwork::ArtworkKind, game::GameId};
     use image::{GrayImage, ImageFormat, Luma, Rgb, Rgba};
     use reqwest::header::HeaderValue;
     use std::io::Cursor;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
 
     const RED: Rgb<u8> = Rgb([200, 30, 30]);
     const BLUE: Rgb<u8> = Rgb([30, 120, 200]);
 
-    /// Tests are measured agains this date.
+    const QUALITY: f32 = 75.;
+
+    /// Tests are measured against this date.
     fn now() -> DateTime<Utc> {
         DateTime::parse_from_rfc2822("Wed, 21 Oct 2099 03:46:00 GMT")
             .expect("the test date should parse")
@@ -214,6 +221,22 @@ mod tests {
         encode_png(DynamicImage::ImageRgb8(img))
     }
 
+    fn gray_png(w: u32, h: u32) -> Vec<u8> {
+        let mut img = GrayImage::new(w, h);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            *pixel = Luma([((x + y) % 256) as u8]);
+        }
+
+        encode_png(DynamicImage::ImageLuma8(img))
+    }
+
+    fn translucent_png(w: u32, h: u32, alpha: u8) -> Vec<u8> {
+        let [r, g, b] = RED.0;
+        let img = RgbaImage::from_pixel(w, h, Rgba([r, g, b, alpha]));
+
+        encode_png(DynamicImage::ImageRgba8(img))
+    }
+
     fn encode_png(img: DynamicImage) -> Vec<u8> {
         let mut bytes = Vec::new();
         img.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
@@ -222,9 +245,27 @@ mod tests {
         bytes
     }
 
+    fn task(url: &str) -> ArtworkTask {
+        ArtworkTask {
+            game_id: GameId::from(1),
+            url: url.to_string(),
+            kind: ArtworkKind::Cover,
+            position: 0,
+            quality: QUALITY,
+        }
+    }
+
     #[track_caller]
     fn check_cover(bytes: &[u8], quality: f32) -> ProcessedArtwork {
         build_cover(bytes, quality).expect("the image should become a cover")
+    }
+
+    #[track_caller]
+    fn check_cover_size(bytes: &[u8], expected: (u32, u32)) {
+        let cover = check_cover(bytes, QUALITY);
+        let decoded = image::load_from_memory(&cover.bytes).expect("the cover should be a webp");
+
+        assert_eq!((decoded.width(), decoded.height()), expected);
     }
 
     #[track_caller]
@@ -266,7 +307,7 @@ mod tests {
 
     #[test]
     fn image_bytes_become_covers() {
-        let cover = check_cover(&png(1800, 1200, RED), 75.);
+        let cover = check_cover(&png(1800, 1200, RED), QUALITY);
 
         let decoded = image::load_from_memory(&cover.bytes).expect("the cover should be a webp");
         assert_eq!((decoded.width(), decoded.height()), (400, MAX_HEIGHT));
@@ -279,11 +320,20 @@ mod tests {
     }
 
     #[test]
-    fn the_same_image_always_hashes_the_same() {
-        let red = check_cover(&png(400, 600, RED), 75.);
+    fn covers_come_out_at_the_cover_shape() {
+        check_cover_size(&png(1200, 800, RED), (400, MAX_HEIGHT));
+        check_cover_size(&png(500, 1500, RED), (400, MAX_HEIGHT));
+        check_cover_size(&png(750, 750, RED), (400, MAX_HEIGHT));
+        check_cover_size(&png(100, 150, RED), (100, 150));
+        check_cover_size(&png(MIN_SIZE.0, MIN_SIZE.1, RED), MIN_SIZE);
+    }
 
-        assert_eq!(red.hash, check_cover(&png(400, 600, RED), 75.).hash);
-        assert_ne!(red.hash, check_cover(&png(400, 600, BLUE), 75.).hash);
+    #[test]
+    fn the_same_image_always_hashes_the_same() {
+        let red = check_cover(&png(400, 600, RED), QUALITY);
+
+        assert_eq!(red.hash, check_cover(&png(400, 600, RED), QUALITY).hash);
+        assert_ne!(red.hash, check_cover(&png(400, 600, BLUE), QUALITY).hash);
     }
 
     #[test]
@@ -296,7 +346,7 @@ mod tests {
 
     #[test]
     fn non_images_are_turned_away() {
-        let Err(error) = build_cover(b"<html>404</html>", 75.) else {
+        let Err(error) = build_cover(b"<html>404</html>", QUALITY) else {
             panic!("a page of html should not become a cover");
         };
 
@@ -306,7 +356,7 @@ mod tests {
     #[test]
     fn images_too_small_for_a_cover_are_turned_away() {
         for (w, h) in [(400, 1), (1, 1), (1, 600)] {
-            let Err(error) = build_cover(&png(w, h, RED), 75.) else {
+            let Err(error) = build_cover(&png(w, h, RED), QUALITY) else {
                 panic!("a {w}x{h} image should not become a cover");
             };
 
@@ -315,14 +365,6 @@ mod tests {
                 "{error:?}"
             );
         }
-    }
-
-    #[test]
-    fn the_smallest_allowed_image_still_becomes_a_cover() {
-        let cover = check_cover(&png(MIN_SIZE.0, MIN_SIZE.1, RED), 75.);
-        let decoded = image::load_from_memory(&cover.bytes).expect("the cover should be a webp");
-
-        assert_eq!((decoded.width(), decoded.height()), MIN_SIZE);
     }
 
     #[test]
@@ -348,31 +390,80 @@ mod tests {
     }
 
     #[test]
-    fn grayscale_images_survive_encoding() {
-        let mut img = GrayImage::new(60, 90);
-        for (x, y, pixel) in img.enumerate_pixels_mut() {
-            *pixel = Luma([((x + y) % 256) as u8]);
-        }
-
-        let webp = encode_webp(&DynamicImage::ImageLuma8(img), 75.);
-        let decoded = image::load_from_memory(&webp).expect("the result should be a webp");
-
-        assert_eq!((decoded.width(), decoded.height()), (60, 90));
+    fn grayscale_images_become_covers_too() {
+        check_cover_size(&gray_png(60, 90), (60, 90));
     }
 
     #[test]
-    fn transparency_survives_encoding() {
-        let img = RgbaImage::from_pixel(60, 90, Rgba([200, 30, 30, 40]));
+    fn transparency_survives_the_trip() {
+        let cover = check_cover(&translucent_png(60, 90, 40), QUALITY);
+        let decoded = image::load_from_memory(&cover.bytes).expect("the cover should be a webp");
 
-        let webp = encode_webp(&DynamicImage::ImageRgba8(img), 75.);
-        let decoded = image::load_from_memory(&webp).expect("the result should be a webp");
-
-        assert_eq!((decoded.width(), decoded.height()), (60, 90));
         // The encoder is lossy, so the alpha value may change a little.
         let alpha = decoded.to_rgba8().get_pixel(30, 45).0[3];
         assert!(
             alpha.abs_diff(40) < 16,
             "expected a translucent cover, got alpha {alpha}"
         );
+    }
+
+    async fn serve(response: ResponseTemplate) -> (MockServer, String) {
+        const PATH: &str = "/cover.png";
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(PATH))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+
+        let url = format!("{}{PATH}", server.uri());
+
+        (server, url)
+    }
+
+    #[tokio::test]
+    async fn a_served_image_comes_back_as_a_cover() {
+        let bytes = png(400, 600, RED);
+        let (_server, url) = serve(ResponseTemplate::new(200).set_body_bytes(bytes.clone())).await;
+
+        let cover = process_task(&task(&url), Client::new())
+            .await
+            .expect("the served image should become a cover");
+
+        assert_eq!(cover.hash, check_cover(&bytes, QUALITY).hash);
+    }
+
+    #[tokio::test]
+    async fn a_refused_download_carries_the_status_and_the_wait() {
+        let (_server, url) = serve(
+            ResponseTemplate::new(429)
+                .insert_header(RETRY_AFTER, "120")
+                .set_body_string("slow down"),
+        )
+        .await;
+
+        let Err(ProcessingError::Status {
+            status,
+            retry_after,
+        }) = process_task(&task(&url), Client::new()).await
+        else {
+            panic!("a refused download should report its status");
+        };
+
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(retry_after, Some(Duration::from_secs(120)));
+    }
+
+    #[tokio::test]
+    async fn a_page_served_instead_of_an_image_is_turned_away() {
+        let (_server, url) =
+            serve(ResponseTemplate::new(200).set_body_string("<html>404</html>")).await;
+
+        let Err(error) = process_task(&task(&url), Client::new()).await else {
+            panic!("a page of html should not become a cover");
+        };
+
+        assert!(matches!(error, ProcessingError::Decode(_)), "{error:?}");
     }
 }
