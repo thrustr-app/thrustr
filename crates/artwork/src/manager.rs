@@ -711,7 +711,11 @@ mod tests {
         manager
             .enqueue(task(1, 0, URL))
             .expect("a skipped task is not an error");
-        assert_eq!(manager.pending(), 1, "the duplicate artwork task was queued twice");
+        assert_eq!(
+            manager.pending(),
+            1,
+            "the duplicate artwork task was queued twice"
+        );
 
         manager
             .enqueue(task(1, 1, OTHER_URL))
@@ -719,7 +723,11 @@ mod tests {
         manager
             .enqueue(task(2, 0, URL))
             .expect("the task should queue");
-        assert_eq!(manager.pending(), 3, "distinct artwork tasks should all be queued");
+        assert_eq!(
+            manager.pending(),
+            3,
+            "distinct artwork tasks should all be queued"
+        );
     }
 
     #[tokio::test]
