@@ -1,7 +1,7 @@
 use crate::tokio::Tokio;
 use artwork::ArtworkService;
-use connectivity::{ConnectivityConfig, ConnectivityManager};
 use gpui::App;
+use net::{ConnectivityConfig, ConnectivityManager};
 use sqlite::SqliteStorage;
 use std::sync::Arc;
 

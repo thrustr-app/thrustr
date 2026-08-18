@@ -252,19 +252,17 @@ dependencies = [
  "bytes",
  "chrono",
  "config",
- "connectivity",
  "dashmap",
  "domain",
  "image",
  "lru",
- "rand 0.10.2",
+ "net",
  "reqwest",
  "runtime",
  "tempfile",
  "thiserror 2.0.19",
  "tokio",
  "tracing",
- "url",
  "webp",
  "wiremock",
 ]
@@ -1295,16 +1293,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "connectivity"
-version = "0.1.0"
-dependencies = [
- "futures",
- "runtime",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4894,6 +4882,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "net"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "http",
+ "rand 0.10.2",
+ "runtime",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7950,7 +7952,6 @@ dependencies = [
  "assets",
  "component",
  "config",
- "connectivity",
  "domain",
  "event",
  "futures",
@@ -7958,6 +7959,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "lru",
+ "net",
  "plugin",
  "runtime",
  "serde_json",

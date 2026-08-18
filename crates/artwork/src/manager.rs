@@ -3,12 +3,11 @@ use crate::{
     processing::{ProcessedArtwork, ProcessingError, process_task},
 };
 use config::paths::artwork_path_in;
-use connectivity::ConnectivityManager;
 use dashmap::{DashMap, DashSet};
 use domain::artwork::{Artwork, ArtworkRepository};
 use image::ImageError;
 use lru::LruCache;
-use rand::RngExt;
+use net::{ConnectivityManager, backoff, host_of, jitter};
 use reqwest::{Client, StatusCode};
 use runtime::TokioHandle;
 use std::{
@@ -29,7 +28,6 @@ use tokio::{
     time::sleep,
 };
 use tracing::{debug, error, warn};
-use url::Url;
 
 /// Tries within a single run, before the url is set aside for later.
 const MAX_ATTEMPTS: u32 = 3;
@@ -45,8 +43,6 @@ const DEFAULT_THROTTLE: Duration = Duration::from_secs(10);
 const MAX_THROTTLE: Duration = Duration::from_mins(10);
 
 const MAX_TRACKED_URLS: usize = 1024;
-
-const RECOVERY_JITTER_MAX: Duration = Duration::from_millis(500);
 
 fn cooldown(attempts: u32) -> Duration {
     match attempts {
@@ -345,10 +341,6 @@ async fn run_with_retry(
     }
 }
 
-fn backoff(attempts: u32) -> Duration {
-    Duration::from_secs(2u64.pow(attempts.saturating_sub(1))) + jitter()
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Recovery {
     ThrottleHost(Duration),
@@ -421,10 +413,6 @@ async fn without_slot(
     inner.slot().await
 }
 
-fn host_of(url: &str) -> Option<String> {
-    Url::parse(url).ok()?.host_str().map(str::to_string)
-}
-
 async fn finalize(
     task: &ArtworkTask,
     processed: ProcessedArtwork,
@@ -480,16 +468,9 @@ async fn write_artwork(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A short random delay, so tasks that were held back by the same thing do not
-/// all come back at once.
-fn jitter() -> Duration {
-    rand::rng().random_range(Duration::ZERO..RECOVERY_JITTER_MAX)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use connectivity::ConnectivityConfig;
     use domain::{
         artwork::{ArtworkKind, Color},
         game::GameId,
@@ -501,6 +482,7 @@ mod tests {
             UnsupportedError, UnsupportedErrorKind,
         },
     };
+    use net::ConnectivityConfig;
     use reqwest::header::RETRY_AFTER;
     use std::{io, io::Cursor};
     use tempfile::TempDir;
@@ -712,36 +694,6 @@ mod tests {
             .expect_err("the request should not build");
 
         check_recovery(ProcessingError::Request(error), Recovery::ThrottleUrl);
-    }
-
-    #[track_caller]
-    fn check_backoff(attempts: u32, base: Duration) {
-        let delay = backoff(attempts);
-
-        assert!(
-            (base..base + RECOVERY_JITTER_MAX).contains(&delay),
-            "backoff for attempt {attempts} was {delay:?}, expected about {base:?}"
-        );
-    }
-
-    #[test]
-    fn backoff_doubles_and_carries_jitter() {
-        for (attempts, base) in [(0, 1), (1, 1), (2, 2), (3, 4), (4, 8)] {
-            check_backoff(attempts, Duration::from_secs(base));
-        }
-    }
-
-    #[track_caller]
-    fn check_host(url: &str, expected: Option<&str>) {
-        assert_eq!(host_of(url).as_deref(), expected, "host of {url}");
-    }
-
-    #[test]
-    fn hosts_come_from_the_url() {
-        check_host(URL, Some(HOST));
-        check_host("http://127.0.0.1:8080/cover.png", Some("127.0.0.1"));
-        check_host("cover.png", None);
-        check_host("file:///covers/cover.png", None);
     }
 
     fn parked_manager(artwork_dir: &Path) -> ArtworkManager {

@@ -12,10 +12,10 @@ artwork = { path = "crates/artwork" }
 assets = { path = "crates/assets" }
 component = { path = "crates/component" }
 config = { path = "crates/config" }
-connectivity = { path = "crates/connectivity" }
 domain = { path = "crates/domain" }
 event = { path = "crates/event" }
 game = { path = "crates/game" }
+net = { path = "crates/net" }
 pdk = { path = "crates/pdk" }
 plugin = { path = "crates/plugin" }
 runtime = { path = "crates/runtime" }
@@ -37,6 +37,9 @@ futures = "0.3"
 gpui = { git = "https://github.com/zed-industries/zed" }
 gpui_macros = { git = "https://github.com/zed-industries/zed" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
 lru = "0.18"
 paste = "1"
 rand = "0.10"

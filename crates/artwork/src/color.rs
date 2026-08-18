@@ -299,11 +299,15 @@ fn encode_srgb(value: f32) -> u8 {
 mod tests {
     use super::*;
     use image::{Rgb, RgbImage, Rgba, RgbaImage};
+    use std::ops::RangeInclusive;
 
     // Hues only need to be close enough, tests do not need the exact hue.
     const HUE_SLACK: f32 = 4.0;
-    const EXPECTED_LIGHTNESS_RANGE: std::ops::RangeInclusive<f32> =
-        (MIN_ACCENT_LIGHTNESS - 0.01)..=(MAX_ACCENT_LIGHTNESS + 0.01);
+
+    const LIGHTNESS_SLACK: f32 = 0.01;
+    const EXPECTED_LIGHTNESS_RANGE: RangeInclusive<f32> =
+        (MIN_ACCENT_LIGHTNESS - LIGHTNESS_SLACK)..=(MAX_ACCENT_LIGHTNESS + LIGHTNESS_SLACK);
+
     const MIN_ACCENT_SATURATION: f32 = 0.2;
 
     const RED: Color = Color::rgb(200, 30, 30);
@@ -394,7 +398,7 @@ mod tests {
         DynamicImage::ImageRgb8(img)
     }
 
-    fn hsv(degrees: f32) -> Color {
+    fn hue_color(degrees: f32) -> Color {
         let sector = degrees.rem_euclid(360.0) / 60.0;
         let byte = |value: f32| (value * 255.0).round() as u8;
         let (rise, fall) = (byte(sector.fract()), byte(1.0 - sector.fract()));
@@ -447,7 +451,7 @@ mod tests {
     #[test]
     fn every_hue_on_the_wheel_comes_back_as_itself() {
         for degrees in (0..360).step_by(5) {
-            let color = hsv(degrees as f32);
+            let color = hue_color(degrees as f32);
             check(solid(color), Expected::Hue(color));
         }
     }

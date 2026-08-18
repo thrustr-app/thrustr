@@ -1,10 +1,10 @@
 use crate::{ArtworkReady, ArtworkTask, manager::ArtworkManager};
 use config::paths::artwork_dir;
-use connectivity::ConnectivityManager;
 use domain::{
     artwork::{ArtworkKind, ArtworkRepository},
     game::{GameId, GameRepository},
 };
+use net::ConnectivityManager;
 use runtime::TokioHandle;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Notify, broadcast};

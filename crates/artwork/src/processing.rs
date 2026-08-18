@@ -1,12 +1,10 @@
 use crate::{ArtworkTask, color::extract_accent};
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use domain::artwork::Color;
 use image::{DynamicImage, ImageError, RgbImage, RgbaImage, imageops::FilterType};
-use reqwest::{
-    Client, StatusCode,
-    header::{HeaderMap, RETRY_AFTER},
-};
+use net::HeaderMapExt;
+use reqwest::{Client, StatusCode};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::task::{JoinError, spawn_blocking};
@@ -73,23 +71,11 @@ async fn download_image(url: &str, client: Client) -> Result<Bytes, ProcessingEr
     if !status.is_success() {
         return Err(ProcessingError::Status {
             status,
-            retry_after: retry_after(response.headers(), Utc::now()),
+            retry_after: response.headers().retry_after(Utc::now()),
         });
     }
 
     Ok(response.bytes().await?)
-}
-
-/// `now` is passed as a parameter so tests are deterministic.
-fn retry_after(headers: &HeaderMap, now: DateTime<Utc>) -> Option<Duration> {
-    let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
-
-    if let Ok(seconds) = value.parse::<u64>() {
-        return Some(Duration::from_secs(seconds));
-    }
-
-    let deadline = DateTime::parse_from_rfc2822(value).ok()?;
-    (deadline.to_utc() - now).to_std().ok()
 }
 
 fn decode_and_fit(bytes: &[u8]) -> Result<DynamicImage, ProcessingError> {
@@ -150,7 +136,7 @@ mod tests {
     use super::*;
     use domain::{artwork::ArtworkKind, game::GameId};
     use image::{GrayImage, ImageFormat, Luma, Rgb, Rgba};
-    use reqwest::header::HeaderValue;
+    use reqwest::header::RETRY_AFTER;
     use std::io::Cursor;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
@@ -161,48 +147,6 @@ mod tests {
     const BLUE: Rgb<u8> = Rgb([30, 120, 200]);
 
     const QUALITY: f32 = 75.;
-
-    /// Tests are measured against this date.
-    fn now() -> DateTime<Utc> {
-        DateTime::parse_from_rfc2822("Wed, 21 Oct 2099 03:46:00 GMT")
-            .expect("the test date should parse")
-            .to_utc()
-    }
-
-    #[track_caller]
-    fn check_retry_after(header: Option<&'static str>, expected: Option<Duration>) {
-        let mut headers = HeaderMap::new();
-        if let Some(value) = header {
-            headers.insert(RETRY_AFTER, HeaderValue::from_static(value));
-        }
-
-        assert_eq!(retry_after(&headers, now()), expected, "header {header:?}");
-    }
-
-    #[test]
-    fn retry_after_reads_a_delay() {
-        for (header, expected) in [
-            ("120", Duration::from_secs(120)),
-            ("0", Duration::ZERO),
-            ("  120  ", Duration::from_secs(120)),
-            ("Wed, 21 Oct 2099 03:48:00 GMT", Duration::from_secs(120)),
-        ] {
-            check_retry_after(Some(header), Some(expected));
-        }
-    }
-
-    #[test]
-    fn retry_after_ignores_what_it_cannot_use() {
-        for header in [
-            None,
-            Some("soon"),
-            Some("-5"),
-            // A date that has already passed.
-            Some("Wed, 30 Jun 2015 16:13:00 GMT"),
-        ] {
-            check_retry_after(header, None);
-        }
-    }
 
     fn image(w: u32, h: u32, color: Rgb<u8>) -> DynamicImage {
         DynamicImage::ImageRgb8(RgbImage::from_pixel(w, h, color))
@@ -435,7 +379,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_refused_download_carries_the_status_and_the_wait() {
+    async fn a_rate_limited_download_carries_the_status_and_retry_after() {
         let (_server, url) = serve(
             ResponseTemplate::new(429)
                 .insert_header(RETRY_AFTER, "120")
@@ -448,7 +392,7 @@ mod tests {
             retry_after,
         }) = process_task(&task(&url), Client::new()).await
         else {
-            panic!("a refused download should report its status");
+            panic!("a rate limited download should report its status");
         };
 
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
@@ -456,7 +400,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_page_served_instead_of_an_image_is_turned_away() {
+    async fn rejects_a_successful_non_image_response() {
         let (_server, url) =
             serve(ResponseTemplate::new(200).set_body_string("<html>404</html>")).await;
 
