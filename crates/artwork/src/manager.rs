@@ -749,7 +749,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn artwork_is_only_queued_once_per_slot() {
+    async fn duplicate_artwork_tasks_are_only_queued_once() {
         let dir = temp_dir();
         let manager = parked_manager(dir.path());
 
@@ -758,8 +758,8 @@ mod tests {
             .expect("the task should queue");
         manager
             .enqueue(task(1, 0, URL))
-            .expect("the task should queue");
-        assert_eq!(manager.pending(), 1, "the same slot was queued twice");
+            .expect("a skipped task is not an error");
+        assert_eq!(manager.pending(), 1, "the duplicate artwork task was queued twice");
 
         manager
             .enqueue(task(1, 1, OTHER_URL))
@@ -767,7 +767,7 @@ mod tests {
         manager
             .enqueue(task(2, 0, URL))
             .expect("the task should queue");
-        assert_eq!(manager.pending(), 3);
+        assert_eq!(manager.pending(), 3, "distinct artwork tasks should all be queued");
     }
 
     #[tokio::test]
