@@ -38,7 +38,7 @@ impl Color {
         Color { r, g, b, a }
     }
 
-    pub fn from_argb(argb: u32) -> Self {
+    pub fn from_argb_hex(argb: u32) -> Self {
         Self {
             a: (argb >> 24) as u8,
             r: ((argb >> 16) & 0xFF) as u8,
@@ -47,12 +47,20 @@ impl Color {
         }
     }
 
-    pub fn to_argb(self) -> u32 {
+    pub fn to_argb_hex(self) -> u32 {
         ((self.a as u32) << 24) | ((self.r as u32) << 16) | ((self.g as u32) << 8) | self.b as u32
+    }
+
+    pub fn to_rgba_hex(self) -> u32 {
+        ((self.r as u32) << 24) | ((self.g as u32) << 16) | ((self.b as u32) << 8) | self.a as u32
     }
 
     pub fn to_rgba(self) -> [u8; 4] {
         [self.r, self.g, self.b, self.a]
+    }
+
+    pub fn to_argb(self) -> [u8; 4] {
+        [self.a, self.r, self.g, self.b]
     }
 
     /// Normalizes the color channels to the `[0.0, 1.0]` range.
@@ -78,21 +86,21 @@ mod tests {
 
     #[test]
     fn colors_pack_into_rgba_order() {
-        assert_eq!(TEAL.to_argb(), 0xFF123456);
-        assert_eq!(Color::rgba(0, 0, 0xFF, 0x80).to_argb(), 0x800000FF);
+        assert_eq!(TEAL.to_argb_hex(), 0xFF123456);
+        assert_eq!(Color::rgba(0, 0, 0xFF, 0x80).to_argb_hex(), 0x800000FF);
     }
 
     #[test]
     fn colors_unpack_into_rgba_components() {
-        assert_eq!(Color::from_argb(0xFF123456), TEAL);
+        assert_eq!(Color::from_argb_hex(0xFF123456), TEAL);
         assert_eq!(
-            Color::from_argb(0x80123456),
+            Color::from_argb_hex(0x80123456),
             Color::rgba(0x12, 0x34, 0x56, 0x80)
         );
     }
 
     #[test]
     fn colors_survive_a_roundtrip_through_u32() {
-        assert_eq!(Color::from_argb(TEAL.to_argb()), TEAL);
+        assert_eq!(Color::from_argb_hex(TEAL.to_argb_hex()), TEAL);
     }
 }

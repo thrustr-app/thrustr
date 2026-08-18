@@ -13,7 +13,7 @@ impl ArtworkRepository for SqliteStorage {
         let row = NewArtworkRow {
             game_id: to_row_id(game_id),
             hash: &artwork.hash,
-            accent_color: artwork.accent_color.map(|c| c.to_argb() as i32),
+            accent_color: artwork.accent_color.map(|c| c.to_argb_hex() as i32),
             kind: artwork.kind.as_ref(),
             position: artwork.position as i32,
         };

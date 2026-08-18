@@ -24,7 +24,7 @@ pub(super) fn cover_path(hash: &str) -> Arc<Path> {
 }
 
 pub(super) fn accent_hsla(color: Color) -> Hsla {
-    rgba(color.to_argb()).into()
+    rgba(color.to_rgba_hex()).into()
 }
 
 #[derive(Clone)]
