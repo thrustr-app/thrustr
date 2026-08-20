@@ -69,3 +69,46 @@ fn workspace_dir() -> &'static Path {
         .nth(2)
         .expect("config crate should live two levels below the workspace root")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[track_caller]
+    fn check_artwork_path(dir: &str, hash: &str, extension: &str, expected: &str) {
+        assert_eq!(
+            artwork_path_in(Path::new(dir), hash, extension),
+            PathBuf::from(expected)
+        );
+    }
+
+    #[test]
+    fn stores_artwork_in_hash_prefix_directories() {
+        check_artwork_path(
+            "/artwork",
+            "abcdef123456",
+            "webp",
+            "/artwork/ab/cd/abcdef123456.webp",
+        );
+    }
+
+    #[test]
+    fn uses_the_requested_extension() {
+        check_artwork_path(
+            "/artwork",
+            "abcdef123456",
+            "foo",
+            "/artwork/ab/cd/abcdef123456.foo",
+        );
+    }
+
+    #[test]
+    fn preserves_the_base_directory() {
+        check_artwork_path(
+            "/data/library/artwork",
+            "abcdef123456",
+            "webp",
+            "/data/library/artwork/ab/cd/abcdef123456.webp",
+        );
+    }
+}
