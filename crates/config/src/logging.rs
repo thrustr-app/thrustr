@@ -25,7 +25,8 @@ pub fn init() -> WorkerGuard {
 
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
+        .from_env_lossy()
+        .add_directive("gpui::asset_cache=off".parse().unwrap());
 
     let file_layer = fmt::layer().with_ansi(false).with_writer(non_blocking);
 
