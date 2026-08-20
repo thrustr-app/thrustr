@@ -15,12 +15,12 @@ pub fn db_path() -> PathBuf {
     data_dir().join("database").join(DB_NAME)
 }
 
-pub fn artwork_dir() -> PathBuf {
-    data_dir().join("artwork")
-}
-
 pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
+}
+
+pub fn artwork_dir() -> PathBuf {
+    data_dir().join("artwork")
 }
 
 pub fn artwork_path(hash: &str, extension: &str) -> PathBuf {
