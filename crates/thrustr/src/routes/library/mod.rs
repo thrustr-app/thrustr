@@ -162,12 +162,14 @@ impl Library {
         if let Some((chunk_idx, offset)) = position {
             let entry = &mut self.chunks_mut().peek_mut(&chunk_idx).unwrap()[offset];
             let path = cover_path(&update.hash);
-            entry.cover_path = Some(path.clone());
+            entry.cover_path = path.clone();
             entry.accent_color = update.accent_color.map(accent_hsla);
 
-            let resource = Resource::Path(path);
-            self.image_cache
-                .update(cx, |cache, cx| cache.remove(&resource, cx));
+            if let Some(path) = path {
+                let resource = Resource::Path(path);
+                self.image_cache
+                    .update(cx, |cache, cx| cache.remove(&resource, cx));
+            }
 
             if self.is_item_visible(chunk_idx * CHUNK_SIZE + offset) {
                 cx.notify();

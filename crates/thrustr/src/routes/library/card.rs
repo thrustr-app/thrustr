@@ -19,8 +19,8 @@ use gpui::{
 use std::{collections::HashMap, path::Path, sync::Arc};
 use theme::ThemeExt;
 
-pub(super) fn cover_path(hash: &str) -> Arc<Path> {
-    paths::artwork_path(hash, "webp").into()
+pub(super) fn cover_path(hash: &str) -> Option<Arc<Path>> {
+    paths::artwork_path(hash, "webp").ok().map(Into::into)
 }
 
 pub(super) fn accent_hsla(color: Color) -> Hsla {
@@ -41,10 +41,7 @@ pub(super) struct GameEntry {
 impl GameEntry {
     pub(super) fn from_list_item(item: GameListItem, icons: &HashMap<String, Arc<Image>>) -> Self {
         let (cover_path, accent_color) = match item.cover {
-            Some(art) => (
-                Some(cover_path(&art.hash)),
-                art.accent_color.map(accent_hsla),
-            ),
+            Some(art) => (cover_path(&art.hash), art.accent_color.map(accent_hsla)),
             None => (None, None),
         };
         Self {

@@ -1290,6 +1290,7 @@ dependencies = [
  "chrono",
  "directories",
  "rustls",
+ "thiserror 2.0.20",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

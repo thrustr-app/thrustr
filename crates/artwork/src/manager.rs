@@ -421,7 +421,7 @@ async fn finalize(
     updates: &broadcast::Sender<ArtworkReady>,
 ) -> anyhow::Result<()> {
     let ProcessedArtwork { bytes, hash, color } = processed;
-    write_artwork(&artwork_path_in(artwork_dir, &hash, "webp"), &bytes).await?;
+    write_artwork(&artwork_path_in(artwork_dir, &hash, "webp")?, &bytes).await?;
 
     let game_id = task.game_id;
     let record = Artwork {
@@ -1049,7 +1049,7 @@ mod tests {
         }
 
         fn artwork_file(&self, hash: &str) -> PathBuf {
-            artwork_path_in(self.dir.path(), hash, "webp")
+            artwork_path_in(self.dir.path(), hash, "webp").expect("artworh path should be valid")
         }
 
         fn covers_on_disk(&self) -> Vec<PathBuf> {

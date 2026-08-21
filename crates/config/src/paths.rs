@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
 };
+use thiserror::Error;
 
 static PROJECT_DIRS: OnceLock<ProjectDirs> = OnceLock::new();
 const DB_NAME: &str = "thrustr.db";
@@ -19,21 +20,35 @@ pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
 }
 
+#[derive(Debug, PartialEq, Error)]
+pub enum ArtworkPathError {
+    #[error("invalid artwork hash '{0}'")]
+    InvalidHash(String),
+}
+
 pub fn artwork_dir() -> PathBuf {
     data_dir().join("artwork")
 }
 
-pub fn artwork_path(hash: &str, extension: &str) -> PathBuf {
+pub fn artwork_path(hash: &str, extension: &str) -> Result<PathBuf, ArtworkPathError> {
     artwork_path_in(&artwork_dir(), hash, extension)
 }
 
-pub fn artwork_path_in(dir: &Path, hash: &str, extension: &str) -> PathBuf {
+pub fn artwork_path_in(
+    dir: &Path,
+    hash: &str,
+    extension: &str,
+) -> Result<PathBuf, ArtworkPathError> {
+    if hash.len() < 4 {
+        return Err(ArtworkPathError::InvalidHash(hash.to_owned()));
+    }
+
     let mut path = dir.to_path_buf();
     path.push(&hash[0..2]);
     path.push(&hash[2..4]);
     path.push(hash);
     path.set_extension(extension);
-    path
+    Ok(path)
 }
 
 pub fn plugins_dir() -> PathBuf {
@@ -77,7 +92,7 @@ mod tests {
     #[track_caller]
     fn check_artwork_path(dir: &str, hash: &str, extension: &str, expected: &str) {
         assert_eq!(
-            artwork_path_in(Path::new(dir), hash, extension),
+            artwork_path_in(Path::new(dir), hash, extension).expect("artwork path should be valid"),
             PathBuf::from(expected)
         );
     }
@@ -109,6 +124,14 @@ mod tests {
             "abcdef123456",
             "webp",
             "/data/library/artwork/ab/cd/abcdef123456.webp",
+        );
+    }
+
+    #[test]
+    fn malformed_hash_returns_error() {
+        assert_eq!(
+            artwork_path_in(Path::new("/artwork"), "abc", "webp"),
+            Err(ArtworkPathError::InvalidHash("abc".to_string()))
         );
     }
 }
