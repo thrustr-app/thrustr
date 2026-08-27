@@ -428,14 +428,14 @@ async fn finalize(
         hash: hash.clone(),
         kind: task.kind,
         position: task.position,
-        accent_color: color,
+        accent: color,
     };
     spawn_blocking(move || repository.insert(game_id, &record)).await??;
 
     let _ = updates.send(ArtworkReady {
         game_id,
         hash,
-        accent_color: color,
+        accent: color,
     });
     Ok(())
 }
@@ -893,7 +893,7 @@ mod tests {
         hash: String,
         kind: ArtworkKind,
         position: u32,
-        accent_color: Option<Color>,
+        accent: Option<Color>,
     }
 
     #[derive(Default)]
@@ -930,7 +930,7 @@ mod tests {
                     hash: artwork.hash.clone(),
                     kind: artwork.kind,
                     position: artwork.position,
-                    accent_color: artwork.accent_color,
+                    accent: artwork.accent,
                 });
 
             Ok(())
@@ -1071,9 +1071,7 @@ mod tests {
             .expect("the cover should be on disk under its hash");
         image::load_from_memory(&bytes).expect("the cover on disk should be an image");
 
-        let accent = ready
-            .accent_color
-            .expect("a red cover should have an accent");
+        let accent = ready.accent.expect("a red cover should have an accent");
         assert!(
             accent.r > accent.g && accent.r > accent.b,
             "expected a red accent, got {accent:?}"
@@ -1086,7 +1084,7 @@ mod tests {
                 hash: ready.hash,
                 kind: ArtworkKind::Cover,
                 position: 0,
-                accent_color: ready.accent_color,
+                accent: ready.accent,
             }]
         );
     }

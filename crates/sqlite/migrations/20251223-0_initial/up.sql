@@ -30,7 +30,7 @@ CREATE TABLE artwork (
   kind TEXT NOT NULL,
   position INTEGER NOT NULL DEFAULT 0,
   hash TEXT NOT NULL,
-  accent_color INTEGER,
+  accent INTEGER,
   PRIMARY KEY (game_id, kind, position),
   CHECK (
     kind = 'screenshot'

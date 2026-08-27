@@ -13,7 +13,7 @@ impl ArtworkRepository for SqliteStorage {
         let row = NewArtworkRow {
             game_id: to_row_id(game_id),
             hash: &artwork.hash,
-            accent_color: artwork.accent_color.map(|c| c.to_argb_hex() as i32),
+            accent: artwork.accent.map(|c| c.to_argb_hex() as i32),
             kind: artwork.kind.as_ref(),
             position: artwork.position as i32,
         };
@@ -23,10 +23,7 @@ impl ArtworkRepository for SqliteStorage {
             .values(&row)
             .on_conflict((dsl::game_id, dsl::kind, dsl::position))
             .do_update()
-            .set((
-                dsl::hash.eq(&row.hash),
-                dsl::accent_color.eq(row.accent_color),
-            ))
+            .set((dsl::hash.eq(&row.hash), dsl::accent.eq(row.accent)))
             .execute(&mut conn)?;
 
         Ok(())

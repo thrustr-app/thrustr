@@ -18,7 +18,7 @@ diesel::table! {
         kind -> Text,
         position -> Integer,
         hash -> Text,
-        accent_color -> Nullable<Integer>,
+        accent -> Nullable<Integer>,
     }
 }
 

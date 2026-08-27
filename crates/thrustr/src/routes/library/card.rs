@@ -34,14 +34,14 @@ pub(super) struct GameEntry {
     pub name: SharedString,
     pub cover_url: Option<SharedString>,
     pub cover_path: Option<Arc<Path>>,
-    pub accent_color: Option<Hsla>,
+    pub accent: Option<Hsla>,
     pub source_icon: Option<Arc<Image>>,
 }
 
 impl GameEntry {
     pub(super) fn from_list_item(item: GameListItem, icons: &HashMap<String, Arc<Image>>) -> Self {
-        let (cover_path, accent_color) = match item.cover {
-            Some(art) => (cover_path(&art.hash), art.accent_color.map(accent_hsla)),
+        let (cover_path, accent) = match item.cover {
+            Some(art) => (cover_path(&art.hash), art.accent.map(accent_hsla)),
             None => (None, None),
         };
         Self {
@@ -51,7 +51,7 @@ impl GameEntry {
             cover_url: item.cover_url.map(Into::into),
             source_icon: icons.get(&item.source_id).cloned(),
             cover_path,
-            accent_color,
+            accent,
         }
     }
 }
@@ -178,7 +178,7 @@ impl RenderOnce for GameCard {
         }
 
         let accent = game
-            .accent_color
+            .accent
             .unwrap_or(theme.colors.card_background)
             .opacity(0.3);
 

@@ -31,5 +31,5 @@ impl ArtworkTask {
 pub struct ArtworkReady {
     pub game_id: GameId,
     pub hash: String,
-    pub accent_color: Option<Color>,
+    pub accent: Option<Color>,
 }
