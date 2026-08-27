@@ -1,5 +1,5 @@
 use super::grid::{GridDims, GridMetrics};
-use domain::game::SectionIndex;
+use domain::section_index::SectionIndex;
 use gpui::{
     App, Entity, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, SharedString, Size,
     Styled, UniformListScrollHandle, Window, div, px,

@@ -2,11 +2,25 @@ use crate::{
     artwork::{Artwork, ArtworkKind},
     id::Id,
     platform::Platform,
+    section_index::{SectionIndex, name_bucket},
 };
 use anyhow::Result;
 use std::collections::HashMap;
+use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 
 pub type GameId = Id<Game>;
+
+pub trait GameExt {
+    fn name(&self) -> &str;
+    fn sort_name(&self) -> String {
+        self.name()
+            .trim()
+            .nfd()
+            .filter(|c| !is_combining_mark(*c))
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+}
 
 #[derive(Debug)]
 pub struct Game {
@@ -18,6 +32,12 @@ pub struct Game {
     pub cover: Option<Artwork>,
     pub summary: Option<String>,
     pub description: Option<String>,
+}
+
+impl GameExt for Game {
+    fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Debug)]
@@ -47,6 +67,12 @@ pub struct NewGame {
     pub description: Option<String>,
 }
 
+impl GameExt for NewGame {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 #[derive(Debug)]
 pub struct GameListItem {
     pub id: GameId,
@@ -56,72 +82,26 @@ pub struct GameListItem {
     pub cover: Option<Artwork>,
 }
 
-/// The ordered game IDs and their section boundaries.
-/// Sections describe exactly the order `ids` is in.
+/// Ordered game IDs and their section boundaries.
 #[derive(Debug, Default)]
 pub struct GameIndex {
     pub ids: Vec<GameId>,
     pub sections: SectionIndex,
 }
 
-/// A contiguous run of games sharing a sort label.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Section {
-    pub label: String,
-    pub start: usize,
-}
+impl GameIndex {
+    /// Builds an index from `(id, sort_name)` pairs already ordered by sort
+    /// name, then id.
+    pub fn from_sorted(items: impl IntoIterator<Item = (GameId, String)>) -> Self {
+        let items = items.into_iter();
+        let mut ids = Vec::with_capacity(items.size_hint().0);
+        let sections = SectionIndex::from_buckets(items.map(|(id, sort_name)| {
+            ids.push(id);
+            name_bucket(&sort_name)
+        }));
 
-/// Section boundaries over an ordered game list.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct SectionIndex(Vec<Section>);
-
-impl SectionIndex {
-    pub fn from_buckets(buckets: impl IntoIterator<Item = char>) -> Self {
-        let mut sections = Vec::new();
-        let mut current = None;
-        for (start, bucket) in buckets.into_iter().enumerate() {
-            if current == Some(bucket) {
-                continue;
-            }
-            current = Some(bucket);
-            sections.push(Section {
-                label: bucket.to_string(),
-                start,
-            });
-        }
-        Self(sections)
+        Self { ids, sections }
     }
-
-    pub fn sections(&self) -> &[Section] {
-        &self.0
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Label of the section containing `index`.
-    pub fn label_for(&self, index: usize) -> Option<&str> {
-        let next = self.0.partition_point(|section| section.start <= index);
-        Some(self.0.get(next.checked_sub(1)?)?.label.as_str())
-    }
-
-    /// First index carrying `label`.
-    pub fn start_of(&self, label: &str) -> Option<usize> {
-        self.0
-            .iter()
-            .find(|section| section.label == label)
-            .map(|section| section.start)
-    }
-}
-
-/// Groups a game name under `#` or `A`-`Z` for the library index.
-pub fn name_bucket(name: &str) -> char {
-    name.chars()
-        .find(|c| !c.is_whitespace())
-        .map(|c| c.to_ascii_uppercase())
-        .filter(char::is_ascii_alphabetic)
-        .unwrap_or('#')
 }
 
 pub trait GameRepository: Send + Sync {
@@ -151,50 +131,31 @@ pub trait GameRepository: Send + Sync {
 mod tests {
     use super::*;
 
-    fn index(names: &[&str]) -> SectionIndex {
-        SectionIndex::from_buckets(names.iter().map(|name| name_bucket(name)))
+    struct Named(String);
+
+    impl GameExt for Named {
+        fn name(&self) -> &str {
+            &self.0
+        }
+    }
+
+    #[track_caller]
+    fn check_sort_name(name: &str, expected: &str) {
+        let actual = Named(name.to_string()).sort_name();
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn names_bucket_under_their_first_letter() {
-        assert_eq!(name_bucket("Portal"), 'P');
-        assert_eq!(name_bucket("portal"), 'P');
-        assert_eq!(name_bucket("  Portal"), 'P');
-    }
-
-    #[test]
-    fn non_ascii_alphabetic_names_bucket_under_hash() {
-        assert_eq!(name_bucket("7 Days to Die"), '#');
-        assert_eq!(name_bucket("!Sokoban"), '#');
-        assert_eq!(name_bucket("Ábaco"), '#');
-        assert_eq!(name_bucket(""), '#');
-    }
-
-    #[test]
-    fn labels_every_position_in_a_run() {
-        let index = index(&["Alpha", "Amber", "Beta", "Zeta"]);
-
-        assert_eq!(index.label_for(0), Some("A"));
-        assert_eq!(index.label_for(1), Some("A"));
-        assert_eq!(index.label_for(2), Some("B"));
-        assert_eq!(index.label_for(3), Some("Z"));
-    }
-
-    #[test]
-    fn labels_positions_past_the_last_section() {
-        let index = index(&["Alpha"]);
-
-        assert_eq!(index.label_for(99), Some("A"));
-        assert_eq!(SectionIndex::default().label_for(0), None);
-    }
-
-    #[test]
-    fn finds_the_first_run_of_a_label() {
-        let index = index(&["Alpha", "Zeta", "alpha"]);
-
-        assert_eq!(index.sections().len(), 3);
-        assert_eq!(index.start_of("A"), Some(0));
-        assert_eq!(index.label_for(2), Some("A"));
-        assert_eq!(index.start_of("Q"), None);
+    fn sort_name_normalizes_game_name() {
+        check_sort_name("", "");
+        check_sort_name("Zelda", "zelda");
+        check_sort_name("ZELDA", "zelda");
+        check_sort_name("7 Days to Die", "7 days to die");
+        check_sort_name(".hack//G.U.", ".hack//g.u.");
+        check_sort_name("Café", "cafe");
+        check_sort_name(" naïve ", "naive");
+        check_sort_name("São Paulo", "sao paulo");
+        check_sort_name("Å", "a");
+        check_sort_name("Straße", "straße");
     }
 }

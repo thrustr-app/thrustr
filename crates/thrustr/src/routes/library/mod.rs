@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use artwork::ArtworkReady;
-use domain::game::{GameId, SectionIndex};
+use domain::{game::GameId, section_index::SectionIndex};
 use event::Topic;
 use gpui::{
     AnyElement, AppContext, Context, Entity, FocusHandle, Image, InteractiveElement, IntoElement,

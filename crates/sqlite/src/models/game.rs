@@ -5,7 +5,7 @@ use diesel::{
     prelude::{Identifiable, Insertable, Queryable},
     sqlite::Sqlite,
 };
-use domain::game::{Game, GameSource, NewGame};
+use domain::game::{Game, GameExt, GameSource, NewGame};
 use serde_json::Value;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
@@ -27,6 +27,7 @@ pub struct GameRow {
 #[diesel(check_for_backend(Sqlite))]
 pub struct NewGameRow<'a> {
     pub name: &'a str,
+    pub sort_name: String,
     pub source_id: &'a str,
     pub lookup_id: &'a str,
     pub external_ids: Value,
@@ -57,6 +58,7 @@ impl<'a> From<&'a NewGame> for NewGameRow<'a> {
     fn from(game: &'a NewGame) -> Self {
         Self {
             name: &game.name,
+            sort_name: game.sort_name(),
             source_id: &game.source.id,
             lookup_id: &game.source.lookup_id,
             external_ids: serde_json::to_value(&game.source.external_ids).unwrap_or_default(),

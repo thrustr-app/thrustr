@@ -2,6 +2,7 @@ diesel::table! {
     games (id) {
         id -> BigInt,
         name -> Text,
+        sort_name -> Text,
         source_id -> Text,
         lookup_id -> Text,
         external_ids -> Json,

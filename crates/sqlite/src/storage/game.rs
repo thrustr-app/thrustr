@@ -4,15 +4,11 @@ use crate::models::{ArtworkRow, GameRow, NewGameRow};
 use anyhow::Result;
 use diesel::{
     BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
-    QueryableByName, RunQueryDsl, SelectableHelper,
-    dsl::sql,
-    sql_query,
-    sql_types::{BigInt, Text, Untyped},
+    QueryableByName, RunQueryDsl, SelectableHelper, sql_query,
+    sql_types::{BigInt, Text},
 };
 use domain::artwork::{Artwork, ArtworkKind};
-use domain::game::{
-    Game, GameId, GameIndex, GameListItem, GameRepository, NewGame, SectionIndex, name_bucket,
-};
+use domain::game::{Game, GameId, GameIndex, GameListItem, GameRepository, NewGame};
 use std::collections::HashMap;
 use tracing::warn;
 
@@ -71,26 +67,30 @@ impl GameRepository for SqliteStorage {
 
         if let Some(match_query) = match_query {
             let rows = sql_query(
-                "SELECT games.id AS id, games.name AS name \
+                "SELECT games.id AS id, games.sort_name AS sort_name \
                  FROM games \
                  JOIN games_fts ON games_fts.rowid = games.id \
                  WHERE games_fts MATCH ? \
-                 ORDER BY games.name COLLATE NOCASE ASC, games.id ASC",
+                 ORDER BY games.sort_name ASC, games.id ASC",
             )
             .bind::<Text, _>(match_query)
             .load::<IndexRow>(&mut conn)?;
 
-            return Ok(build_index(rows.into_iter().map(|row| (row.id, row.name))));
+            return Ok(GameIndex::from_sorted(
+                rows.into_iter()
+                    .map(|row| (from_row_id(row.id), row.sort_name)),
+            ));
         }
 
-        // Ordering by column would fall back to BINARY
-        // and sort every lowercase name after every uppercase one.
         let rows = dsl::games
-            .order(sql::<Untyped>("name COLLATE NOCASE ASC, id ASC"))
-            .select((dsl::id, dsl::name))
+            .order((dsl::sort_name.asc(), dsl::id.asc()))
+            .select((dsl::id, dsl::sort_name))
             .load::<(i64, String)>(&mut conn)?;
 
-        Ok(build_index(rows))
+        Ok(GameIndex::from_sorted(
+            rows.into_iter()
+                .map(|(id, sort_name)| (from_row_id(id), sort_name)),
+        ))
     }
 
     fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {
@@ -162,18 +162,7 @@ struct IndexRow {
     #[diesel(sql_type = BigInt)]
     id: i64,
     #[diesel(sql_type = Text)]
-    name: String,
-}
-
-fn build_index(rows: impl IntoIterator<Item = (i64, String)>) -> GameIndex {
-    let rows = rows.into_iter();
-    let mut ids = Vec::with_capacity(rows.size_hint().0);
-    let sections = SectionIndex::from_buckets(rows.map(|(id, name)| {
-        ids.push(from_row_id(id));
-        name_bucket(&name)
-    }));
-
-    GameIndex { ids, sections }
+    sort_name: String,
 }
 
 fn fts_match_query(input: &str) -> String {
