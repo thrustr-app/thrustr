@@ -123,69 +123,236 @@ mod tests {
         Error::Other("network".into())
     }
 
-    #[test]
-    fn init_advances_from_inactive_to_active() {
-        let status = Status::Inactive.apply(StatusEvent::InitStarted).unwrap();
-        assert!(status.is_initializing());
+    #[track_caller]
+    fn check_apply(status: Status, event: StatusEvent, expected: Option<Status>) {
+        assert_eq!(status.apply(event), expected);
+    }
 
-        let status = status.apply(StatusEvent::InitSucceeded).unwrap();
-        assert!(status.is_active());
+    struct AllowedActions {
+        can_init: bool,
+        can_login: bool,
+        can_logout: bool,
+        can_configure: bool,
+    }
+
+    #[track_caller]
+    fn check_allowed_actions(status: Status, expected: AllowedActions) {
+        assert_eq!(status.can_init(), expected.can_init, "can_init");
+        assert_eq!(status.can_login(), expected.can_login, "can_login");
+        assert_eq!(status.can_logout(), expected.can_logout, "can_logout");
+        assert_eq!(
+            status.can_configure(),
+            expected.can_configure,
+            "can_configure"
+        );
     }
 
     #[test]
-    fn init_failure_lands_init_error() {
+    fn allowed_actions_are_determined_by_status() {
+        check_allowed_actions(
+            Status::Inactive,
+            AllowedActions {
+                can_init: true,
+                can_login: false,
+                can_logout: false,
+                can_configure: false,
+            },
+        );
+        check_allowed_actions(
+            Status::Initializing,
+            AllowedActions {
+                can_init: false,
+                can_login: false,
+                can_logout: false,
+                can_configure: false,
+            },
+        );
+        check_allowed_actions(
+            Status::Active,
+            AllowedActions {
+                can_init: false,
+                can_login: false,
+                can_logout: true,
+                can_configure: true,
+            },
+        );
+        check_allowed_actions(
+            Status::Unauthenticated,
+            AllowedActions {
+                can_init: false,
+                can_login: true,
+                can_logout: false,
+                can_configure: true,
+            },
+        );
+        check_allowed_actions(
+            Status::InitError(auth_error()),
+            AllowedActions {
+                can_init: true,
+                can_login: true,
+                can_logout: false,
+                can_configure: false,
+            },
+        );
+        check_allowed_actions(
+            Status::InitError(config_error()),
+            AllowedActions {
+                can_init: true,
+                can_login: false,
+                can_logout: true,
+                can_configure: true,
+            },
+        );
+        check_allowed_actions(
+            Status::InitError(other_error()),
+            AllowedActions {
+                can_init: true,
+                can_login: false,
+                can_logout: true,
+                can_configure: false,
+            },
+        );
+        check_allowed_actions(
+            Status::Error(auth_error()),
+            AllowedActions {
+                can_init: false,
+                can_login: true,
+                can_logout: false,
+                can_configure: false,
+            },
+        );
+        check_allowed_actions(
+            Status::Error(config_error()),
+            AllowedActions {
+                can_init: false,
+                can_login: false,
+                can_logout: true,
+                can_configure: true,
+            },
+        );
+        check_allowed_actions(
+            Status::Error(other_error()),
+            AllowedActions {
+                can_init: false,
+                can_login: false,
+                can_logout: true,
+                can_configure: false,
+            },
+        );
+    }
+
+    #[test]
+    fn error_message_present_only_for_error_states() {
+        for status in [
+            Status::Inactive,
+            Status::Initializing,
+            Status::Active,
+            Status::Unauthenticated,
+        ] {
+            assert_eq!(status.error_message(), None);
+        }
+        assert_eq!(
+            Status::Error(auth_error()).error_message(),
+            Some(auth_error().to_string())
+        );
+        assert_eq!(
+            Status::InitError(config_error()).error_message(),
+            Some(config_error().to_string())
+        );
+    }
+
+    #[test]
+    fn is_any_error_covers_both_error_states() {
+        assert!(Status::Error(other_error()).is_any_error());
+        assert!(Status::InitError(other_error()).is_any_error());
+        assert!(!Status::Active.is_any_error());
+    }
+
+    #[test]
+    fn init_advances_from_inactive_to_active() {
+        check_apply(
+            Status::Inactive,
+            StatusEvent::InitStarted,
+            Some(Status::Initializing),
+        );
+        check_apply(
+            Status::Initializing,
+            StatusEvent::InitSucceeded,
+            Some(Status::Active),
+        );
+    }
+
+    #[test]
+    fn init_can_be_retried_after_any_init_error() {
         for error in [auth_error(), config_error(), other_error()] {
-            let status = Status::Initializing
-                .apply(StatusEvent::InitFailed(error))
-                .unwrap();
-            assert!(status.is_init_error());
+            check_apply(
+                Status::InitError(error),
+                StatusEvent::InitStarted,
+                Some(Status::Initializing),
+            );
         }
     }
 
     #[test]
-    fn init_auth_failure_allows_login() {
-        let status = Status::Initializing
-            .apply(StatusEvent::InitFailed(auth_error()))
-            .unwrap();
-        assert!(status.can_login());
+    fn init_failure_records_the_cause() {
+        for error in [auth_error(), config_error(), other_error()] {
+            check_apply(
+                Status::Initializing,
+                StatusEvent::InitFailed(error.clone()),
+                Some(Status::InitError(error)),
+            );
+        }
     }
 
     #[test]
-    fn login_always_requires_reinit() {
+    fn login_lands_inactive_and_ready_to_reinit() {
         for prior in [
             Status::Unauthenticated,
             Status::Error(auth_error()),
             Status::InitError(auth_error()),
         ] {
-            let status = prior.apply(StatusEvent::LoggedIn).unwrap();
-            assert!(status.is_inactive());
-            assert!(status.can_init());
+            check_apply(prior, StatusEvent::LoggedIn, Some(Status::Inactive));
         }
     }
 
     #[test]
-    fn logout_lands_unauthenticated() {
-        let status = Status::Active.apply(StatusEvent::LoggedOut).unwrap();
-        assert!(matches!(status, Status::Unauthenticated));
+    fn logout_lands_unauthenticatede() {
+        for prior in [
+            Status::Active,
+            Status::Error(config_error()),
+            Status::Error(other_error()),
+            Status::InitError(config_error()),
+            Status::InitError(other_error()),
+        ] {
+            check_apply(prior, StatusEvent::LoggedOut, Some(Status::Unauthenticated));
+        }
     }
 
     #[test]
-    fn auth_operation_failure_lands_error() {
-        let status = Status::Active
-            .apply(StatusEvent::OperationFailed(auth_error()))
-            .unwrap();
-        assert!(status.is_error());
-        assert!(status.can_login());
+    fn auth_operation_failure_demotes_active_to_error() {
+        check_apply(
+            Status::Active,
+            StatusEvent::OperationFailed(auth_error()),
+            Some(Status::Error(auth_error())),
+        );
     }
 
     #[test]
-    fn config_operation_failure_is_recoverable_via_reconfigure() {
-        let status = Status::Active
-            .apply(StatusEvent::OperationFailed(config_error()))
-            .unwrap();
-        assert!(status.is_error());
-        assert!(status.can_configure());
-        assert!(!status.can_init());
+    fn config_operation_failure_demotes_active_to_error() {
+        check_apply(
+            Status::Active,
+            StatusEvent::OperationFailed(config_error()),
+            Some(Status::Error(config_error())),
+        );
+    }
+
+    #[test]
+    fn operation_failure_keeps_active() {
+        check_apply(
+            Status::Active,
+            StatusEvent::OperationFailed(other_error()),
+            Some(Status::Active),
+        );
     }
 
     #[test]
@@ -194,45 +361,34 @@ mod tests {
             Status::Error(config_error()),
             Status::InitError(config_error()),
         ] {
-            let status = prior.apply(StatusEvent::ConfigSaved).unwrap();
-            assert!(status.is_inactive());
-            assert!(status.can_init());
+            check_apply(prior, StatusEvent::ConfigSaved, Some(Status::Inactive));
         }
     }
 
     #[test]
     fn config_save_in_working_states_keeps_status() {
         for prior in [Status::Active, Status::Unauthenticated] {
-            let status = prior.clone().apply(StatusEvent::ConfigSaved).unwrap();
-            assert_eq!(status, prior);
+            check_apply(prior.clone(), StatusEvent::ConfigSaved, Some(prior));
         }
     }
 
     #[test]
-    fn transient_operation_failure_keeps_active() {
-        let status = Status::Active
-            .apply(StatusEvent::OperationFailed(other_error()))
-            .unwrap();
-        assert!(status.is_active());
-    }
-
-    #[test]
-    fn invalid_transitions_rejected() {
-        assert!(Status::Active.apply(StatusEvent::InitStarted).is_none());
-        assert!(Status::Active.apply(StatusEvent::LoggedIn).is_none());
-        assert!(Status::Initializing.apply(StatusEvent::LoggedIn).is_none());
-        assert!(Status::Initializing.apply(StatusEvent::LoggedOut).is_none());
-        assert!(Status::Inactive.apply(StatusEvent::InitSucceeded).is_none());
-        assert!(Status::Inactive.apply(StatusEvent::ConfigSaved).is_none());
-        assert!(
-            Status::Initializing
-                .apply(StatusEvent::ConfigSaved)
-                .is_none()
-        );
-        assert!(
-            Status::Unauthenticated
-                .apply(StatusEvent::OperationFailed(auth_error()))
-                .is_none()
-        );
+    fn invalid_transitions_are_rejected() {
+        let cases = [
+            (Status::Active, StatusEvent::InitStarted),
+            (Status::Active, StatusEvent::LoggedIn),
+            (Status::Initializing, StatusEvent::LoggedIn),
+            (Status::Initializing, StatusEvent::LoggedOut),
+            (Status::Inactive, StatusEvent::InitSucceeded),
+            (Status::Inactive, StatusEvent::ConfigSaved),
+            (Status::Initializing, StatusEvent::ConfigSaved),
+            (
+                Status::Unauthenticated,
+                StatusEvent::OperationFailed(auth_error()),
+            ),
+        ];
+        for (status, event) in cases {
+            check_apply(status, event, None);
+        }
     }
 }
