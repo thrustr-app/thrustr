@@ -18,7 +18,7 @@ impl ArtworkRepository for SqliteStorage {
             position: artwork.position as i32,
         };
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         diesel::insert_into(dsl::artwork)
             .values(&row)
             .on_conflict((dsl::game_id, dsl::kind, dsl::position))

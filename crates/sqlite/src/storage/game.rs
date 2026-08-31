@@ -12,11 +12,13 @@ use domain::game::{Game, GameId, GameIndex, GameListItem, GameRepository, NewGam
 use std::collections::HashMap;
 use tracing::warn;
 
+const CHUNK_SIZE: usize = 1000;
+
 impl GameRepository for SqliteStorage {
     fn insert(&self, game: &NewGame) -> Result<Option<Game>> {
         use crate::schema::games::dsl;
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         let row = diesel::insert_or_ignore_into(dsl::games)
             .values(NewGameRow::from(game))
             .returning(GameRow::as_returning())
@@ -29,9 +31,7 @@ impl GameRepository for SqliteStorage {
     fn insert_many(&self, games: &[NewGame]) -> Result<usize> {
         use crate::schema::games::dsl;
 
-        const CHUNK_SIZE: usize = 1000;
-
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         conn.transaction(|conn| {
             let mut inserted = 0;
             for chunk in games.chunks(CHUNK_SIZE) {
@@ -48,7 +48,7 @@ impl GameRepository for SqliteStorage {
         use crate::schema::games::dsl;
 
         let id = to_row_id(id);
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         let row = dsl::games
             .find(id)
             .select(GameRow::as_select())
@@ -63,7 +63,7 @@ impl GameRepository for SqliteStorage {
 
         let match_query = query.map(fts_match_query).filter(|q| !q.is_empty());
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
 
         if let Some(match_query) = match_query {
             let rows = sql_query(
@@ -97,9 +97,7 @@ impl GameRepository for SqliteStorage {
         use crate::schema::artwork;
         use crate::schema::games::dsl;
 
-        const CHUNK_SIZE: usize = 1000;
-
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         let mut by_id: HashMap<i64, GameListItem> = HashMap::with_capacity(ids.len());
         for chunk in ids.chunks(CHUNK_SIZE) {
             let row_ids: Vec<i64> = chunk.iter().map(|id| to_row_id(*id)).collect();
@@ -134,7 +132,7 @@ impl GameRepository for SqliteStorage {
         use crate::schema::games::dsl;
 
         let after = to_row_id(after);
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         let rows: Vec<(i64, Option<String>)> = dsl::games
             .left_join(
                 artwork::table.on(artwork::game_id

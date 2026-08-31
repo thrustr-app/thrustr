@@ -14,7 +14,7 @@ impl ComponentStorage for SqliteStorage {
     fn get_data(&self, component_id: &str, key: &str) -> Result<Option<Vec<u8>>> {
         use crate::schema::component_data::dsl;
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         let result = dsl::component_data
             .find((component_id, key))
             .select(dsl::value)
@@ -27,7 +27,7 @@ impl ComponentStorage for SqliteStorage {
     fn set_data(&self, component_id: &str, key: &str, data: &[u8]) -> Result<()> {
         use crate::schema::component_data::dsl;
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         diesel::insert_into(dsl::component_data)
             .values(NewComponentDataRow {
                 component_id,
@@ -45,7 +45,7 @@ impl ComponentStorage for SqliteStorage {
     fn delete_data(&self, component_id: &str, key: &str) -> Result<()> {
         use crate::schema::component_data::dsl;
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         diesel::delete(dsl::component_data.find((component_id, key))).execute(&mut conn)?;
 
         Ok(())
@@ -54,7 +54,7 @@ impl ComponentStorage for SqliteStorage {
     fn list_data(&self, component_id: &str, prefix: Option<&str>) -> Result<Vec<String>> {
         use crate::schema::component_data::dsl;
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         let mut query = dsl::component_data
             .filter(dsl::component_id.eq(component_id))
             .select(dsl::key)
@@ -74,7 +74,7 @@ impl ComponentStorage for SqliteStorage {
     fn get_config_value(&self, component_id: &str, field_id: &str) -> Result<Option<String>> {
         use crate::schema::component_config::dsl;
 
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         let result = dsl::component_config
             .find((component_id, field_id))
             .select(dsl::value)
@@ -86,7 +86,7 @@ impl ComponentStorage for SqliteStorage {
 
     fn get_config_values(&self, component_id: &str) -> Result<HashMap<String, String>> {
         use crate::schema::component_config::dsl;
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         Ok(dsl::component_config
             .select((dsl::field_id, dsl::value))
             .filter(dsl::component_id.eq(component_id))
@@ -96,7 +96,7 @@ impl ComponentStorage for SqliteStorage {
     }
 
     fn set_config_value(&self, component_id: &str, field_id: &str, value: &str) -> Result<()> {
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         upsert_config_value(&mut conn, component_id, field_id, value)?;
 
         Ok(())
@@ -107,7 +107,7 @@ impl ComponentStorage for SqliteStorage {
         component_id: &str,
         fields: &HashMap<String, String>,
     ) -> Result<()> {
-        let mut conn = self.pool.get()?;
+        let mut conn = self.conn()?;
         conn.transaction(|conn| {
             for (field_id, value) in fields {
                 upsert_config_value(conn, component_id, field_id, value)?;

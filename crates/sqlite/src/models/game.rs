@@ -7,6 +7,7 @@ use diesel::{
 };
 use domain::game::{Game, GameExt, GameSource, NewGame};
 use serde_json::Value;
+use tracing::warn;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
 #[diesel(table_name = games)]
@@ -38,13 +39,18 @@ pub struct NewGameRow<'a> {
 
 impl From<GameRow> for Game {
     fn from(row: GameRow) -> Self {
+        let id = from_row_id(row.id);
+        let external_ids = serde_json::from_value(row.external_ids)
+            .inspect_err(|err| warn!(game_id = row.id, "skipping invalid external_ids: {err}"))
+            .unwrap_or_default();
+
         Self {
-            id: from_row_id(row.id),
+            id,
             name: row.name,
             source: GameSource {
                 id: row.source_id,
                 lookup_id: row.lookup_id,
-                external_ids: serde_json::from_value(row.external_ids).unwrap_or_default(),
+                external_ids,
             },
             cover_url: row.cover_url,
             summary: row.summary,

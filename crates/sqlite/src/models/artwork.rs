@@ -17,7 +17,6 @@ pub struct ArtworkRow {
 
 #[derive(Insertable, Debug)]
 #[diesel(table_name = artwork)]
-#[diesel(primary_key(game_id, kind, position))]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NewArtworkRow<'a> {
     pub game_id: i64,

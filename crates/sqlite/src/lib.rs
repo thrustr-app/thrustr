@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use diesel::{
     SqliteConnection,
     connection::SimpleConnection,
-    r2d2::{ConnectionManager, CustomizeConnection, Error as R2d2Error, Pool},
+    r2d2::{ConnectionManager, CustomizeConnection, Error as R2d2Error, Pool, PooledConnection},
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use std::{fs, path::Path, time::Duration};
@@ -62,10 +62,15 @@ impl SqliteStorage {
         connection
             .batch_execute("PRAGMA journal_mode = WAL;")
             .map_err(|e| anyhow!("failed to enable WAL: {e}"))?;
+
         connection
             .run_pending_migrations(MIGRATIONS)
-            .expect("Failed to run migrations");
+            .map_err(|e| anyhow!("failed to run migrations: {e}"))?;
 
         Ok(Self { pool })
+    }
+
+    pub(crate) fn conn(&self) -> Result<PooledConnection<ConnectionManager<SqliteConnection>>> {
+        Ok(self.pool.get()?)
     }
 }

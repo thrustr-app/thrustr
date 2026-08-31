@@ -20,4 +20,13 @@
     "**/.cargo/git/**",
     "**/*.lock",
   ],
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "check": {
+          "command": "clippy",
+        },
+      },
+    },
+  },
 }

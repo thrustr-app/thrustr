@@ -1,6 +1,7 @@
 use futures::{StreamExt, stream::FuturesUnordered};
 use runtime::TokioHandle;
 use std::{
+    mem,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -191,12 +192,12 @@ impl Inner {
     fn set_state(&self, new: ConnectivityState) {
         let changed = self
             .tx
-            .send_if_modified(|cur| std::mem::replace(cur, new) != new);
+            .send_if_modified(|cur| mem::replace(cur, new) != new);
 
         if changed {
             match new {
                 ConnectivityState::Online => info!("connectivity restored"),
-                ConnectivityState::Offline => warn!("connectivity lost"),
+                ConnectivityState::Offline => info!("connectivity lost"),
             }
         }
     }
