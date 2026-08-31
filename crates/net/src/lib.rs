@@ -47,7 +47,6 @@ mod tests {
     use super::*;
     use http::HeaderValue;
 
-    /// Tests are measured against this date.
     fn now() -> DateTime<Utc> {
         DateTime::parse_from_rfc2822("Wed, 21 Oct 2099 03:46:00 GMT")
             .expect("the test date should parse")
