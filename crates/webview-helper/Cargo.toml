@@ -5,9 +5,11 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+tao = "0.37"
+wry = "0.56"
+
+[target.'cfg(target_os = "macos")'.dependencies]
 muda = "0.17"
-tao = "0.34"
-wry = "0.54"
 
 [package.metadata.bundle]
 identifier = "com.thrustr.thrustr"
