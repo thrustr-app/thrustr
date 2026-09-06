@@ -24,7 +24,8 @@ impl Operation {
     /// operations, but never alongside an exclusive one.
     fn is_exclusive(self) -> bool {
         match self {
-            Self::Init | Self::Login | Self::Logout | Self::Configure => true,
+            Self::Init | Self::Login | Self::Logout => true,
+            Self::Configure => false,
             Self::Storefront(operation) => operation.is_exclusive(),
         }
     }

@@ -9,7 +9,6 @@ use std::sync::Arc;
 use strum::Display;
 use tracing::{info, warn};
 
-/// An operation that runs against a component's storefront.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum StorefrontOperation {
