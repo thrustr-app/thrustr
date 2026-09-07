@@ -5,10 +5,7 @@ use std::sync::Arc;
 use wasmtime::component::HasData;
 use wasmtime::{StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
-use wasmtime_wasi_http::{
-    WasiHttpCtx,
-    p3::{WasiHttpCtxView, WasiHttpView},
-};
+use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 const MAX_MEMORY: usize = 256 * 1024 * 1024;
 

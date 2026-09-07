@@ -1,39 +1,35 @@
 use bytes::Bytes;
 use http_body::{Body, Frame, SizeHint};
-use http_body_util::{BodyExt, combinators::UnsyncBoxBody};
+use http_body_util::BodyExt;
 use reqwest::{Client, redirect::Policy};
 use std::{
-    error::Error,
+    fmt,
     future::Future,
+    ops::Deref,
     pin::Pin,
     sync::{Arc, Mutex, PoisonError},
     task::{Context, Poll},
     time::Duration,
 };
-use wasmtime_wasi::TrappableError;
-use wasmtime_wasi_http::p3::{RequestOptions, WasiHttpHooks, bindings::http::types::ErrorCode};
+use tokio::time::{Instant, Sleep};
+use wasmtime_wasi_http::{Error, RequestOptions, WasiBody, WasiHttpHooks};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-
-type SendRequestFuture = Box<
-    dyn Future<
-            Output = Result<
-                (
-                    http::Response<UnsyncBoxBody<Bytes, ErrorCode>>,
-                    Box<dyn Future<Output = Result<(), ErrorCode>> + Send>,
-                ),
-                TrappableError<ErrorCode>,
-            >,
-        > + Send,
->;
+const TCP_KEEPALIVE: Duration = Duration::from_secs(60);
 
 pub fn http_client() -> Client {
     Client::builder()
         .redirect(Policy::none())
-        .read_timeout(DEFAULT_TIMEOUT)
+        .connect_timeout(DEFAULT_TIMEOUT)
+        .tcp_keepalive(TCP_KEEPALIVE)
         .build()
-        .expect("Failed to build plugin HTTP client")
+        .expect("the plugin HTTP client should be built")
 }
+
+type IoFuture = Box<dyn Future<Output = Result<(), Error>> + Send>;
+
+type SendRequestFuture =
+    Box<dyn Future<Output = Result<(http::Response<WasiBody>, IoFuture), Error>> + Send>;
 
 pub struct OutboundHttp {
     client: Client,
@@ -52,124 +48,261 @@ impl OutboundHttp {
 impl WasiHttpHooks for OutboundHttp {
     fn send_request(
         &mut self,
-        request: http::Request<UnsyncBoxBody<Bytes, ErrorCode>>,
+        request: http::Request<WasiBody>,
         options: Option<RequestOptions>,
-        _fut: Box<dyn Future<Output = Result<(), ErrorCode>> + Send>,
+        _fut: IoFuture,
     ) -> SendRequestFuture {
         if !self.allowed_hosts.is_allowed(request.uri().host()) {
-            return Box::new(async { Err(ErrorCode::HttpRequestDenied.into()) });
+            return Box::new(async { Err(Error::HttpRequestDenied) });
         }
 
-        let client = self.client.clone();
-
-        Box::new(send_request(client, request, options))
+        Box::new(dispatch(self.client.clone(), request, options))
     }
 }
 
-async fn send_request(
+async fn dispatch(
     client: Client,
-    request: http::Request<UnsyncBoxBody<Bytes, ErrorCode>>,
+    request: http::Request<WasiBody>,
     options: Option<RequestOptions>,
-) -> Result<
-    (
-        http::Response<UnsyncBoxBody<Bytes, ErrorCode>>,
-        Box<dyn Future<Output = Result<(), ErrorCode>> + Send>,
-    ),
-    TrappableError<ErrorCode>,
-> {
+) -> Result<(http::Response<WasiBody>, IoFuture), Error> {
+    let Timeouts {
+        head,
+        between_bytes,
+    } = Timeouts::new(options);
     let (parts, body) = request.into_parts();
-    let body = reqwest::Body::wrap(SyncBody(Mutex::new(body)));
+
+    let captured = CapturedError::default();
+    let body = reqwest::Body::wrap(SyncBody::new(body, captured.clone()));
 
     let request = reqwest::Request::try_from(http::Request::from_parts(parts, body))
-        .map_err(|_| ErrorCode::HttpRequestUriInvalid)?;
+        .map_err(|_| Error::HttpRequestUriInvalid)?;
 
-    let connect_timeout = options
-        .and_then(|options| options.connect_timeout)
-        .unwrap_or(DEFAULT_TIMEOUT);
-    let first_byte_timeout = options
-        .and_then(|options| options.first_byte_timeout)
-        .unwrap_or(DEFAULT_TIMEOUT);
-    let head_timeout = connect_timeout.saturating_add(first_byte_timeout);
-
-    let response = tokio::time::timeout(head_timeout, client.execute(request))
+    let response = tokio::time::timeout(head, client.execute(request))
         .await
-        .map_err(|_| ErrorCode::ConnectionTimeout)?
-        .map_err(request_error)?;
+        .map_err(|_| Error::ConnectionTimeout)?
+        .map_err(|err| captured.take().unwrap_or_else(|| request_error(err)))?;
 
-    let response = http::Response::<reqwest::Body>::from(response)
-        .map(|body| body.map_err(response_error).boxed_unsync());
+    let response = http::Response::<reqwest::Body>::from(response).map(move |body| {
+        let body = body
+            .map_err(move |err| captured.take().unwrap_or_else(|| response_error(err)))
+            .boxed_unsync();
+        IdleTimeoutBody::new(body, between_bytes).boxed_unsync()
+    });
 
     Ok((response, Box::new(async { Ok(()) })))
 }
 
-struct SyncBody(Mutex<UnsyncBoxBody<Bytes, ErrorCode>>);
+struct Timeouts {
+    head: Duration,
+    between_bytes: Duration,
+}
+
+impl Timeouts {
+    fn new(options: Option<RequestOptions>) -> Self {
+        let field = |pick: fn(&RequestOptions) -> Option<Duration>| {
+            options.as_ref().and_then(pick).unwrap_or(DEFAULT_TIMEOUT)
+        };
+
+        Self {
+            head: field(|o| o.connect_timeout).saturating_add(field(|o| o.first_byte_timeout)),
+            between_bytes: field(|o| o.between_bytes_timeout),
+        }
+    }
+}
+
+/// Fails if no response data arrives within the timeout.
+struct IdleTimeoutBody {
+    inner: WasiBody,
+    idle_timeout: Duration,
+    deadline: Pin<Box<Sleep>>,
+}
+
+impl IdleTimeoutBody {
+    fn new(inner: WasiBody, idle_timeout: Duration) -> Self {
+        Self {
+            inner,
+            idle_timeout,
+            deadline: Box::pin(tokio::time::sleep(idle_timeout)),
+        }
+    }
+}
+
+impl Body for IdleTimeoutBody {
+    type Data = Bytes;
+    type Error = Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Error>>> {
+        if let Poll::Ready(frame) = Pin::new(&mut self.inner).poll_frame(cx) {
+            let deadline = Instant::now() + self.idle_timeout;
+            self.deadline.as_mut().reset(deadline);
+            return Poll::Ready(frame);
+        }
+
+        match self.deadline.as_mut().poll(cx) {
+            Poll::Ready(()) => Poll::Ready(Some(Err(Error::ConnectionReadTimeout))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+/// Wraps the guest body so `reqwest` can use it.
+///
+/// The mutex makes the body `Sync`. Its real error is stored separately
+/// because `reqwest` needs its own error type.
+struct SyncBody {
+    body: Mutex<WasiBody>,
+    captured: CapturedError,
+}
 
 impl SyncBody {
-    fn get(&self) -> impl std::ops::Deref<Target = UnsyncBoxBody<Bytes, ErrorCode>> + '_ {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    fn new(body: WasiBody, captured: CapturedError) -> Self {
+        Self {
+            body: Mutex::new(body),
+            captured,
+        }
+    }
+
+    fn lock(&self) -> impl Deref<Target = WasiBody> + '_ {
+        self.body.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 impl Body for SyncBody {
     type Data = Bytes;
-    type Error = ErrorCode;
+    type Error = GuestBodyError;
 
     fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, ErrorCode>>> {
-        let body = self
-            .get_mut()
-            .0
-            .get_mut()
-            .unwrap_or_else(PoisonError::into_inner);
+    ) -> Poll<Option<Result<Frame<Bytes>, GuestBodyError>>> {
+        let this = self.get_mut();
+        let body = this.body.get_mut().unwrap_or_else(PoisonError::into_inner);
 
-        Pin::new(body).poll_frame(cx)
+        Pin::new(body).poll_frame(cx).map(|frame| {
+            frame.map(|result| {
+                result.map_err(|error| {
+                    this.captured.set(error);
+                    GuestBodyError
+                })
+            })
+        })
     }
 
     fn is_end_stream(&self) -> bool {
-        self.get().is_end_stream()
+        self.lock().is_end_stream()
     }
 
     fn size_hint(&self) -> SizeHint {
-        self.get().size_hint()
+        self.lock().size_hint()
     }
 }
 
-fn request_error(err: reqwest::Error) -> ErrorCode {
-    if let Some(code) = guest_error(&err) {
-        code
-    } else if err.is_timeout() {
-        ErrorCode::ConnectionTimeout
-    } else if err.is_connect() {
-        ErrorCode::ConnectionRefused
-    } else {
-        ErrorCode::InternalError(Some(err.to_string()))
+/// Stores an error from the guest body so [`dispatch`] can return it later.
+#[derive(Clone, Default)]
+struct CapturedError(Arc<Mutex<Option<Error>>>);
+
+impl CapturedError {
+    fn set(&self, error: Error) {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
+    }
+
+    fn take(&self) -> Option<Error> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
     }
 }
 
-fn response_error(err: reqwest::Error) -> ErrorCode {
-    if let Some(code) = guest_error(&err) {
-        code
-    } else if err.is_timeout() {
-        ErrorCode::HttpResponseTimeout
-    } else {
-        ErrorCode::InternalError(Some(err.to_string()))
+/// Placeholder error passed to `reqwest`.
+#[derive(Debug)]
+struct GuestBodyError;
+
+impl fmt::Display for GuestBodyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("guest request body error")
     }
 }
 
-fn guest_error(err: &reqwest::Error) -> Option<ErrorCode> {
-    let mut source: Option<&(dyn Error + 'static)> = err.source();
+impl std::error::Error for GuestBodyError {}
 
-    while let Some(err) = source {
-        if let Some(code) = err.downcast_ref::<ErrorCode>() {
-            return Some(code.clone());
+fn request_error(err: reqwest::Error) -> Error {
+    if err.is_timeout() {
+        return Error::ConnectionTimeout;
+    }
+
+    transport_cause(&err).unwrap_or_else(|| {
+        if err.is_connect() {
+            Error::ConnectionRefused
+        } else {
+            Error::InternalError(Some(err.to_string()))
         }
+    })
+}
 
-        source = err.source();
+fn response_error(err: reqwest::Error) -> Error {
+    if err.is_timeout() {
+        return Error::HttpResponseTimeout;
+    }
+
+    transport_cause(&err).unwrap_or_else(|| Error::InternalError(Some(err.to_string())))
+}
+
+fn transport_cause(err: &reqwest::Error) -> Option<Error> {
+    let mut source = std::error::Error::source(err);
+
+    while let Some(cause) = source {
+        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            return Some(io_error(io));
+        }
+        if let Some(mapped) = cause.downcast_ref::<hyper::Error>().and_then(hyper_error) {
+            return Some(mapped);
+        }
+        source = cause.source();
     }
 
     None
+}
+
+/// Maps a [`std::io::Error`] to a wasi-http [`Error`].
+fn io_error(err: &std::io::Error) -> Error {
+    use std::io::ErrorKind;
+
+    match err.kind() {
+        ErrorKind::ConnectionRefused => Error::ConnectionRefused,
+        ErrorKind::ConnectionReset
+        | ErrorKind::ConnectionAborted
+        | ErrorKind::BrokenPipe
+        | ErrorKind::UnexpectedEof => Error::ConnectionTerminated,
+        ErrorKind::TimedOut => Error::ConnectionTimeout,
+        ErrorKind::AddrNotAvailable => Error::DnsError {
+            rcode: None,
+            info_code: None,
+        },
+        _ => Error::InternalError(Some(err.to_string())),
+    }
+}
+
+fn hyper_error(err: &hyper::Error) -> Option<Error> {
+    if err.is_incomplete_message() {
+        Some(Error::HttpResponseIncomplete)
+    } else if err.is_parse_too_large() {
+        Some(Error::HttpResponseHeaderSectionSize(None))
+    } else if err.is_parse() || err.is_parse_status() {
+        Some(Error::HttpProtocolError)
+    } else if err.is_body_write_aborted() {
+        Some(Error::ConnectionTerminated)
+    } else {
+        None
+    }
 }
 
 #[derive(Default)]
@@ -191,25 +324,23 @@ impl AllowedHosts {
 }
 
 fn matches_pattern(pattern: &str, host: &str) -> bool {
-    let mut segments = pattern.split('*');
+    let mut chunks = pattern.split('*');
+    let prefix = chunks.next().unwrap_or_default();
 
-    let Some(prefix) = segments.next() else {
-        return false;
-    };
     let Some(mut rest) = host.strip_prefix(prefix) else {
         return false;
     };
 
-    let segments: Vec<&str> = segments.collect();
-    let Some((suffix, middles)) = segments.split_last() else {
-        return host == pattern;
+    let chunks: Vec<&str> = chunks.collect();
+    let Some((suffix, inner)) = chunks.split_last() else {
+        return rest.is_empty();
     };
 
-    for middle in middles {
-        match rest.find(middle) {
-            Some(at) => rest = &rest[at + middle.len()..],
-            None => return false,
-        }
+    for chunk in inner {
+        let Some(at) = rest.find(chunk) else {
+            return false;
+        };
+        rest = &rest[at + chunk.len()..];
     }
 
     rest.len() >= suffix.len() && rest.ends_with(suffix)
@@ -217,21 +348,28 @@ fn matches_pattern(pattern: &str, host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{AllowedHosts, ErrorCode, OutboundHttp, UnsyncBoxBody, http_client};
+    use super::{
+        AllowedHosts, Error, IdleTimeoutBody, OutboundHttp, WasiBody, http_client, io_error,
+    };
     use bytes::Bytes;
     use http::{Method, Request, StatusCode, header::CONTENT_LENGTH};
+    use http_body::{Body, Frame};
     use http_body_util::{BodyExt, Empty, Full};
     use hyper::{body::Incoming, server::conn::http1, service::service_fn};
     use hyper_util::rt::TokioIo;
     use std::{
+        future::poll_fn,
         net::SocketAddr,
+        pin::Pin,
         sync::{
             Arc, Mutex,
             atomic::{AtomicUsize, Ordering},
         },
+        task::{Context, Poll},
+        time::Duration,
     };
     use tokio::{net::TcpListener, task::JoinHandle};
-    use wasmtime_wasi_http::p3::WasiHttpHooks;
+    use wasmtime_wasi_http::WasiHttpHooks;
 
     fn allowlist(patterns: &[&str]) -> AllowedHosts {
         let hosts: Vec<String> = patterns.iter().map(|p| p.to_string()).collect();
@@ -325,10 +463,8 @@ mod tests {
         OutboundHttp::new(http_client(), [allowed.to_string()][..].into())
     }
 
-    async fn get(hooks: &mut OutboundHttp, url: &str) -> Result<StatusCode, ErrorCode> {
-        let body = Empty::<Bytes>::new()
-            .map_err(ErrorCode::from)
-            .boxed_unsync();
+    async fn get(hooks: &mut OutboundHttp, url: &str) -> Result<StatusCode, Error> {
+        let body = Empty::<Bytes>::new().map_err(Error::from).boxed_unsync();
         let request = Request::builder().uri(url).body(body).unwrap();
 
         send(hooks, request).await
@@ -338,9 +474,9 @@ mod tests {
         hooks: &mut OutboundHttp,
         url: &str,
         body: &'static str,
-    ) -> Result<StatusCode, ErrorCode> {
+    ) -> Result<StatusCode, Error> {
         let body = Full::new(Bytes::from_static(body.as_bytes()))
-            .map_err(ErrorCode::from)
+            .map_err(Error::from)
             .boxed_unsync();
 
         let request = Request::builder()
@@ -354,13 +490,11 @@ mod tests {
 
     async fn send(
         hooks: &mut OutboundHttp,
-        request: Request<UnsyncBoxBody<Bytes, ErrorCode>>,
-    ) -> Result<StatusCode, ErrorCode> {
+        request: Request<WasiBody>,
+    ) -> Result<StatusCode, Error> {
         let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));
 
-        let (response, _) = Box::into_pin(sending)
-            .await
-            .map_err(|err| err.downcast().unwrap())?;
+        let (response, _) = Box::into_pin(sending).await?;
 
         let status = response.status();
         response.into_body().collect().await?;
@@ -421,8 +555,70 @@ mod tests {
 
         let err = get(&mut hooks, &server.url()).await.unwrap_err();
 
-        assert!(matches!(err, ErrorCode::HttpRequestDenied));
+        assert!(matches!(err, Error::HttpRequestDenied));
         assert_eq!(server.connections(), 0);
+    }
+
+    // Yields one data frame, then stalls forever — a server that goes silent
+    // partway through a download.
+    struct StallingBody(bool);
+
+    impl Body for StallingBody {
+        type Data = Bytes;
+        type Error = Error;
+
+        fn poll_frame(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Option<Result<Frame<Bytes>, Error>>> {
+            if self.0 {
+                return Poll::Pending;
+            }
+            self.0 = true;
+            Poll::Ready(Some(Ok(Frame::data(Bytes::from_static(b"partial")))))
+        }
+    }
+
+    #[tokio::test]
+    async fn idle_timeout_body_fails_a_stalled_download() {
+        let inner = StallingBody(false).boxed_unsync();
+        let mut body = IdleTimeoutBody::new(inner, Duration::from_millis(50));
+
+        let frame = poll_fn(|cx| Pin::new(&mut body).poll_frame(cx))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame.into_data().unwrap(), "partial");
+
+        // The stream now stalls; the next frame resolves to a timeout error once
+        // the idle deadline elapses.
+        let err = poll_fn(|cx| Pin::new(&mut body).poll_frame(cx))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(err, Error::ConnectionReadTimeout));
+    }
+
+    #[test]
+    fn io_errors_map_to_specific_codes() {
+        use std::io::{Error as IoError, ErrorKind};
+
+        assert!(matches!(
+            io_error(&IoError::from(ErrorKind::ConnectionRefused)),
+            Error::ConnectionRefused
+        ));
+        assert!(matches!(
+            io_error(&IoError::from(ErrorKind::ConnectionReset)),
+            Error::ConnectionTerminated
+        ));
+        assert!(matches!(
+            io_error(&IoError::from(ErrorKind::TimedOut)),
+            Error::ConnectionTimeout
+        ));
+        assert!(matches!(
+            io_error(&IoError::from(ErrorKind::PermissionDenied)),
+            Error::InternalError(_)
+        ));
     }
 
     #[test]
