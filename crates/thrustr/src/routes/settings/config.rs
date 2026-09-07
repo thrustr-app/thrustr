@@ -116,10 +116,6 @@ impl Config {
     }
 
     fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(mut claim) = self.component.begin(Operation::Configure) else {
-            return;
-        };
-
         let fields = self
             .values
             .iter()
@@ -128,7 +124,7 @@ impl Config {
 
         let component = self.component.clone();
         cx.spawn_and_update(
-            async move { component.save_config(&mut claim, fields).await },
+            async move { component.save_config(fields).await },
             |config, result, _| {
                 config.local_error = result.err().map(|e| e.to_string().into());
             },
@@ -145,8 +141,12 @@ impl Config {
     }
 
     fn handle_login_flow(&mut self, login_flow: AuthFlow, cx: &mut Context<Self>) {
-        let Some(mut claim) = self.component.begin(Operation::Login) else {
-            return;
+        let permit = match self.component.begin_login() {
+            Ok(permit) => permit,
+            Err(err) => {
+                self.local_error = Some(err.to_string().into());
+                return;
+            }
         };
 
         let component = self.component.clone();
@@ -156,7 +156,7 @@ impl Config {
                     unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
                 match result {
                     Ok((url, body)) => component
-                        .login(&mut claim, LoginRequest::Flow { url, body })
+                        .login(permit, LoginRequest::Flow { url, body })
                         .await
                         .map_err(|e| e.to_string()),
                     Err(WebviewError::UserCancelled) => Ok(()),
@@ -195,8 +195,17 @@ impl Config {
                 .ok_text("Log In")
                 .when(!is_valid, |dialog| dialog.disabled())
                 .on_ok(move |_, _, cx| {
-                    let Some(mut claim) = component.begin(Operation::Login) else {
-                        return;
+                    let permit = match component.begin_login() {
+                        Ok(permit) => permit,
+                        Err(err) => {
+                            if let Some(entity) = config_entity_for_ok.upgrade() {
+                                entity.update(cx, |config, cx| {
+                                    config.local_error = Some(err.to_string().into());
+                                    cx.notify();
+                                });
+                            }
+                            return;
+                        }
                     };
 
                     let fields = form_entity.read(cx).login_fields();
@@ -204,9 +213,7 @@ impl Config {
                     let component = component.clone();
 
                     let task = cx.background_spawn(async move {
-                        component
-                            .login(&mut claim, LoginRequest::Form { fields })
-                            .await
+                        component.login(permit, LoginRequest::Form { fields }).await
                     });
 
                     cx.spawn(async move |cx| {
@@ -237,8 +244,12 @@ impl Config {
     }
 
     fn on_logout(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(mut claim) = self.component.begin(Operation::Logout) else {
-            return;
+        let permit = match self.component.begin_logout() {
+            Ok(permit) => permit,
+            Err(err) => {
+                self.local_error = Some(err.to_string().into());
+                return;
+            }
         };
 
         let component = self.component.clone();
@@ -251,10 +262,7 @@ impl Config {
                         Err(WebviewError::Internal(e)) => return Err(e),
                     }
                 }
-                component
-                    .logout(&mut claim)
-                    .await
-                    .map_err(|e| e.to_string())
+                component.logout(permit).await.map_err(|e| e.to_string())
             },
             |this, result, _| {
                 this.local_error = result.err().map(Into::into);
@@ -266,9 +274,6 @@ impl Config {
     fn render_header(&mut self, autofocus_back: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let has_login = self.login_method.is_some();
-        // Read live rather than cached: a missed refresh event then costs a
-        // frame, not a button stuck in its loading state.
-        let running = self.component.running();
 
         let status_label = match self.status {
             Status::Initializing => Label::new("INITIALIZING").variant_warning(),
@@ -325,7 +330,10 @@ impl Config {
                                 .when(!self.component.can(Operation::Configure), |btn| {
                                     btn.disabled()
                                 })
-                                .when(running == Some(Operation::Configure), Button::loading)
+                                .when(
+                                    self.component.is_running(Operation::Configure),
+                                    Button::loading,
+                                )
                                 .size_lg()
                                 .child("Save")
                                 .w(rems(10.))
@@ -336,7 +344,7 @@ impl Config {
                         div.child(
                             Button::new("login")
                                 .when(!self.component.can(Operation::Login), |btn| btn.disabled())
-                                .when(running == Some(Operation::Login), Button::loading)
+                                .when(self.component.is_running(Operation::Login), Button::loading)
                                 .variant_accent()
                                 .size_lg()
                                 .child("Log In")
@@ -349,7 +357,10 @@ impl Config {
                         div.child(
                             Button::new("logout")
                                 .when(!self.component.can(Operation::Logout), |btn| btn.disabled())
-                                .when(running == Some(Operation::Logout), Button::loading)
+                                .when(
+                                    self.component.is_running(Operation::Logout),
+                                    Button::loading,
+                                )
                                 .variant_outline()
                                 .size_lg()
                                 .child("Log Out")

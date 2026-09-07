@@ -1,9 +1,10 @@
 use crate::component::Error;
 use strum::Display;
 
-#[derive(Debug, Clone, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum Status {
+    #[default]
     Inactive,
     Initializing,
     Active,

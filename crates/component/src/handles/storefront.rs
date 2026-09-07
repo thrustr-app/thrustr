@@ -1,5 +1,5 @@
 use super::error::{OperationError, Result};
-use crate::{Claim, ComponentHandle, Operation};
+use crate::{ComponentHandle, Operation, Permit};
 use domain::{
     component::{StatusEvent, Storefront},
     game::NewGame,
@@ -48,14 +48,8 @@ impl StorefrontHandle {
         &self.component
     }
 
-    /// Claims the component for a storefront operation.
-    pub fn begin(&self, operation: StorefrontOperation) -> Option<Claim> {
-        self.component.begin(operation.into())
-    }
-
-    pub async fn sync_games(&self, claim: &mut Claim) -> Result<()> {
-        self.component
-            .enter(claim, StorefrontOperation::Sync.into())?;
+    pub(super) async fn sync_games(&self, permit: &mut Permit) -> Result<()> {
+        permit.enter(StorefrontOperation::Sync)?;
 
         let new_games = self.storefront.list_games().await.map_err(|e| {
             warn!(component = self.component.id(), error = %e, "listing games failed");

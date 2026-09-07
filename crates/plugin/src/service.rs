@@ -1,6 +1,6 @@
 use crate::manager::PluginManager;
 use anyhow::{Result, anyhow};
-use component::{ComponentRegistry, Operation};
+use component::ComponentRegistry;
 use domain::component::ComponentStorage;
 use event::Topic;
 use futures::StreamExt;
@@ -72,10 +72,10 @@ impl PluginService {
 
         let component = self.component_registry.register(Arc::new(plugin))?;
 
-        let mut claim = component
-            .begin(Operation::Init)
-            .ok_or_else(|| anyhow!("component {} cannot be initialized", component.id()))?;
-        component.init(&mut claim).await?;
+        component
+            .init()
+            .await
+            .map_err(|e| anyhow!("component {} cannot be initialized: {e}", component.id()))?;
 
         Ok(())
     }

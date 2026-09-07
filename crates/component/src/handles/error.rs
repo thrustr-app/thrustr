@@ -12,8 +12,11 @@ pub enum OperationError {
         status: Status,
     },
 
-    #[error("cannot start {operation} while another operation is running")]
-    Busy { operation: Operation },
+    #[error("cannot start {operation} while {blocked_by} is running")]
+    Busy {
+        operation: Operation,
+        blocked_by: Operation,
+    },
 
     #[error("cannot record the result of the {operation}: the component changed state meanwhile")]
     StatusChanged { operation: Operation },
