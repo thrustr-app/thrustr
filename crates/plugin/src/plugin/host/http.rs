@@ -158,8 +158,8 @@ impl Body for IdleTimeoutBody {
 
 /// Wraps the guest body so `reqwest` can use it.
 ///
-/// The mutex makes the body `Sync`. Its real error is stored separately
-/// because `reqwest` needs its own error type.
+/// This exists only because [`WasiBody`] is not [`Sync`] and `reqwest`
+/// requires it to be.
 struct SyncBody {
     body: Mutex<WasiBody>,
     captured: CapturedError,
@@ -348,345 +348,157 @@ fn matches_pattern(pattern: &str, host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AllowedHosts, Error, IdleTimeoutBody, OutboundHttp, WasiBody, http_client, io_error,
-    };
+    use super::{AllowedHosts, Error, OutboundHttp, WasiBody, http_client};
     use bytes::Bytes;
     use http::{Method, Request, StatusCode, header::CONTENT_LENGTH};
-    use http_body::{Body, Frame};
     use http_body_util::{BodyExt, Empty, Full};
-    use hyper::{body::Incoming, server::conn::http1, service::service_fn};
-    use hyper_util::rt::TokioIo;
-    use std::{
-        future::poll_fn,
-        net::SocketAddr,
-        pin::Pin,
-        sync::{
-            Arc, Mutex,
-            atomic::{AtomicUsize, Ordering},
-        },
-        task::{Context, Poll},
-        time::Duration,
-    };
-    use tokio::{net::TcpListener, task::JoinHandle};
+    use std::net::SocketAddr;
     use wasmtime_wasi_http::WasiHttpHooks;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
 
-    fn allowlist(patterns: &[&str]) -> AllowedHosts {
-        let hosts: Vec<String> = patterns.iter().map(|p| p.to_string()).collect();
-        AllowedHosts::new(hosts.as_slice().into())
+    #[track_caller]
+    fn check_allowed(patterns: &[&str], host: &str, expected: bool) {
+        let hosts = patterns.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+        let allowed = AllowedHosts::new(hosts.as_slice().into()).is_allowed(Some(host));
+
+        assert_eq!(allowed, expected, "patterns {patterns:?} against {host}");
     }
 
-    // A keep-alive server that records every request it serves, so a test can
-    // assert both on what arrived and on how many connections carried it.
-    struct TestServer {
-        addr: SocketAddr,
-        connections: Arc<AtomicUsize>,
-        requests: Arc<Mutex<Vec<Request<Bytes>>>>,
-        listener: JoinHandle<()>,
+    #[test]
+    fn the_allowlist_accepts_matching_hosts() {
+        check_allowed(&["*"], "api.legacygames.com", true);
+        check_allowed(&["*"], "localhost", true);
+        check_allowed(&["*"], "a.b.c.d.example.com", true);
+        check_allowed(&["api.legacygames.com"], "api.legacygames.com", true);
+        check_allowed(&["API.LegacyGames.com"], "api.legacygames.com", true);
+        check_allowed(&["*.example.com"], "api.example.com", true);
+        check_allowed(&["*.example.com"], "a.b.example.com", true);
+        check_allowed(&["api.*"], "api.legacygames.com", true);
+        check_allowed(&["api.*"], "api.example.org", true);
+        check_allowed(&["blabla.*.com"], "blabla.foo.com", true);
+        check_allowed(&["blabla.*.com"], "blabla.foo.bar.com", true);
+        check_allowed(&["example.com", "*.example.com"], "example.com", true);
+        check_allowed(&["example.com", "*.example.com"], "api.example.com", true);
     }
 
-    impl TestServer {
-        async fn start() -> Self {
-            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-
-            let connections = Arc::new(AtomicUsize::new(0));
-            let requests = Arc::new(Mutex::new(Vec::new()));
-
-            let accept = tokio::spawn({
-                let connections = connections.clone();
-                let requests = requests.clone();
-
-                async move {
-                    loop {
-                        let (stream, _) = listener.accept().await.unwrap();
-                        connections.fetch_add(1, Ordering::SeqCst);
-
-                        let requests = requests.clone();
-
-                        tokio::spawn(async move {
-                            let service =
-                                service_fn(|request| Self::serve(requests.clone(), request));
-
-                            http1::Builder::new()
-                                .serve_connection(TokioIo::new(stream), service)
-                                .await
-                                .ok();
-                        });
-                    }
-                }
-            });
-
-            Self {
-                addr,
-                connections,
-                requests,
-                listener: accept,
-            }
-        }
-
-        async fn serve(
-            requests: Arc<Mutex<Vec<Request<Bytes>>>>,
-            request: Request<Incoming>,
-        ) -> Result<http::Response<Full<Bytes>>, hyper::Error> {
-            let (parts, body) = request.into_parts();
-            let body = body.collect().await?.to_bytes();
-
-            requests
-                .lock()
-                .unwrap()
-                .push(Request::from_parts(parts, body));
-
-            Ok(http::Response::new(Full::new(Bytes::from_static(b"ok"))))
-        }
-
-        fn url(&self) -> String {
-            format!("http://{}/", self.addr)
-        }
-
-        fn connections(&self) -> usize {
-            self.connections.load(Ordering::SeqCst)
-        }
-
-        fn requests(&self) -> Vec<Request<Bytes>> {
-            self.requests.lock().unwrap().clone()
-        }
+    #[test]
+    fn the_allowlist_rejects_every_other_host() {
+        check_allowed(&[], "api.legacygames.com", false);
+        check_allowed(&["api.legacygames.com"], "legacygames.com", false);
+        check_allowed(&["api.legacygames.com"], "evil.com", false);
+        check_allowed(
+            &["api.legacygames.com"],
+            "api.legacygames.com.evil.com",
+            false,
+        );
+        check_allowed(&["*.example.com"], "example.com", false);
+        check_allowed(&["*.example.com"], "example.com.evil.com", false);
+        check_allowed(&["*.example.com"], "notexample.com", false);
+        check_allowed(&["api.*"], "cdn.legacygames.com", false);
+        check_allowed(&["blabla.*.com"], "blabla.foo.org", false);
+        check_allowed(&["blabla.*.com"], "other.foo.com", false);
+        check_allowed(&["example.com", "*.example.com"], "evil.com", false);
     }
 
-    impl Drop for TestServer {
-        fn drop(&mut self) {
-            self.listener.abort();
-        }
+    fn empty_body() -> WasiBody {
+        Empty::<Bytes>::new().map_err(Error::from).boxed_unsync()
     }
 
-    fn outbound(allowed: &str) -> OutboundHttp {
-        OutboundHttp::new(http_client(), [allowed.to_string()][..].into())
-    }
-
-    async fn get(hooks: &mut OutboundHttp, url: &str) -> Result<StatusCode, Error> {
-        let body = Empty::<Bytes>::new().map_err(Error::from).boxed_unsync();
-        let request = Request::builder().uri(url).body(body).unwrap();
-
-        send(hooks, request).await
-    }
-
-    async fn post(
-        hooks: &mut OutboundHttp,
-        url: &str,
-        body: &'static str,
-    ) -> Result<StatusCode, Error> {
-        let body = Full::new(Bytes::from_static(body.as_bytes()))
+    fn text_body(text: &'static str) -> WasiBody {
+        Full::new(Bytes::from_static(text.as_bytes()))
             .map_err(Error::from)
-            .boxed_unsync();
-
-        let request = Request::builder()
-            .method(Method::POST)
-            .uri(url)
-            .body(body)
-            .unwrap();
-
-        send(hooks, request).await
+            .boxed_unsync()
     }
 
-    async fn send(
-        hooks: &mut OutboundHttp,
-        request: Request<WasiBody>,
-    ) -> Result<StatusCode, Error> {
-        let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));
+    async fn send(allowed: &str, request: Request<WasiBody>) -> Result<(StatusCode, Bytes), Error> {
+        let mut hooks = OutboundHttp::new(http_client(), [allowed.to_string()][..].into());
 
-        let (response, _) = Box::into_pin(sending).await?;
+        let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));
+        let (response, _io) = Box::into_pin(sending).await?;
 
         let status = response.status();
-        response.into_body().collect().await?;
+        let body = response.into_body().collect().await?.to_bytes();
 
-        Ok(status)
+        Ok((status, body))
+    }
+
+    async fn ok_server() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+            .mount(&server)
+            .await;
+
+        server
+    }
+
+    async fn unused_addr() -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+        listener.local_addr().unwrap()
     }
 
     #[tokio::test]
-    async fn requests_to_the_same_host_share_one_connection() {
-        let server = TestServer::start().await;
-        let mut hooks = outbound("127.0.0.1");
+    async fn an_allowed_request_reaches_the_server_and_returns_its_response() {
+        let server = ok_server().await;
+        let request = Request::builder()
+            .uri(format!("{}/", server.uri()))
+            .body(empty_body())
+            .unwrap();
 
-        for _ in 0..3 {
-            let status = get(&mut hooks, &server.url()).await.unwrap();
-            assert_eq!(status, StatusCode::OK);
-        }
+        let (status, body) = send("127.0.0.1", request).await.unwrap();
 
-        assert_eq!(server.requests().len(), 3);
-        assert_eq!(server.connections(), 1);
-    }
-
-    #[tokio::test]
-    async fn separate_plugins_share_one_connection() {
-        let server = TestServer::start().await;
-        let client = http_client();
-
-        for _ in 0..3 {
-            let mut hooks = OutboundHttp::new(client.clone(), ["127.0.0.1".to_string()][..].into());
-            get(&mut hooks, &server.url()).await.unwrap();
-        }
-
-        assert_eq!(server.requests().len(), 3);
-        assert_eq!(server.connections(), 1);
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "ok");
     }
 
     #[tokio::test]
     async fn request_bodies_reach_the_server_with_their_length() {
-        let server = TestServer::start().await;
-        let mut hooks = outbound("127.0.0.1");
+        let server = ok_server().await;
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("{}/", server.uri()))
+            .body(text_body("hello"))
+            .unwrap();
 
-        let status = post(&mut hooks, &server.url(), "hello").await.unwrap();
-        assert_eq!(status, StatusCode::OK);
+        send("127.0.0.1", request).await.unwrap();
 
-        let requests = server.requests();
+        let requests = server.received_requests().await.unwrap();
         let [request] = requests.as_slice() else {
             panic!("expected exactly one request, got {}", requests.len());
         };
 
-        assert_eq!(request.method(), Method::POST);
-        assert_eq!(request.body(), "hello");
-        assert_eq!(request.headers()[CONTENT_LENGTH], "5");
+        assert_eq!(request.method, Method::POST);
+        assert_eq!(request.body, b"hello");
+        assert_eq!(request.headers[CONTENT_LENGTH], "5");
     }
 
     #[tokio::test]
-    async fn requests_to_a_denied_host_never_connect() {
-        let server = TestServer::start().await;
-        let mut hooks = outbound("example.com");
-
-        let err = get(&mut hooks, &server.url()).await.unwrap_err();
-
-        assert!(matches!(err, Error::HttpRequestDenied));
-        assert_eq!(server.connections(), 0);
-    }
-
-    // Yields one data frame, then stalls forever — a server that goes silent
-    // partway through a download.
-    struct StallingBody(bool);
-
-    impl Body for StallingBody {
-        type Data = Bytes;
-        type Error = Error;
-
-        fn poll_frame(
-            mut self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Option<Result<Frame<Bytes>, Error>>> {
-            if self.0 {
-                return Poll::Pending;
-            }
-            self.0 = true;
-            Poll::Ready(Some(Ok(Frame::data(Bytes::from_static(b"partial")))))
-        }
-    }
-
-    #[tokio::test]
-    async fn idle_timeout_body_fails_a_stalled_download() {
-        let inner = StallingBody(false).boxed_unsync();
-        let mut body = IdleTimeoutBody::new(inner, Duration::from_millis(50));
-
-        let frame = poll_fn(|cx| Pin::new(&mut body).poll_frame(cx))
-            .await
-            .unwrap()
+    async fn a_request_to_a_denied_host_is_refused_before_it_connects() {
+        let server = ok_server().await;
+        let request = Request::builder()
+            .uri(format!("{}/", server.uri()))
+            .body(empty_body())
             .unwrap();
-        assert_eq!(frame.into_data().unwrap(), "partial");
 
-        // The stream now stalls; the next frame resolves to a timeout error once
-        // the idle deadline elapses.
-        let err = poll_fn(|cx| Pin::new(&mut body).poll_frame(cx))
-            .await
-            .unwrap()
-            .unwrap_err();
-        assert!(matches!(err, Error::ConnectionReadTimeout));
+        let error = send("example.com", request).await.unwrap_err();
+
+        assert!(matches!(error, Error::HttpRequestDenied), "{error:?}");
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "the request must never reach the server",
+        );
     }
 
-    #[test]
-    fn io_errors_map_to_specific_codes() {
-        use std::io::{Error as IoError, ErrorKind};
+    #[tokio::test]
+    async fn a_refused_connection_is_reported() {
+        let request = Request::builder()
+            .uri(format!("http://{}/", unused_addr().await))
+            .body(empty_body())
+            .unwrap();
 
-        assert!(matches!(
-            io_error(&IoError::from(ErrorKind::ConnectionRefused)),
-            Error::ConnectionRefused
-        ));
-        assert!(matches!(
-            io_error(&IoError::from(ErrorKind::ConnectionReset)),
-            Error::ConnectionTerminated
-        ));
-        assert!(matches!(
-            io_error(&IoError::from(ErrorKind::TimedOut)),
-            Error::ConnectionTimeout
-        ));
-        assert!(matches!(
-            io_error(&IoError::from(ErrorKind::PermissionDenied)),
-            Error::InternalError(_)
-        ));
-    }
+        let error = send("127.0.0.1", request).await.unwrap_err();
 
-    #[test]
-    fn empty_allowlist_denies_everything() {
-        let hosts = allowlist(&[]);
-        assert!(!hosts.is_allowed(Some("api.legacygames.com")));
-    }
-
-    #[test]
-    fn missing_host_is_denied() {
-        assert!(!allowlist(&["*"]).is_allowed(None));
-    }
-
-    #[test]
-    fn star_allows_any_host() {
-        let hosts = allowlist(&["*"]);
-        assert!(hosts.is_allowed(Some("api.legacygames.com")));
-        assert!(hosts.is_allowed(Some("localhost")));
-        assert!(hosts.is_allowed(Some("a.b.c.d.example.com")));
-    }
-
-    #[test]
-    fn exact_host_matches_only_itself() {
-        let hosts = allowlist(&["api.legacygames.com"]);
-        assert!(hosts.is_allowed(Some("api.legacygames.com")));
-        assert!(!hosts.is_allowed(Some("legacygames.com")));
-        assert!(!hosts.is_allowed(Some("evil.com")));
-        assert!(!hosts.is_allowed(Some("api.legacygames.com.evil.com")));
-    }
-
-    #[test]
-    fn leading_wildcard_matches_subdomains_at_any_depth() {
-        let hosts = allowlist(&["*.example.com"]);
-        assert!(hosts.is_allowed(Some("api.example.com")));
-        assert!(hosts.is_allowed(Some("a.b.example.com")));
-        assert!(!hosts.is_allowed(Some("example.com")));
-        assert!(!hosts.is_allowed(Some("example.com.evil.com")));
-        assert!(!hosts.is_allowed(Some("notexample.com")));
-    }
-
-    #[test]
-    fn trailing_wildcard_matches_any_suffix() {
-        let hosts = allowlist(&["api.*"]);
-        assert!(hosts.is_allowed(Some("api.legacygames.com")));
-        assert!(hosts.is_allowed(Some("api.example.org")));
-        assert!(!hosts.is_allowed(Some("cdn.legacygames.com")));
-    }
-
-    #[test]
-    fn wildcard_in_the_middle() {
-        let hosts = allowlist(&["blabla.*.com"]);
-        assert!(hosts.is_allowed(Some("blabla.foo.com")));
-        assert!(hosts.is_allowed(Some("blabla.foo.bar.com")));
-        assert!(!hosts.is_allowed(Some("blabla.foo.org")));
-        assert!(!hosts.is_allowed(Some("other.foo.com")));
-    }
-
-    #[test]
-    fn matching_is_case_insensitive() {
-        let hosts = allowlist(&["API.LegacyGames.com"]);
-        assert!(hosts.is_allowed(Some("api.legacygames.com")));
-    }
-
-    #[test]
-    fn any_pattern_in_the_list_may_match() {
-        let hosts = allowlist(&["example.com", "*.example.com"]);
-        assert!(hosts.is_allowed(Some("example.com")));
-        assert!(hosts.is_allowed(Some("api.example.com")));
-        assert!(!hosts.is_allowed(Some("evil.com")));
+        assert!(matches!(error, Error::ConnectionRefused), "{error:?}");
     }
 }

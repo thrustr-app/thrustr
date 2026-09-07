@@ -36,5 +36,5 @@ wasmtime-wasi-http = { version = "48", features = ["p3"] }
 zip.workspace = true
 
 [dev-dependencies]
-hyper = { workspace = true, features = ["http1", "server"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+tokio = { workspace = true, features = ["test-util"] }
+wiremock.workspace = true

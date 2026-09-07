@@ -5820,7 +5820,6 @@ dependencies = [
  "http-body",
  "http-body-util",
  "hyper",
- "hyper-util",
  "reqwest",
  "runtime",
  "semver",
@@ -5832,6 +5831,7 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-http",
+ "wiremock",
  "zip",
 ]
 
