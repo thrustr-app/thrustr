@@ -77,3 +77,7 @@ VALUES
   (new.id, new.sort_name);
 
 END;
+
+CREATE VIRTUAL TABLE games_spellfix USING spellfix1;
+
+CREATE TABLE search_vocab (word TEXT PRIMARY KEY) WITHOUT ROWID;

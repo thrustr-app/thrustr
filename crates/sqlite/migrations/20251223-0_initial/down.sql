@@ -1,3 +1,7 @@
+DROP TABLE IF EXISTS search_vocab;
+
+DROP TABLE IF EXISTS games_spellfix;
+
 DROP TRIGGER IF EXISTS games_fts_after_update;
 
 DROP TRIGGER IF EXISTS games_fts_after_delete;

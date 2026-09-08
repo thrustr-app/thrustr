@@ -5,7 +5,7 @@ use diesel::{
     r2d2::{ConnectionManager, CustomizeConnection, Error as R2d2Error, Pool, PooledConnection},
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use std::{fs, path::Path, time::Duration};
+use std::{ffi::c_char, fs, os::raw::c_int, path::Path, sync::Once, time::Duration};
 
 mod id;
 mod models;
@@ -15,6 +15,22 @@ mod storage;
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+unsafe extern "C" {
+    fn sqlite3_spellfix_init(
+        db: *mut libsqlite3_sys::sqlite3,
+        pz_err_msg: *mut *mut c_char,
+        api: *const libsqlite3_sys::sqlite3_api_routines,
+    ) -> c_int;
+}
+
+fn register_spellfix() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let rc = unsafe { libsqlite3_sys::sqlite3_auto_extension(Some(sqlite3_spellfix_init)) };
+        assert_eq!(rc, 0, "failed to register the spellfix1 auto-extension");
+    });
+}
 
 #[derive(Debug)]
 struct ConnectionOptions {
@@ -39,6 +55,8 @@ pub struct SqliteStorage {
 
 impl SqliteStorage {
     pub fn new(sqlite_file_path: impl AsRef<Path>) -> Result<Self> {
+        register_spellfix();
+
         let path = sqlite_file_path.as_ref();
 
         if let Some(parent) = path.parent() {

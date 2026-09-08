@@ -23,6 +23,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    search_vocab (word) {
+        word -> Text,
+    }
+}
+
+// spellfix1 virtual table.
+diesel::table! {
+    games_spellfix (word) {
+        word -> Text,
+    }
+}
+
+diesel::table! {
     component_data (component_id, key) {
         component_id -> Text,
         key -> Text,

@@ -16,6 +16,15 @@ libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 serde_json.workspace = true
 tracing.workspace = true
 
+[build-dependencies]
+cc = "1"
+
 [dev-dependencies]
 config.workspace = true
+criterion = "0.7"
+rand.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "search"
+harness = false

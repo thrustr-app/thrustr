@@ -13,13 +13,16 @@ pub type GameId = Id<Game>;
 pub trait GameExt {
     fn name(&self) -> &str;
     fn sort_name(&self) -> String {
-        self.name()
-            .trim()
-            .nfd()
-            .filter(|c| !is_combining_mark(*c))
-            .flat_map(char::to_lowercase)
-            .collect()
+        normalize(self.name())
     }
+}
+
+pub fn normalize(text: &str) -> String {
+    text.trim()
+        .nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 #[derive(Debug)]
@@ -90,6 +93,14 @@ pub struct GameIndex {
 }
 
 impl GameIndex {
+    /// Builds an index without sections.
+    pub fn from_ids(ids: impl IntoIterator<Item = GameId>) -> Self {
+        Self {
+            ids: ids.into_iter().collect(),
+            sections: SectionIndex::default(),
+        }
+    }
+
     /// Builds an index from `(id, sort_name)` pairs already ordered by sort
     /// name, then id.
     pub fn from_sorted(items: impl IntoIterator<Item = (GameId, String)>) -> Self {
@@ -141,8 +152,8 @@ mod tests {
 
     #[track_caller]
     fn check_sort_name(name: &str, expected: &str) {
-        let actual = Named(name.to_string()).sort_name();
-        assert_eq!(actual, expected);
+        assert_eq!(Named(name.to_string()).sort_name(), expected);
+        assert_eq!(normalize(name), expected);
     }
 
     #[test]
