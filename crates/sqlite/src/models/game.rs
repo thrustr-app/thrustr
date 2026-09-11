@@ -5,7 +5,7 @@ use diesel::{
     prelude::{Identifiable, Insertable, Queryable},
     sqlite::Sqlite,
 };
-use domain::game::{Game, GameExt, GameSource, NewGame};
+use domain::game::{Game, GameExt, GameSource, NewGame, word_groups};
 use serde_json::Value;
 use tracing::warn;
 
@@ -29,6 +29,7 @@ pub struct GameRow {
 pub struct NewGameRow<'a> {
     pub name: &'a str,
     pub sort_name: String,
+    pub search_text: String,
     pub source_id: &'a str,
     pub lookup_id: &'a str,
     pub external_ids: Value,
@@ -65,6 +66,7 @@ impl<'a> From<&'a NewGame> for NewGameRow<'a> {
         Self {
             name: &game.name,
             sort_name: game.sort_name(),
+            search_text: search_terms(&game.name),
             source_id: &game.source.id,
             lookup_id: &game.source.lookup_id,
             external_ids: serde_json::to_value(&game.source.external_ids).unwrap_or_default(),
@@ -73,4 +75,27 @@ impl<'a> From<&'a NewGame> for NewGameRow<'a> {
             description: game.description.as_deref(),
         }
     }
+}
+
+const MAX_CONCAT_LEN: usize = 64;
+
+/// FTS document for a title. Normalized words, plus the concatenation of
+/// strings joined by punctuation, so `S.T.A.L.K.E.R.` also matches `stalker`.
+/// Space-separated words aren't joined.
+fn search_terms(name: &str) -> String {
+    let mut doc: Vec<String> = Vec::new();
+
+    for group in word_groups(name) {
+        let joined = (group.len() > 1)
+            .then(|| group.concat())
+            .filter(|joined| joined.len() <= MAX_CONCAT_LEN);
+
+        for term in group.into_iter().chain(joined) {
+            if !doc.contains(&term) {
+                doc.push(term);
+            }
+        }
+    }
+
+    doc.join(" ")
 }

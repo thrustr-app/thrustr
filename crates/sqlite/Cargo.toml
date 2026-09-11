@@ -20,11 +20,4 @@ tracing.workspace = true
 cc = "1"
 
 [dev-dependencies]
-config.workspace = true
-criterion = "0.7"
-rand.workspace = true
 tempfile.workspace = true
-
-[[bench]]
-name = "search"
-harness = false

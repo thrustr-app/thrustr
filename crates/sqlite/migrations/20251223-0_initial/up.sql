@@ -2,6 +2,7 @@ CREATE TABLE games (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   sort_name TEXT NOT NULL,
+  search_text TEXT NOT NULL,
   source_id TEXT NOT NULL,
   lookup_id TEXT NOT NULL,
   external_ids JSON NOT NULL DEFAULT '{}',
@@ -38,43 +39,43 @@ CREATE TABLE artwork (
   )
 );
 
-CREATE INDEX idx_games_sort_name ON games (sort_name, id);
+CREATE INDEX idx_games_sort_name ON games (sort_name GLOB '[a-z]*', sort_name, id);
 
 CREATE INDEX idx_artwork_hash ON artwork (hash);
 
 CREATE VIRTUAL TABLE games_fts USING fts5 (
-  sort_name,
+  search_text,
   content = 'games',
   content_rowid = 'id'
 );
 
 CREATE TRIGGER games_fts_after_insert AFTER INSERT ON games BEGIN
 INSERT INTO
-  games_fts (rowid, sort_name)
+  games_fts (rowid, search_text)
 VALUES
-  (new.id, new.sort_name);
+  (new.id, new.search_text);
 
 END;
 
 CREATE TRIGGER games_fts_after_delete AFTER DELETE ON games BEGIN
 INSERT INTO
-  games_fts (games_fts, rowid, sort_name)
+  games_fts (games_fts, rowid, search_text)
 VALUES
-  ('delete', old.id, old.sort_name);
+  ('delete', old.id, old.search_text);
 
 END;
 
 CREATE TRIGGER games_fts_after_update AFTER
 UPDATE ON games BEGIN
 INSERT INTO
-  games_fts (games_fts, rowid, sort_name)
+  games_fts (games_fts, rowid, search_text)
 VALUES
-  ('delete', old.id, old.sort_name);
+  ('delete', old.id, old.search_text);
 
 INSERT INTO
-  games_fts (rowid, sort_name)
+  games_fts (rowid, search_text)
 VALUES
-  (new.id, new.sort_name);
+  (new.id, new.search_text);
 
 END;
 

@@ -18,11 +18,35 @@ pub trait GameExt {
 }
 
 pub fn normalize(text: &str) -> String {
-    text.trim()
-        .nfd()
-        .filter(|c| !is_combining_mark(*c))
+    word_groups(text).concat().join(" ")
+}
+
+/// Splits text into word groups: `Marvel's Spider-Man` -> `[["marvels"], ["spider", "man"]]`.
+/// Whitespace starts a new group while other punctuation ends the current word.
+pub fn word_groups(text: &str) -> Vec<Vec<String>> {
+    fold(text)
+        .split_whitespace()
+        .filter_map(|chunk| {
+            let words: Vec<String> = chunk
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .map(String::from)
+                .collect();
+            (!words.is_empty()).then_some(words)
+        })
+        .collect()
+}
+
+/// Strips diacritics and apostrophes and lowercases.
+fn fold(text: &str) -> String {
+    text.nfd()
+        .filter(|c| !is_combining_mark(*c) && !is_apostrophe(*c))
         .flat_map(char::to_lowercase)
         .collect()
+}
+
+fn is_apostrophe(c: char) -> bool {
+    matches!(c, '\'' | '\u{2019}')
 }
 
 #[derive(Debug)]
@@ -162,11 +186,49 @@ mod tests {
         check_sort_name("Zelda", "zelda");
         check_sort_name("ZELDA", "zelda");
         check_sort_name("7 Days to Die", "7 days to die");
-        check_sort_name(".hack//G.U.", ".hack//g.u.");
+        check_sort_name(".hack//G.U.", "hack g u");
+        check_sort_name("S.T.A.L.K.E.R.", "s t a l k e r");
+        check_sort_name("Marvel's Spider-Man", "marvels spider man");
+        check_sort_name("Marvel’s Spider-Man", "marvels spider man");
         check_sort_name("Café", "cafe");
         check_sort_name(" naïve ", "naive");
         check_sort_name("São Paulo", "sao paulo");
         check_sort_name("Å", "a");
         check_sort_name("Straße", "straße");
+    }
+
+    #[track_caller]
+    fn check_groups(name: &str, expected: &[&[&str]]) {
+        let got = word_groups(name);
+        let got: Vec<Vec<&str>> = got
+            .iter()
+            .map(|group| group.iter().map(String::as_str).collect())
+            .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn splits_into_groups() {
+        check_groups(
+            "The Legend of Zelda",
+            &[&["the"], &["legend"], &["of"], &["zelda"]],
+        );
+        check_groups("Spider-Man", &[&["spider", "man"]]);
+        check_groups("Marvel's Spider-Man", &[&["marvels"], &["spider", "man"]]);
+        check_groups(
+            "S.T.A.L.K.E.R.: Shadow of Chernobyl",
+            &[
+                &["s", "t", "a", "l", "k", "e", "r"],
+                &["shadow"],
+                &["of"],
+                &["chernobyl"],
+            ],
+        );
+        check_groups("", &[]);
+        check_groups("  ", &[]);
+        check_groups("--", &[]);
+        check_groups("foo -- bar", &[&["foo"], &["bar"]]);
+        check_groups("-foo-", &[&["foo"]]);
+        check_groups("Half-Life 2", &[&["half", "life"], &["2"]]);
     }
 }

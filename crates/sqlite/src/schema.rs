@@ -3,6 +3,7 @@ diesel::table! {
         id -> BigInt,
         name -> Text,
         sort_name -> Text,
+        search_text -> Text,
         source_id -> Text,
         lookup_id -> Text,
         external_ids -> Json,
