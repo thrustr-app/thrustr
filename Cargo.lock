@@ -7426,7 +7426,7 @@ name = "sqlite"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "config",
+ "cc",
  "diesel",
  "diesel_migrations",
  "domain",

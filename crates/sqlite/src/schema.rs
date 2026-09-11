@@ -3,6 +3,7 @@ diesel::table! {
         id -> BigInt,
         name -> Text,
         sort_name -> Text,
+        search_text -> Text,
         source_id -> Text,
         lookup_id -> Text,
         external_ids -> Json,
@@ -19,6 +20,19 @@ diesel::table! {
         position -> Integer,
         hash -> Text,
         accent -> Nullable<Integer>,
+    }
+}
+
+diesel::table! {
+    search_vocab (word) {
+        word -> Text,
+    }
+}
+
+// spellfix1 virtual table.
+diesel::table! {
+    games_spellfix (word) {
+        word -> Text,
     }
 }
 

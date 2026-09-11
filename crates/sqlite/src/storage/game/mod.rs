@@ -4,13 +4,15 @@ use crate::models::{ArtworkRow, GameRow, NewGameRow};
 use anyhow::Result;
 use diesel::{
     BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
-    QueryableByName, RunQueryDsl, SelectableHelper, sql_query,
+    RunQueryDsl, SelectableHelper, SqliteConnection,
     sql_types::{BigInt, Text},
 };
 use domain::artwork::{Artwork, ArtworkKind};
-use domain::game::{Game, GameId, GameIndex, GameListItem, GameRepository, NewGame};
+use domain::game::{self, Game, GameId, GameIndex, GameListItem, GameRepository, NewGame};
 use std::collections::HashMap;
 use tracing::warn;
+
+mod search;
 
 const CHUNK_SIZE: usize = 1000;
 
@@ -19,13 +21,22 @@ impl GameRepository for SqliteStorage {
         use crate::schema::games::dsl;
 
         let mut conn = self.conn()?;
-        let row = diesel::insert_or_ignore_into(dsl::games)
-            .values(NewGameRow::from(game))
-            .returning(GameRow::as_returning())
-            .get_result::<GameRow>(&mut conn)
-            .optional()?;
+        conn.transaction(|conn| {
+            let row = NewGameRow::from(game);
+            let words = search::vocab_words([row.sort_name.as_str()]);
 
-        Ok(row.map(Game::from))
+            let inserted = diesel::insert_or_ignore_into(dsl::games)
+                .values(row)
+                .returning(GameRow::as_returning())
+                .get_result::<GameRow>(conn)
+                .optional()?;
+
+            if inserted.is_some() {
+                search::index_vocab(conn, words)?;
+            }
+
+            Ok(inserted.map(Game::from))
+        })
     }
 
     fn insert_many(&self, games: &[NewGame]) -> Result<usize> {
@@ -36,9 +47,20 @@ impl GameRepository for SqliteStorage {
             let mut inserted = 0;
             for chunk in games.chunks(CHUNK_SIZE) {
                 let rows: Vec<NewGameRow> = chunk.iter().map(NewGameRow::from).collect();
-                inserted += diesel::insert_or_ignore_into(dsl::games)
+
+                // Extract words before insert consumes them to avoid folding them again.
+                // For ignored/duplicate rows, we don't check if words are already in the vocabulary
+                // as identifying them is more expensive than just inserting-or-ignoring them.
+                let words = search::vocab_words(rows.iter().map(|row| row.sort_name.as_str()));
+
+                let added = diesel::insert_or_ignore_into(dsl::games)
                     .values(rows)
                     .execute(conn)?;
+                inserted += added;
+
+                if added > 0 {
+                    search::index_vocab(conn, words)?;
+                }
             }
             Ok(inserted)
         })
@@ -59,38 +81,19 @@ impl GameRepository for SqliteStorage {
     }
 
     fn list_index(&self, query: Option<&str>) -> Result<GameIndex> {
-        use crate::schema::games::dsl;
-
-        let match_query = query.map(fts_match_query).filter(|q| !q.is_empty());
-
         let mut conn = self.conn()?;
 
-        if let Some(match_query) = match_query {
-            let rows = sql_query(
-                "SELECT games.id AS id, games.sort_name AS sort_name \
-                 FROM games \
-                 JOIN games_fts ON games_fts.rowid = games.id \
-                 WHERE games_fts MATCH ? \
-                 ORDER BY games.sort_name ASC, games.id ASC",
-            )
-            .bind::<Text, _>(match_query)
-            .load::<IndexRow>(&mut conn)?;
+        let Some(query) = query.map(str::trim).filter(|query| !query.is_empty()) else {
+            return browse(&mut conn);
+        };
 
-            return Ok(GameIndex::from_sorted(
-                rows.into_iter()
-                    .map(|row| (from_row_id(row.id), row.sort_name)),
-            ));
+        let normalized = game::normalize(query);
+        if normalized.is_empty() {
+            return Ok(GameIndex::default());
         }
 
-        let rows = dsl::games
-            .order((dsl::sort_name.asc(), dsl::id.asc()))
-            .select((dsl::id, dsl::sort_name))
-            .load::<(i64, String)>(&mut conn)?;
-
-        Ok(GameIndex::from_sorted(
-            rows.into_iter()
-                .map(|(id, sort_name)| (from_row_id(id), sort_name)),
-        ))
+        let ids = search::search(&mut conn, &normalized)?;
+        Ok(GameIndex::from_ids(ids))
     }
 
     fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {
@@ -100,7 +103,7 @@ impl GameRepository for SqliteStorage {
         let mut conn = self.conn()?;
         let mut by_id: HashMap<i64, GameListItem> = HashMap::with_capacity(ids.len());
         for chunk in ids.chunks(CHUNK_SIZE) {
-            let row_ids: Vec<i64> = chunk.iter().map(|id| to_row_id(*id)).collect();
+            let row_ids: Vec<i64> = chunk.iter().map(|&id| to_row_id(id)).collect();
             let rows: Vec<(GameRow, Option<ArtworkRow>)> = dsl::games
                 .left_join(
                     artwork::table.on(artwork::game_id
@@ -118,7 +121,7 @@ impl GameRepository for SqliteStorage {
 
         Ok(ids
             .iter()
-            .filter_map(|id| by_id.remove(&to_row_id(*id)))
+            .filter_map(|&id| by_id.remove(&to_row_id(id)))
             .collect())
     }
 
@@ -155,20 +158,26 @@ impl GameRepository for SqliteStorage {
     }
 }
 
-#[derive(QueryableByName)]
-struct IndexRow {
-    #[diesel(sql_type = BigInt)]
-    id: i64,
-    #[diesel(sql_type = Text)]
-    sort_name: String,
-}
+fn browse(conn: &mut SqliteConnection) -> Result<GameIndex> {
+    #[derive(diesel::QueryableByName)]
+    struct BrowseRow {
+        #[diesel(sql_type = BigInt)]
+        id: i64,
+        #[diesel(sql_type = Text)]
+        sort_name: String,
+    }
 
-fn fts_match_query(input: &str) -> String {
-    input
-        .split_whitespace()
-        .map(|token| format!("\"{}\"*", token.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(" ")
+    let rows = diesel::sql_query(
+        "SELECT id, sort_name \
+         FROM games \
+         ORDER BY (sort_name GLOB '[a-z]*'), sort_name, id",
+    )
+    .load::<BrowseRow>(conn)?;
+
+    Ok(GameIndex::from_sorted(
+        rows.into_iter()
+            .map(|row| (from_row_id(row.id), row.sort_name)),
+    ))
 }
 
 fn list_item(game: GameRow, cover: Option<ArtworkRow>) -> GameListItem {
@@ -182,29 +191,5 @@ fn list_item(game: GameRow, cover: Option<ArtworkRow>) -> GameListItem {
                 .inspect_err(|err| warn!(game_id = game.id, "skipping artwork row: {err}"))
                 .ok()
         }),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::fts_match_query;
-
-    #[test]
-    fn blank_input_yields_empty_query() {
-        assert_eq!(fts_match_query(""), "");
-        assert_eq!(fts_match_query("   \t"), "");
-    }
-
-    #[test]
-    fn tokens_are_quoted_and_prefixed() {
-        assert_eq!(fts_match_query("half"), "\"half\"*");
-        assert_eq!(fts_match_query("half life"), "\"half\"* \"life\"*");
-    }
-
-    #[test]
-    fn operators_are_neutralized_as_literals() {
-        assert_eq!(fts_match_query("a\"b"), "\"a\"\"b\"*");
-        assert_eq!(fts_match_query("foo OR bar"), "\"foo\"* \"OR\"* \"bar\"*");
-        assert_eq!(fts_match_query("summary:x"), "\"summary:x\"*");
     }
 }

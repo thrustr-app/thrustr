@@ -13,13 +13,40 @@ pub type GameId = Id<Game>;
 pub trait GameExt {
     fn name(&self) -> &str;
     fn sort_name(&self) -> String {
-        self.name()
-            .trim()
-            .nfd()
-            .filter(|c| !is_combining_mark(*c))
-            .flat_map(char::to_lowercase)
-            .collect()
+        normalize(self.name())
     }
+}
+
+pub fn normalize(text: &str) -> String {
+    word_groups(text).concat().join(" ")
+}
+
+/// Splits text into word groups: `Marvel's Spider-Man` -> `[["marvels"], ["spider", "man"]]`.
+/// Whitespace starts a new group while other punctuation ends the current word.
+pub fn word_groups(text: &str) -> Vec<Vec<String>> {
+    fold(text)
+        .split_whitespace()
+        .filter_map(|chunk| {
+            let words: Vec<String> = chunk
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .map(String::from)
+                .collect();
+            (!words.is_empty()).then_some(words)
+        })
+        .collect()
+}
+
+/// Strips diacritics and apostrophes and lowercases.
+fn fold(text: &str) -> String {
+    text.nfd()
+        .filter(|c| !is_combining_mark(*c) && !is_apostrophe(*c))
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn is_apostrophe(c: char) -> bool {
+    matches!(c, '\'' | '\u{2019}')
 }
 
 #[derive(Debug)]
@@ -90,6 +117,14 @@ pub struct GameIndex {
 }
 
 impl GameIndex {
+    /// Builds an index without sections.
+    pub fn from_ids(ids: impl IntoIterator<Item = GameId>) -> Self {
+        Self {
+            ids: ids.into_iter().collect(),
+            sections: SectionIndex::default(),
+        }
+    }
+
     /// Builds an index from `(id, sort_name)` pairs already ordered by sort
     /// name, then id.
     pub fn from_sorted(items: impl IntoIterator<Item = (GameId, String)>) -> Self {
@@ -141,8 +176,8 @@ mod tests {
 
     #[track_caller]
     fn check_sort_name(name: &str, expected: &str) {
-        let actual = Named(name.to_string()).sort_name();
-        assert_eq!(actual, expected);
+        assert_eq!(Named(name.to_string()).sort_name(), expected);
+        assert_eq!(normalize(name), expected);
     }
 
     #[test]
@@ -151,11 +186,49 @@ mod tests {
         check_sort_name("Zelda", "zelda");
         check_sort_name("ZELDA", "zelda");
         check_sort_name("7 Days to Die", "7 days to die");
-        check_sort_name(".hack//G.U.", ".hack//g.u.");
+        check_sort_name(".hack//G.U.", "hack g u");
+        check_sort_name("S.T.A.L.K.E.R.", "s t a l k e r");
+        check_sort_name("Marvel's Spider-Man", "marvels spider man");
+        check_sort_name("Marvel’s Spider-Man", "marvels spider man");
         check_sort_name("Café", "cafe");
         check_sort_name(" naïve ", "naive");
         check_sort_name("São Paulo", "sao paulo");
         check_sort_name("Å", "a");
         check_sort_name("Straße", "straße");
+    }
+
+    #[track_caller]
+    fn check_groups(name: &str, expected: &[&[&str]]) {
+        let got = word_groups(name);
+        let got: Vec<Vec<&str>> = got
+            .iter()
+            .map(|group| group.iter().map(String::as_str).collect())
+            .collect();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn splits_into_groups() {
+        check_groups(
+            "The Legend of Zelda",
+            &[&["the"], &["legend"], &["of"], &["zelda"]],
+        );
+        check_groups("Spider-Man", &[&["spider", "man"]]);
+        check_groups("Marvel's Spider-Man", &[&["marvels"], &["spider", "man"]]);
+        check_groups(
+            "S.T.A.L.K.E.R.: Shadow of Chernobyl",
+            &[
+                &["s", "t", "a", "l", "k", "e", "r"],
+                &["shadow"],
+                &["of"],
+                &["chernobyl"],
+            ],
+        );
+        check_groups("", &[]);
+        check_groups("  ", &[]);
+        check_groups("--", &[]);
+        check_groups("foo -- bar", &[&["foo"], &["bar"]]);
+        check_groups("-foo-", &[&["foo"]]);
+        check_groups("Half-Life 2", &[&["half", "life"], &["2"]]);
     }
 }
