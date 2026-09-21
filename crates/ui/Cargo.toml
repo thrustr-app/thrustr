@@ -10,5 +10,6 @@ gpui.workspace = true
 theme.workspace = true
 
 # External
+paste.workspace = true
 smallvec.workspace = true
 unicode-segmentation = "1.12.0"

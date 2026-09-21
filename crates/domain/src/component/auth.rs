@@ -1,4 +1,4 @@
-use crate::component::Field;
+use crate::component::Element;
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -17,7 +17,7 @@ pub enum LoginMethod {
 #[derive(Deserialize, Debug, Clone)]
 pub struct LoginForm {
     #[serde(rename = "field")]
-    pub fields: Vec<Field>,
+    pub fields: Vec<Element>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Adapted from gpui_tokio, Copyright (C) Zed Industries, Inc., licensed under
-// Apache-2.0:
+// Adapted from gpui_tokio,
+// Copyright (C) Zed Industries, Inc., licensed under Apache-2.0:
 // https://github.com/zed-industries/zed/blob/main/crates/gpui_tokio/src/gpui_tokio.rs
+//
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 #![allow(dead_code)]
@@ -36,10 +37,7 @@ pub fn defer<F: FnOnce()>(f: F) -> Deferred<F> {
     Deferred(Some(f))
 }
 
-/// Initializes the Tokio wrapper using a new Tokio runtime with 2 worker threads.
-///
-/// If you need more threads (or access to the runtime outside of GPUI), you can create the runtime
-/// yourself and pass a Handle to `init_from_handle`.
+/// Initializes the Tokio wrapper using a new Tokio runtime.
 pub fn init(cx: &mut App) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

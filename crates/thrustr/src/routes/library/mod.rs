@@ -1,24 +1,22 @@
+use super::Route;
 use crate::{
-    app::Route,
-    conversions::image::image_to_gpui,
-    extensions::{EventListenerExt, SpawnTaskExt},
+    adapters::ImageExt,
+    context::{EventListenerExt, SpawnTaskExt},
     globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
     navigation::{NavigatorExt, Page},
-    routes::library::{
-        bubble::index_bubble,
-        cache::{LruImageCache, lru_image_cache},
-        card::{GameCard, GameEntry, accent_hsla, cover_path},
-        grid::{GridDims, GridMetrics},
-    },
 };
 use artwork::ArtworkReady;
+use cache::{LruImageCache, lru_image_cache};
+use card::{GameCard, GameEntry, accent_hsla, cover_path};
 use domain::{game::GameId, section_index::SectionIndex};
 use event::Topic;
 use gpui::{
-    AnyElement, AppContext, Context, Entity, FocusHandle, Image, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Rems, Render, Resource, ScrollStrategy, SharedString, Styled, Task,
-    UniformListScrollHandle, Window, container_query, div, px, rems, uniform_list,
+    AnyElement, AppContext, Context, Div, Entity, FocusHandle, Image, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Point, Rems, Render, Resource, ScrollStrategy,
+    SharedString, Styled, Subscription, Task, UniformListScrollHandle, Window, container_query,
+    div, px, rems, uniform_list,
 };
+use grid::{GridDims, GridMetrics};
 use lru::LruCache;
 use std::{
     cell::Cell,
@@ -33,26 +31,26 @@ use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
-    Activate, GRID_CONTEXT, GridDir, ListScrollbar, ScrollbarState, SelectDown, SelectLeft,
-    SelectRight, SelectUp, WithVariant, grid_step, input, list_scrollbar_state,
+    Activate, GRID_CONTEXT, GridDir, Icon, IndexRail, ListScrollbar, SCROLLBAR_WIDTH,
+    ScrollbarState, SelectDown, SelectLeft, SelectRight, SelectUp, WithRadius, WithSize, grid_step,
+    index_rail_position, input, list_scrollbar_state,
 };
 
-mod bubble;
 mod cache;
 mod card;
 mod grid;
 
-const CARD_WIDTH: Pixels = px(220.);
-const CARD_MIN_GAP: Pixels = px(8.);
+const CARD_MIN_WIDTH: Pixels = px(180.);
+const CARD_GAP: Pixels = px(8.);
 const CARD_ASPECT_RATIO: f32 = 2. / 3.;
-const CARD_PADDING: Rems = rems(0.75);
-const CARD_INNER_GAP: Rems = rems(0.75);
-const CARD_TEXT_SIZE: Rems = rems(0.9);
-const CARD_ICON_SIZE: Rems = rems(1.5);
-const CARD_TITLE_HEIGHT: Rems = rems(1.25);
-const CARD_ROW_GAP: Rems = rems(1.5);
+const CARD_PADDING: Rems = rems(0.5);
+const CARD_INNER_GAP: Rems = rems(0.625);
+const CARD_TITLE_SIZE: Rems = rems(0.875);
+const CARD_ICON_SIZE: Rems = rems(1.25);
+const CARD_ROW_GAP: Rems = rems(1.25);
 
-const GRID_PADDING: Rems = rems(2. - CARD_PADDING.0);
+const GRID_PADDING: Rems = rems(3. - CARD_PADDING.0);
+const INDEX_RAIL_GAP: Pixels = px(4.);
 
 const CACHE_OVERSCAN_ROWS: usize = 3;
 
@@ -67,49 +65,79 @@ const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
 
 type ChunkCache = LruCache<usize, Vec<GameEntry>>;
 
+fn available_letters(sections: &SectionIndex) -> u32 {
+    sections.sections().iter().fold(0, |mask, section| {
+        index_rail_position(&section.label).map_or(mask, |i| mask | (1 << i))
+    })
+}
+
 pub struct Library {
     ids: Rc<Vec<GameId>>,
     sections: Rc<SectionIndex>,
+    available_letters: u32,
+
+    pinned_letter: Option<usize>,
+    pinned_offset: Option<Point<Pixels>>,
     scroll_handle: UniformListScrollHandle,
+    selected: Option<usize>,
+    num_cols: Rc<Cell<usize>>,
+    scrollbar: Option<Entity<ScrollbarState>>,
+
     chunks: Rc<ChunkCache>,
     loading_chunks: HashSet<usize>,
     /// Bumped whenever `ids` is replaced so in-flight hydrations from a previous
     /// generation are discarded.
     generation: u64,
+
+    search_query: SharedString,
+    _search_debounce: Option<Task<()>>,
+
+    component_icons: HashMap<String, Arc<Image>>,
+    image_cache: Entity<LruImageCache>,
+
+    focus_handle: FocusHandle,
+    _focus_subscription: Subscription,
     /// Bumped on every refresh so an earlier query cannot overwrite the
     /// results of a later one when they resolve out of order.
     refresh_seq: u64,
-    component_icons: HashMap<String, Arc<Image>>,
-    image_cache: Entity<LruImageCache>,
-    focus_handle: FocusHandle,
-    selected: Option<usize>,
-    was_focused: bool,
-    num_cols: Rc<Cell<usize>>,
-    scrollbar: Option<Entity<ScrollbarState>>,
-    search_query: SharedString,
-    _search_debounce: Option<Task<()>>,
     _tasks: Vec<Task<()>>,
 }
 
 impl Library {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus_handle = cx.focus_handle().tab_stop(false);
+        let focus_subscription = cx.on_focus(&focus_handle, window, |this, window, cx| {
+            if window.last_input_was_keyboard() {
+                this.selected = this.top_visible_item();
+                if let Some(idx) = this.selected {
+                    let cols = this.cols();
+                    this.scroll_handle
+                        .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
+                }
+                cx.notify();
+            }
+        });
+
         let mut page = Self {
             ids: Rc::new(Vec::new()),
             sections: Rc::new(SectionIndex::default()),
+            available_letters: 0,
+            pinned_letter: None,
+            pinned_offset: None,
             scroll_handle: UniformListScrollHandle::new(),
+            selected: None,
+            num_cols: Rc::new(Cell::new(1)),
+            scrollbar: None,
             chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
             loading_chunks: HashSet::new(),
             generation: 0,
-            refresh_seq: 0,
-            component_icons: HashMap::new(),
-            image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
-            focus_handle: cx.focus_handle().tab_stop(false),
-            selected: None,
-            was_focused: false,
-            num_cols: Rc::new(Cell::new(1)),
-            scrollbar: None,
             search_query: SharedString::default(),
             _search_debounce: None,
+            component_icons: HashMap::new(),
+            image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
+            focus_handle,
+            _focus_subscription: focus_subscription,
+            refresh_seq: 0,
             _tasks: Vec::new(),
         };
 
@@ -138,6 +166,10 @@ impl Library {
         page.refresh_icons(cx);
         page.refresh_games(cx);
         page
+    }
+
+    fn cols(&self) -> usize {
+        self.num_cols.get().max(1)
     }
 
     fn chunks_mut(&mut self) -> &mut ChunkCache {
@@ -183,8 +215,7 @@ impl Library {
             .iter()
             .filter_map(|s| {
                 let meta = s.component().metadata();
-                meta.icon
-                    .map(|icon| (meta.id.to_string(), image_to_gpui(icon)))
+                meta.icon.map(|icon| (meta.id.to_string(), icon.to_gpui()))
             })
             .collect();
     }
@@ -222,7 +253,10 @@ impl Library {
                             library.focus_handle.clone().tab_stop(!index.ids.is_empty());
 
                         library.ids = Rc::new(index.ids);
+                        library.available_letters = available_letters(&index.sections);
                         library.sections = Rc::new(index.sections);
+                        library.pinned_letter = None;
+                        library.pinned_offset = None;
                         library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
                         library.loading_chunks.clear();
                         library.generation += 1;
@@ -253,7 +287,7 @@ impl Library {
     }
 
     fn move_selection(&mut self, dir: GridDir, cx: &mut Context<Self>) {
-        let cols = self.num_cols.get().max(1);
+        let cols = self.cols();
         let next = match self.selected {
             None => self.top_visible_item(),
             Some(_) => grid_step(self.selected, dir, self.ids.len(), cols),
@@ -270,13 +304,28 @@ impl Library {
         }
     }
 
+    fn jump_to_section(&mut self, label: &str, cx: &mut Context<Self>) {
+        let Some(start) = self.sections.start_of(label) else {
+            return;
+        };
+        let cols = self.cols();
+        self.scroll_handle
+            .scroll_to_item(start / cols, ScrollStrategy::Top);
+        self.pinned_letter = index_rail_position(label);
+        self.pinned_offset = None;
+        if let Some(scrollbar) = &self.scrollbar {
+            scrollbar.update(cx, |scrollbar, cx| scrollbar.flash(cx));
+        }
+        cx.notify();
+    }
+
     fn metrics(&self, count: usize) -> Option<GridMetrics> {
-        let cols = self.num_cols.get().max(1);
+        let cols = self.cols();
         GridMetrics::measure(&self.scroll_handle, count.div_ceil(cols))
     }
 
     fn top_visible_item(&self) -> Option<usize> {
-        let cols = self.num_cols.get().max(1);
+        let cols = self.cols();
         let count = self.ids.len();
         if count == 0 {
             return None;
@@ -289,7 +338,7 @@ impl Library {
     }
 
     fn is_item_visible(&self, idx: usize) -> bool {
-        let cols = self.num_cols.get().max(1);
+        let cols = self.cols();
         self.metrics(self.ids.len())
             .is_some_and(|metrics| metrics.row_is_visible(idx / cols))
     }
@@ -316,7 +365,7 @@ impl Library {
             return;
         };
 
-        let cols = self.num_cols.get().max(1);
+        let cols = self.cols();
         let old_row = old_anchor / cols;
         let new_row = new_anchor / cols;
         if new_row == old_row {
@@ -392,6 +441,63 @@ impl Library {
             },
         );
     }
+
+    fn track_pinned_letter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let pending_scroll = {
+            let list = self.scroll_handle.0.borrow();
+            list.deferred_scroll_to_item
+                .is_some()
+                .then(|| list.base_handle.offset())
+        };
+        if let Some(offset) = pending_scroll {
+            cx.on_next_frame(window, move |library, _, cx| {
+                if library.scroll_handle.0.borrow().base_handle.offset() != offset {
+                    cx.notify();
+                }
+            });
+        }
+
+        if self.pinned_letter.is_some() && pending_scroll.is_none() {
+            let live_offset = self.scroll_handle.0.borrow().base_handle.offset();
+            match self.pinned_offset {
+                None => self.pinned_offset = Some(live_offset),
+                Some(offset) if offset != live_offset => {
+                    self.pinned_letter = None;
+                    self.pinned_offset = None;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn render_row(
+    row_idx: usize,
+    dims: &GridDims,
+    chunks: &ChunkCache,
+    game_count: usize,
+    padding: Pixels,
+    focused: bool,
+    selected: Option<usize>,
+) -> Div {
+    let start = row_idx * dims.num_cols;
+    let end = (start + dims.num_cols).min(game_count);
+
+    div()
+        .w_full()
+        .flex()
+        .gap(CARD_GAP)
+        .px(padding)
+        .pb(CARD_ROW_GAP)
+        .children((start..end).map(|idx| {
+            chunks
+                .peek(&(idx / CHUNK_SIZE))
+                .and_then(|entries| entries.get(idx % CHUNK_SIZE))
+                .map(|game| GameCard::new(game.clone(), dims.card_width))
+                .unwrap_or_else(|| GameCard::unloaded(dims.card_width))
+                .selected(focused && selected == Some(idx))
+        }))
+        .children((0..dims.num_cols - (end - start)).map(|_| GameCard::spacer(dims.card_width)))
 }
 
 impl Route for Library {
@@ -399,14 +505,13 @@ impl Route for Library {
         let library = cx.weak_entity();
         Some(
             input("library-search")
-                .variant_outline()
                 .placeholder("Search library")
                 .value(self.search_query.clone())
-                .leading_icon("icons/search.svg")
+                .leading_icon(Icon::search())
+                .radius_pill()
+                .size_lg()
                 .clear_button()
                 .w(rems(28.))
-                .rounded_full()
-                .px(rems(1.2))
                 .on_input(move |event, _, cx| {
                     let query = event.value.clone();
                     library
@@ -432,37 +537,13 @@ impl Render for Library {
         let sections = self.sections.clone();
 
         let is_focused = self.focus_handle.is_focused(window);
-        if is_focused && !self.was_focused && window.last_input_was_keyboard() {
-            self.selected = self.top_visible_item();
-            if let Some(idx) = self.selected {
-                let cols = self.num_cols.get().max(1);
-                self.scroll_handle
-                    .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
-            }
-        }
-        self.was_focused = is_focused;
-
-        // The bubble is placed from the offset this frame starts with, and
-        // `uniform_list` only applies a queued `scroll_to_item` later in its
-        // prepaint. Nothing else redraws after a keyboard move, so the bubble
-        // would sit a frame behind the selection.
-        let pending_scroll = {
-            let list = self.scroll_handle.0.borrow();
-            list.deferred_scroll_to_item
-                .is_some()
-                .then(|| list.base_handle.offset())
-        };
-        if let Some(offset) = pending_scroll {
-            cx.on_next_frame(window, move |library, _, cx| {
-                if library.scroll_handle.0.borrow().base_handle.offset() != offset {
-                    cx.notify();
-                }
-            });
-        }
+        self.track_pinned_letter(window, cx);
 
         let focused = is_focused && window.last_input_was_keyboard();
         let selected = self.selected;
         let num_cols = self.num_cols.clone();
+        let available_letters = self.available_letters;
+        let pinned_letter = self.pinned_letter;
 
         div()
             .track_focus(&self.focus_handle)
@@ -482,7 +563,7 @@ impl Render for Library {
             .on_action(cx.listener(|this, _: &Activate, _, cx| this.activate_selected(cx)))
             .flex_grow_1()
             .text_color(theme.colors.accent)
-            .child(container_query(move |size, window, cx| {
+            .child(container_query(move |size, window, _cx| {
                 let padding = px(GRID_PADDING.0 * window.rem_size().as_f32());
                 let content_height = {
                     let list = scroll_handle.0.borrow();
@@ -498,7 +579,29 @@ impl Render for Library {
                 );
                 num_cols.set(dims.num_cols);
 
-                let bubble = index_bubble(&scrollbar, &scroll_handle, &sections, &dims, size, cx);
+                let current_letter = pinned_letter.or_else(|| {
+                    GridMetrics::measure(&scroll_handle, dims.num_rows)
+                        .and_then(|metrics| {
+                            sections.label_for(metrics.first_touching_row() * dims.num_cols)
+                        })
+                        .and_then(index_rail_position)
+                });
+
+                let index_rail = (!sections.is_empty()).then(|| {
+                    let library = library.clone();
+                    IndexRail::new()
+                        .available(available_letters)
+                        .current(current_letter)
+                        .on_select(move |label, _, cx| {
+                            library
+                                .update(cx, |library, cx| library.jump_to_section(label, cx))
+                                .ok();
+                        })
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .right(SCROLLBAR_WIDTH + INDEX_RAIL_GAP)
+                });
 
                 div()
                     .size_full()
@@ -522,29 +625,10 @@ impl Render for Library {
 
                                 range
                                     .map(|row_idx| {
-                                        let start = row_idx * dims.num_cols;
-                                        let end = (start + dims.num_cols).min(game_count);
-
-                                        div()
-                                            .w_full()
-                                            .flex()
-                                            .justify_between()
-                                            .px(padding)
-                                            .pb(CARD_ROW_GAP)
-                                            .children((start..end).map(|idx| {
-                                                chunks
-                                                    .peek(&(idx / CHUNK_SIZE))
-                                                    .and_then(|entries| {
-                                                        entries.get(idx % CHUNK_SIZE)
-                                                    })
-                                                    .map(|game| GameCard::new(game.clone()))
-                                                    .unwrap_or_else(GameCard::unloaded)
-                                                    .selected(focused && selected == Some(idx))
-                                            }))
-                                            .children(
-                                                (0..dims.num_cols - (end - start))
-                                                    .map(|_| GameCard::spacer()),
-                                            )
+                                        render_row(
+                                            row_idx, &dims, &chunks, game_count, padding, focused,
+                                            selected,
+                                        )
                                     })
                                     .collect()
                             }
@@ -553,7 +637,7 @@ impl Render for Library {
                         .with_decoration(ListScrollbar::new(scrollbar.clone()))
                         .size_full(),
                     )
-                    .children(bubble)
+                    .children(index_rail)
             }))
     }
 }

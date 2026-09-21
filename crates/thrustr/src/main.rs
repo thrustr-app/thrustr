@@ -1,22 +1,21 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use crate::app::App;
+use crate::{globals::PluginServiceExt, routes::App};
 use assets::Assets;
 use config::{logging, paths, tls};
 use gpui::{AppContext, CursorHideMode, TitlebarOptions, WindowDecorations, WindowOptions};
 use sqlite::SqliteStorage;
 use std::{fs, sync::Arc};
-use tracing::warn;
+use tracing::error;
 use ui::{TRAFFIC_LIGHT_POSITION, UiProvider};
 
-mod app;
-mod conversions;
-mod extensions;
+mod adapters;
+mod auth_webview;
+mod context;
 mod globals;
 mod navigation;
 mod routes;
 mod tokio;
-mod webview;
 
 fn main() {
     let _guard = logging::init();
@@ -24,20 +23,18 @@ fn main() {
 
     let plugins_dir = paths::plugins_dir();
     if let Err(e) = fs::create_dir_all(&plugins_dir) {
-        warn!(path = %plugins_dir.display(), error = %e, "failed to create plugins directory");
+        error!(path = %plugins_dir.display(), error = %e, "failed to create plugins directory");
     }
 
     let db_path = paths::db_path();
     let sqlite_storage = SqliteStorage::new(&db_path)
-        .unwrap_or_else(|_| panic!("Failed to initialize database at {}", db_path.display()));
+        .unwrap_or_else(|_| panic!("failed to initialize database at {}", db_path.display()));
     let storage = Arc::new(sqlite_storage);
 
     gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx| {
-            Assets
-                .load_fonts(cx)
-                .expect("Failed to load embedded fonts");
+            Assets.load_fonts(cx).expect("embedded fonts should load");
 
             cx.set_cursor_hide_mode(CursorHideMode::Never);
 
@@ -48,6 +45,17 @@ fn main() {
             globals::init(cx, storage);
 
             cx.activate(true);
+
+            let plugin_manager = cx.plugin_service();
+            cx.background_spawn(async move {
+                if let Err(err) = plugin_manager
+                    .load_and_init(paths::plugins_dir().as_path())
+                    .await
+                {
+                    error!("failed to load plugins: {err:#}");
+                }
+            })
+            .detach();
 
             cx.spawn(async move |cx| {
                 cx.open_window(

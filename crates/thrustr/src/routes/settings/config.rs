@@ -1,36 +1,51 @@
 use crate::{
-    conversions::image::image_to_gpui,
-    extensions::{EventListenerExt, SpawnTaskExt},
+    adapters::ImageExt,
+    auth_webview::{WebviewError, open_auth_webview},
+    context::{EventListenerExt, SpawnTaskExt},
     navigation::NavigatorExt,
-    webview::{WebviewError, open_auth_webview},
 };
-use component::{ComponentHandle, Operation};
+use component::{ComponentHandle, Operation, Permit};
 use domain::component::{
-    AuthFlow, ConfigSection, Field as ConfigField, LoginForm, LoginMethod, LoginRequest, Status,
+    AuthFlow, ConfigSection, Element as ConfigElement, LoginForm, LoginMethod, LoginRequest, Status,
 };
 use event::Topic;
 use gpui::{
-    AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource, InteractiveElement,
-    IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled, Task, Window, div, img,
-    prelude::FluentBuilder, rems, svg,
+    AnyElement, App, AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource,
+    InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled,
+    Task, WeakEntity, Window, div, img, prelude::FluentBuilder, relative, rems,
 };
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Card, InputEvent, Label, PortalContext, WithFocus, WithScrollbar, WithSize,
-    WithVariant, input,
+    Alert, Button, Dialog, Icon, InputEvent, Label, PortalContext, WithFocus, WithScrollbar,
+    WithSize, WithVariant, input,
 };
 
 struct Field {
     id: SharedString,
     label: SharedString,
     placeholder: Option<SharedString>,
+    required: bool,
+}
+
+enum Element {
+    Field(Field),
+    Hbox(Vec<Field>),
+}
+
+impl Element {
+    fn fields(&self) -> &[Field] {
+        match self {
+            Element::Field(field) => std::slice::from_ref(field),
+            Element::Hbox(fields) => fields,
+        }
+    }
 }
 
 struct Section {
     name: SharedString,
-    fields: Vec<Field>,
+    elements: Vec<Element>,
 }
 
 pub struct Config {
@@ -51,7 +66,7 @@ pub struct Config {
 impl Config {
     pub fn new(cx: &mut Context<Self>, component: ComponentHandle) -> Self {
         let metadata = component.metadata();
-        let icon = metadata.icon.to_owned().map(image_to_gpui);
+        let icon = metadata.icon.map(|i| i.to_gpui());
 
         let mut local_error = None;
         let values: HashMap<SharedString, SharedString> = match component.config_values() {
@@ -74,7 +89,7 @@ impl Config {
 
         let status = component.status();
         let mut page = Self {
-            name: component.metadata().name.to_owned().into(),
+            name: metadata.name.into(),
             icon,
             status_error: status.error_message().map(Into::into),
             status,
@@ -178,6 +193,8 @@ impl Config {
     ) {
         let component = self.component.clone();
         let config_entity = cx.entity().downgrade();
+        let icon = self.icon.clone();
+        let title = SharedString::new(format!("Log in to {}", self.name));
 
         let form_entity = cx.new(|_| LoginFormState::new(login_form));
         self.login_form_view = Some(form_entity.clone());
@@ -188,48 +205,66 @@ impl Config {
             let config_entity_for_ok = config_entity.clone();
             let config_entity_for_cancel = config_entity.clone();
             let component = component.clone();
+            let title = title.clone();
 
-            let is_valid = form_entity.read(cx).is_valid();
+            let form = form_entity.read(cx);
+            let is_valid = form.is_valid();
+            let submitting = form.submitting;
+            let submit_error = form.submit_error.clone();
             dialog
-                .title("Log In")
+                .w(rems(24.))
+                .header(
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap(rems(1.))
+                        .when_some(icon.clone(), |header, icon| {
+                            header.child(img(ImageSource::Image(icon)).size(rems(2.75)))
+                        })
+                        .child(
+                            div()
+                                .w_full()
+                                .text_center()
+                                .text_size(cx.theme().text.lg)
+                                .line_height(relative(1.))
+                                .font_weight(FontWeight::BOLD)
+                                .child(title),
+                        ),
+                )
                 .ok_text("Log In")
-                .when(!is_valid, |dialog| dialog.disabled())
-                .on_ok(move |_, _, cx| {
+                .when(!is_valid, Dialog::disabled)
+                .when(submitting, Dialog::loading)
+                .when_some(submit_error, Dialog::error)
+                .on_ok(move |_, window, cx| {
                     let permit = match component.begin_login() {
                         Ok(permit) => permit,
                         Err(err) => {
-                            if let Some(entity) = config_entity_for_ok.upgrade() {
-                                entity.update(cx, |config, cx| {
-                                    config.local_error = Some(err.to_string().into());
-                                    cx.notify();
-                                });
-                            }
+                            form_entity.update(cx, |form, cx| {
+                                form.submit_error = Some(err.to_string().into());
+                                cx.notify();
+                            });
                             return;
                         }
                     };
 
                     let fields = form_entity.read(cx).login_fields();
-                    let config_entity = config_entity_for_ok.clone();
-                    let component = component.clone();
-
-                    let task = cx.background_spawn(async move {
-                        component.login(permit, LoginRequest::Form { fields }).await
+                    form_entity.update(cx, |form, cx| {
+                        form.submitting = true;
+                        form.submit_error = None;
+                        cx.notify();
                     });
 
-                    cx.spawn(async move |cx| {
-                        let result = task.await;
-                        if let Some(entity) = config_entity.upgrade() {
-                            entity.update(cx, |config, cx| {
-                                config.login_form_view = None;
-                                config.local_error = match result {
-                                    Ok(()) => None,
-                                    Err(e) => Some(e.to_string().into()),
-                                };
-                                cx.notify();
-                            });
-                        }
-                    })
-                    .detach();
+                    submit_login_form(
+                        component.clone(),
+                        permit,
+                        fields,
+                        form_entity.clone(),
+                        config_entity_for_ok.clone(),
+                        window,
+                        cx,
+                    );
                 })
                 .on_cancel(move |_, _, cx| {
                     if let Some(entity) = config_entity_for_cancel.upgrade() {
@@ -271,16 +306,25 @@ impl Config {
         self.refresh_status(cx);
     }
 
+    fn is_valid(&self) -> bool {
+        let fields = self
+            .sections
+            .iter()
+            .flat_map(|s| &s.elements)
+            .flat_map(Element::fields);
+        fields_valid(fields, &self.values)
+    }
+
     fn render_header(&mut self, autofocus_back: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let has_login = self.login_method.is_some();
 
         let status_label = match self.status {
-            Status::Initializing => Label::new("INITIALIZING").variant_warning(),
+            Status::Initializing => Label::new("INITIALIZING").variant_secondary(),
             Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
             Status::Active => Label::new("ACTIVE").variant_accent(),
             Status::Inactive => Label::new("INACTIVE"),
-            Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_destructive(),
+            Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_danger(),
         };
 
         div()
@@ -290,19 +334,14 @@ impl Config {
             .child(
                 div()
                     .flex()
-                    .gap(rems(1.5))
+                    .gap(rems(0.875))
                     .items_center()
                     .text_color(theme.colors.primary)
                     .child(
-                        Button::new("back-button")
+                        Button::icon("back-button", Icon::arrow())
                             .variant_outline()
+                            .size_sm()
                             .auto_focus(autofocus_back)
-                            .child(
-                                svg()
-                                    .path("icons/arrow-left.svg")
-                                    .size_full()
-                                    .text_color(theme.colors.primary),
-                            )
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
                     .child(
@@ -310,10 +349,11 @@ impl Config {
                             .flex()
                             .items_center()
                             .gap(rems(0.5))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(rems(1.5))
+                            .font_weight(FontWeight::BOLD)
+                            .text_size(rems(1.125))
+                            .line_height(relative(1.))
                             .when_some(self.icon.clone(), |div, icon| {
-                                div.child(img(ImageSource::Image(icon)).size(rems(2.)))
+                                div.child(img(ImageSource::Image(icon)).size(rems(1.5)))
                             })
                             .child(self.name.clone())
                             .child(status_label),
@@ -327,14 +367,16 @@ impl Config {
                     .when(!self.sections.is_empty(), |div| {
                         div.child(
                             Button::new("save")
-                                .when(!self.component.can(Operation::Configure), |btn| {
-                                    btn.disabled()
-                                })
+                                .when(
+                                    !self.component.can(Operation::Configure) || !self.is_valid(),
+                                    |btn| btn.disabled(),
+                                )
                                 .when(
                                     self.component.is_running(Operation::Configure),
                                     Button::loading,
                                 )
-                                .size_lg()
+                                .size_md()
+                                .variant_outline()
                                 .child("Save")
                                 .w(rems(10.))
                                 .on_click(cx.listener(Self::on_save)),
@@ -346,7 +388,7 @@ impl Config {
                                 .when(!self.component.can(Operation::Login), |btn| btn.disabled())
                                 .when(self.component.is_running(Operation::Login), Button::loading)
                                 .variant_accent()
-                                .size_lg()
+                                .size_md()
                                 .child("Log In")
                                 .w(rems(10.))
                                 .on_click(cx.listener(Self::on_login)),
@@ -362,7 +404,7 @@ impl Config {
                                     Button::loading,
                                 )
                                 .variant_outline()
-                                .size_lg()
+                                .size_md()
                                 .child("Log Out")
                                 .w(rems(10.))
                                 .on_click(cx.listener(Self::on_logout)),
@@ -376,51 +418,131 @@ impl Config {
         autofocus_field: Option<SharedString>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let theme = cx.theme();
+        let can_configure = self.component.can(Operation::Configure);
+
         let sections = self.sections.iter().map(|s| {
-            let fields = s.fields.iter().map(|f| {
-                let field_id = f.id.clone();
-                input(f.id.clone())
-                    .when(!self.component.can(Operation::Configure), |btn| {
-                        btn.disabled()
-                    })
-                    .auto_focus(autofocus_field.as_ref() == Some(&f.id))
-                    .reveal_on_focus(&self.scroll_handle)
-                    .label(f.label.clone())
-                    .max_w(rems(20.))
-                    .when_some(f.placeholder.clone(), |input, placeholder| {
-                        input.placeholder(placeholder)
-                    })
-                    .value(self.values.get(f.id.as_str()).cloned().unwrap_or_default())
-                    .on_input(cx.listener(move |config, event: &InputEvent, _, _| {
-                        config.values.insert(field_id.clone(), event.value.clone());
+            let elements = s.elements.iter().map(|element| match element {
+                Element::Field(f) => render_field(
+                    f,
+                    &self.values,
+                    can_configure,
+                    autofocus_field.as_ref(),
+                    &self.scroll_handle,
+                    cx,
+                ),
+                Element::Hbox(fields) => div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(rems(1.))
+                    .children(fields.iter().map(|f| {
+                        render_field(
+                            f,
+                            &self.values,
+                            can_configure,
+                            autofocus_field.as_ref(),
+                            &self.scroll_handle,
+                            cx,
+                        )
                     }))
+                    .into_any_element(),
             });
 
-            Card::new(s.name.clone())
-                .flex_shrink_0()
-                .title(s.name.clone())
-                .child(div().flex().flex_col().gap(rems(1.5)).children(fields))
+            div()
+                .flex()
+                .flex_col()
+                .text_size(rems(0.875))
+                .line_height(relative(1.))
+                .font_weight(FontWeight::BOLD)
+                .text_color(theme.colors.tertiary)
+                .gap(rems(0.875))
+                .child(s.name.clone())
+                .child(div().flex().flex_col().gap(rems(1.5)).children(elements))
         });
 
         div()
             .flex()
             .flex_col()
             .flex_grow_1()
+            .min_w_0()
             .h_0()
             .gap(rems(1.5))
             .id("config-form")
-            .mr(rems(-1.5))
-            .pr(rems(1.5))
             .overflow_y_scrollbar()
             .handle(&self.scroll_handle)
             .when_some(self.local_error.clone(), |div, error| {
-                div.child(Alert::new().title("Error").description(error))
+                div.child(Alert::new(error))
             })
             .when_some(self.status_error.clone(), |div, error| {
-                div.child(Alert::new().title("Error").description(error))
+                div.child(Alert::new(error))
             })
             .children(sections)
     }
+}
+
+fn submit_login_form(
+    component: ComponentHandle,
+    permit: Permit,
+    fields: HashMap<String, String>,
+    form_entity: Entity<LoginFormState>,
+    config_entity: WeakEntity<Config>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let window_handle = window.window_handle();
+    let task =
+        cx.background_spawn(
+            async move { component.login(permit, LoginRequest::Form { fields }).await },
+        );
+
+    cx.spawn(async move |cx| {
+        let result = task.await;
+
+        let _ = cx.update_window(window_handle, move |_, window, cx| match result {
+            Ok(()) => {
+                if let Some(entity) = config_entity.upgrade() {
+                    entity.update(cx, |config, cx| {
+                        config.login_form_view = None;
+                        cx.notify();
+                    });
+                }
+                window.close_dialog(cx);
+            }
+            Err(err) => {
+                form_entity.update(cx, |form, cx| {
+                    form.submitting = false;
+                    form.submit_error = Some(err.to_string().into());
+                    cx.notify();
+                });
+            }
+        });
+    })
+    .detach();
+}
+
+fn render_field(
+    field: &Field,
+    values: &HashMap<SharedString, SharedString>,
+    can_configure: bool,
+    autofocus_field: Option<&SharedString>,
+    scroll_handle: &ScrollHandle,
+    cx: &mut Context<Config>,
+) -> AnyElement {
+    let field_id = field.id.clone();
+    input(field.id.clone())
+        .when(!can_configure, |this| this.disabled())
+        .auto_focus(autofocus_field == Some(&field.id))
+        .reveal_on_focus(scroll_handle)
+        .label(field.label.clone())
+        .w(rems(20.))
+        .when_some(field.placeholder.clone(), |input, placeholder| {
+            input.placeholder(placeholder)
+        })
+        .value(values.get(field.id.as_str()).cloned().unwrap_or_default())
+        .on_input(cx.listener(move |config, event: &InputEvent, _, _| {
+            config.values.insert(field_id.clone(), event.value.clone());
+        }))
+        .into_any_element()
 }
 
 impl Render for Config {
@@ -428,13 +550,19 @@ impl Render for Config {
         let autofocus_field = self
             .component
             .can(Operation::Configure)
-            .then(|| self.sections.iter().find_map(|s| s.fields.first()))
+            .then(|| {
+                self.sections.iter().find_map(|s| {
+                    s.elements.iter().find_map(|e| match e {
+                        Element::Field(f) => Some(f),
+                        Element::Hbox(fields) => fields.first(),
+                    })
+                })
+            })
             .flatten()
             .map(|f| f.id.clone());
 
         div()
             .flex_grow_1()
-            .pl(rems(1.5))
             .flex()
             .flex_col()
             .gap(rems(2.))
@@ -445,36 +573,28 @@ impl Render for Config {
 
 struct LoginFormState {
     fields: Vec<Field>,
-    required_ids: Vec<SharedString>,
     values: HashMap<SharedString, SharedString>,
+    submitting: bool,
+    submit_error: Option<SharedString>,
 }
 
 impl LoginFormState {
     pub fn new(login_form: LoginForm) -> Self {
-        let required_ids = login_form
-            .fields
-            .iter()
-            .filter_map(|f| match f {
-                ConfigField::Text {
-                    id, required: true, ..
-                } => Some(SharedString::from(id.to_string())),
-                _ => None,
-            })
+        let fields = flatten_fields(login_form.fields)
+            .into_iter()
+            .map(text_to_field)
             .collect();
-
-        let fields = login_form.fields.into_iter().map(Into::into).collect();
 
         Self {
             fields,
-            required_ids,
             values: HashMap::new(),
+            submitting: false,
+            submit_error: None,
         }
     }
 
     pub fn is_valid(&self) -> bool {
-        self.required_ids
-            .iter()
-            .all(|id| self.values.get(id).is_some_and(|v| !v.is_empty()))
+        fields_valid(&self.fields, &self.values)
     }
 
     pub fn login_fields(&self) -> HashMap<String, String> {
@@ -487,11 +607,14 @@ impl LoginFormState {
 
 impl Render for LoginFormState {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let fields = self.fields.iter().map(|f| {
+        let fields = self.fields.iter().enumerate().map(|(i, f)| {
             let field_id = f.id.clone();
             input(f.id.clone())
+                .size_lg()
                 .label(f.label.clone())
-                .w(rems(20.))
+                .w_full()
+                .auto_focus(i == 0)
+                .when(self.submitting, |field| field.disabled())
                 .when_some(f.placeholder.clone(), |input, placeholder| {
                     input.placeholder(placeholder)
                 })
@@ -501,36 +624,70 @@ impl Render for LoginFormState {
                 }))
         });
 
-        div().flex().flex_col().gap(rems(1.5)).children(fields)
+        div().flex().flex_col().gap(rems(1.)).children(fields)
     }
 }
 
 impl From<ConfigSection> for Section {
     fn from(section: ConfigSection) -> Self {
         Section {
-            name: section.name.into(),
-            fields: section.fields.into_iter().map(Into::into).collect(),
+            name: section.name.to_uppercase().into(),
+            elements: section.elements.into_iter().map(Into::into).collect(),
         }
     }
 }
 
-impl From<ConfigField> for Field {
-    fn from(field: ConfigField) -> Self {
-        match field {
-            ConfigField::Text {
-                id,
-                label,
-                placeholder,
-                required,
-            } => Field {
-                id: id.into(),
-                label: if required {
-                    format!("{label} *").into()
-                } else {
-                    label.into()
-                },
-                placeholder: placeholder.map(Into::into),
-            },
+impl From<ConfigElement> for Element {
+    fn from(element: ConfigElement) -> Self {
+        match element {
+            text @ ConfigElement::Text { .. } => Element::Field(text_to_field(text)),
+            ConfigElement::Hbox { elements } => Element::Hbox(
+                flatten_fields(elements)
+                    .into_iter()
+                    .map(text_to_field)
+                    .collect(),
+            ),
         }
     }
+}
+
+fn flatten_fields(elements: Vec<ConfigElement>) -> Vec<ConfigElement> {
+    elements
+        .into_iter()
+        .flat_map(|element| match element {
+            ConfigElement::Hbox { elements } => flatten_fields(elements),
+            text => vec![text],
+        })
+        .collect()
+}
+
+fn text_to_field(element: ConfigElement) -> Field {
+    match element {
+        ConfigElement::Text {
+            id,
+            label,
+            placeholder,
+            required,
+        } => Field {
+            id: id.into(),
+            label: if required {
+                format!("{label} *").into()
+            } else {
+                label.into()
+            },
+            placeholder: placeholder.map(Into::into),
+            required,
+        },
+        ConfigElement::Hbox { .. } => unreachable!("flatten_fields removes Hbox"),
+    }
+}
+
+fn fields_valid<'a>(
+    fields: impl IntoIterator<Item = &'a Field>,
+    values: &HashMap<SharedString, SharedString>,
+) -> bool {
+    fields
+        .into_iter()
+        .filter(|field| field.required)
+        .all(|field| values.get(&field.id).is_some_and(|value| !value.is_empty()))
 }

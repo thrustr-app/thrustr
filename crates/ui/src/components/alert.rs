@@ -1,33 +1,22 @@
+use crate::Icon;
 use gpui::{
-    App, FontWeight, IntoElement, ParentElement, Refineable, RenderOnce, SharedString,
-    StyleRefinement, Styled, Window, div, prelude::FluentBuilder, rems, svg,
+    App, IntoElement, ParentElement, Refineable, RenderOnce, SharedString, StyleRefinement, Styled,
+    Window, div, rems,
 };
 use theme::ThemeExt;
 
 #[derive(IntoElement, Default)]
 pub struct Alert {
     style: StyleRefinement,
-    title: Option<SharedString>,
-    description: Option<SharedString>,
+    text: SharedString,
 }
 
 impl Alert {
-    pub fn new() -> Self {
+    pub fn new(text: impl Into<SharedString>) -> Self {
         Self {
             style: StyleRefinement::default(),
-            title: None,
-            description: None,
+            text: text.into(),
         }
-    }
-
-    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
-        self.title = Some(title.into());
-        self
-    }
-
-    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
-        self.description = Some(description.into());
-        self
     }
 }
 
@@ -43,34 +32,21 @@ impl RenderOnce for Alert {
 
         let mut alert = div()
             .flex()
+            .items_start()
             .w_full()
-            .p(rems(1.))
+            .min_w_0()
+            .px(rems(1.))
+            .py(rems(0.875))
+            .gap(rems(0.625))
             .rounded(theme.radius.lg)
             .border_2()
-            .border_color(theme.colors.error)
-            .gap(rems(1.))
-            .child(
-                svg()
-                    .size(rems(1.5))
-                    .path("icons/danger.svg")
-                    .text_color(theme.colors.error),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .when_some(self.title, |this, title| {
-                        this.child(
-                            div()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.colors.error)
-                                .child(title),
-                        )
-                    })
-                    .when_some(self.description, |this, description| {
-                        this.child(div().text_color(theme.colors.error).child(description))
-                    }),
-            );
+            .bg(theme.colors.danger_background)
+            .border_color(theme.colors.danger)
+            .text_color(theme.colors.danger_foreground)
+            .text_size(theme.text.md)
+            .line_height(rems(1.125))
+            .child(Icon::danger().color(theme.colors.danger))
+            .child(div().flex_1().min_w_0().line_clamp(4).child(self.text));
 
         alert.style().refine(&self.style);
         alert

@@ -1,0 +1,47 @@
+name: "Feature Request"
+description: Suggest a new feature or enhancement.
+type: feature
+labels: ["status:needs-triage"]
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      description: Please confirm the following before submitting your bug report.
+      options:
+        - label: I have searched existing issues and this hasn't been suggested yet.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: Describe the problem or motivation behind this feature.
+      placeholder: Right now, when I try to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the proposed solution or enhancement.
+      placeholder: It would be great if the app allowed you to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternative solutions or workarounds you've considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: "Additional context"
+      description: Mockups, links, or any other context.
+    validations:
+      required: false

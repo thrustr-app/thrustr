@@ -1,8 +1,9 @@
+use crate::{Icon, Size, WithSize};
+use core::panic;
 use gpui::{
-    AbsoluteLength, App, ClickEvent, ElementId, FocusHandle, Hsla, InteractiveElement, IntoElement,
-    KeyBinding, ParentElement, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Window, actions, div, prelude::FluentBuilder, rems, svg,
-    transparent_black,
+    App, ElementId, FocusHandle, FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding,
+    ParentElement, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, actions, div, prelude::FluentBuilder, relative, rems,
 };
 use std::rc::Rc;
 use theme::ThemeExt;
@@ -18,15 +19,8 @@ pub(super) fn init(cx: &mut App) {
     ]);
 }
 
-/// Which theme tokens a [`Sidebar`] renders with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SidebarPalette {
-    /// The `sidebar_*` theme tokens, for the application rail.
-    #[default]
-    Sidebar,
-    /// The regular theme tokens, for sidebars embedded in content areas.
-    Content,
-}
+pub trait SidebarValue: Clone + PartialEq + 'static {}
+impl<T: Clone + PartialEq + 'static> SidebarValue for T {}
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -37,30 +31,50 @@ struct Palette {
     ring: Hsla,
 }
 
-type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
-
-/// A single navigation entry of a [`Sidebar`]. Icon-only when no label is set.
-pub struct SidebarItem {
-    id: ElementId,
-    icon: Option<SharedString>,
-    label: Option<SharedString>,
-    active: bool,
-    on_click: Option<ClickHandler>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Main,
+    Content,
 }
 
-impl SidebarItem {
+type ChangeHandler<T> = Rc<dyn Fn(&T, &mut Window, &mut App)>;
+type Matcher<T> = Rc<dyn Fn(&T, &T) -> bool>;
+
+struct ItemContext<T> {
+    palette: Palette,
+    focused: bool,
+    active: bool,
+    focus_handle: FocusHandle,
+    on_change: Option<ChangeHandler<T>>,
+}
+
+fn refocus(focus_handle: &FocusHandle, window: &mut Window, cx: &mut App) {
+    let focus_handle = focus_handle.clone();
+    window.defer(cx, move |window, cx| focus_handle.focus(window, cx));
+}
+
+#[derive(IntoElement)]
+pub struct SidebarItem<T: SidebarValue> {
+    id: ElementId,
+    icon: Option<Icon>,
+    label: Option<SharedString>,
+    value: Option<T>,
+    context: Option<ItemContext<T>>,
+}
+
+impl<T: SidebarValue> SidebarItem<T> {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
             icon: None,
             label: None,
-            active: false,
-            on_click: None,
+            value: None,
+            context: None,
         }
     }
 
-    pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
-        self.icon = Some(path.into());
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
         self
     }
 
@@ -69,223 +83,297 @@ impl SidebarItem {
         self
     }
 
-    pub fn active(mut self, active: bool) -> Self {
-        self.active = active;
+    pub fn value(mut self, value: T) -> Self {
+        self.value = Some(value);
         self
     }
 
-    pub fn on_click(
-        mut self,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_click = Some(Rc::new(handler));
+    fn with_context(mut self, context: ItemContext<T>) -> Self {
+        self.context = Some(context);
         self
     }
+}
 
-    fn render(
-        self,
-        palette: Palette,
-        radius: AbsoluteLength,
-        focused: bool,
-        focus_handle: FocusHandle,
-    ) -> impl IntoElement {
-        let fg = if self.active {
+impl<T: SidebarValue> RenderOnce for SidebarItem<T> {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let ItemContext {
+            palette,
+            focused,
+            active,
+            focus_handle,
+            on_change,
+        } = self
+            .context
+            .expect("SidebarItem must be rendered as part of a Sidebar");
+
+        let theme = cx.theme();
+        let has_label = self.label.is_some();
+
+        let fg = if active {
             palette.active_fg
         } else {
             palette.muted_fg
         };
 
-        div()
+        let item = div()
             .id(self.id)
             .cursor_pointer()
             .flex()
             .items_center()
-            .rounded(radius)
+            .rounded(theme.radius.md)
             .border_1()
-            .border_color(transparent_black())
-            .bg(transparent_black())
             .text_color(fg)
+            .text_size(theme.text.md)
+            .line_height(relative(1.))
+            .font_weight(if active {
+                FontWeight::SEMIBOLD
+            } else {
+                FontWeight::NORMAL
+            })
             .hover(move |div| div.bg(palette.hover))
-            .when(self.active, |div| div.bg(palette.active_bg))
-            .when(self.active && focused, |div| div.border_color(palette.ring))
-            .when_some(self.on_click, |div, handler| {
-                div.on_click(move |event, window, cx| {
-                    handler(event, window, cx);
-
-                    let focus_handle = focus_handle.clone();
-                    window.defer(cx, move |window, cx| focus_handle.focus(window, cx));
-                })
-            })
+            .when(active, |div| div.bg(palette.active_bg))
+            .when(active && focused, |div| div.border_color(palette.ring))
             .when_else(
-                self.label.is_some(),
-                |div| div.py(rems(0.625)).px(rems(1.25)).w_full().gap(rems(0.75)),
-                |div| div.p(rems(0.625)).justify_center(),
+                has_label,
+                |div| div.h(rems(2.5)).px(rems(0.875)).w_full().gap(rems(0.625)),
+                |div| div.p(rems(0.625)).size(rems(2.75)).justify_center(),
             )
-            .when_some(self.icon, |div, path| {
-                div.child(
-                    svg()
-                        .flex_shrink_0()
-                        .path(path)
-                        .text_color(fg)
-                        .size(rems(1.5)),
-                )
+            .when_some(self.icon, |el, icon| {
+                let size = if has_label { Size::Medium } else { Size::Large };
+
+                el.child(icon.size(size).color(fg))
             })
-            .when_some(self.label, |el, label| el.child(div().child(label)))
+            .when_some(self.label, |el, label| el.child(div().child(label)));
+
+        match (self.value, on_change) {
+            (Some(value), Some(on_change)) => item.on_click(move |_, window, cx| {
+                on_change(&value, window, cx);
+                refocus(&focus_handle, window, cx);
+            }),
+            _ => item,
+        }
     }
 }
 
 #[derive(IntoElement)]
-pub struct Sidebar {
+pub struct Sidebar<T: SidebarValue> {
     id: ElementId,
     style: StyleRefinement,
-    palette: SidebarPalette,
-    items: Vec<SidebarItem>,
-    bottom_items: Vec<SidebarItem>,
-    wrap: bool,
+    kind: Kind,
+    items: Vec<SidebarItem<T>>,
+    bottom_items: Vec<SidebarItem<T>>,
+    value: Option<T>,
+    on_change: Option<ChangeHandler<T>>,
+    matches: Option<Matcher<T>>,
 }
 
-impl Sidebar {
-    pub fn new(id: impl Into<ElementId>) -> Self {
+impl<T: SidebarValue> Sidebar<T> {
+    #[track_caller]
+    pub fn main() -> Self {
+        Self::build(Kind::Main)
+    }
+
+    #[track_caller]
+    pub fn new() -> Self {
+        Self::build(Kind::Content)
+    }
+
+    #[track_caller]
+    fn build(kind: Kind) -> Self {
         Self {
-            id: (id.into(), "sidebar").into(),
+            id: (
+                ElementId::CodeLocation(*panic::Location::caller()),
+                "sidebar",
+            )
+                .into(),
             style: StyleRefinement::default(),
-            palette: SidebarPalette::default(),
+            kind,
             items: Vec::new(),
             bottom_items: Vec::new(),
-            wrap: true,
+            value: None,
+            on_change: None,
+            matches: None,
         }
     }
 
-    pub fn palette(mut self, palette: SidebarPalette) -> Self {
-        self.palette = palette;
-        self
-    }
-
-    pub fn wrap(mut self, wrap: bool) -> Self {
-        self.wrap = wrap;
-        self
-    }
-
-    pub fn item(mut self, item: SidebarItem) -> Self {
+    pub fn item(mut self, item: SidebarItem<T>) -> Self {
         self.items.push(item);
         self
     }
 
-    pub fn bottom_item(mut self, item: SidebarItem) -> Self {
+    pub fn bottom_item(mut self, item: SidebarItem<T>) -> Self {
         self.bottom_items.push(item);
         self
     }
-}
 
-impl Styled for Sidebar {
-    fn style(&mut self) -> &mut StyleRefinement {
-        &mut self.style
+    pub fn value(mut self, value: T) -> Self {
+        self.value = Some(value);
+        self
     }
-}
 
-impl RenderOnce for Sidebar {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let mut focus_handle = window
-            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
-            .read(cx)
-            .clone();
+    pub fn on_change(mut self, handler: impl Fn(&T, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(handler));
+        self
+    }
 
-        if !focus_handle.tab_stop {
-            focus_handle = focus_handle.tab_stop(true);
-        }
+    pub fn matches(mut self, matches: impl Fn(&T, &T) -> bool + 'static) -> Self {
+        self.matches = Some(Rc::new(matches));
+        self
+    }
 
-        let focused = focus_handle.is_focused(window) && window.last_input_was_keyboard();
-        let theme = cx.theme();
-        let radius = theme.radius.full;
-        let colors = &theme.colors;
+    fn all_items(&self) -> impl Iterator<Item = &SidebarItem<T>> {
+        self.items.iter().chain(&self.bottom_items)
+    }
 
-        let palette = match self.palette {
-            SidebarPalette::Sidebar => Palette {
-                hover: colors.sidebar_hover,
-                active_bg: colors.sidebar_surface,
-                active_fg: colors.sidebar_primary,
-                muted_fg: colors.sidebar_secondary,
-                ring: colors.sidebar_primary,
+    fn palette(&self, cx: &App) -> Palette {
+        let colors = &cx.theme().colors;
+
+        match self.kind {
+            Kind::Main => Palette {
+                hover: colors.sidebar.hover,
+                active_bg: colors.sidebar.surface,
+                active_fg: colors.sidebar.primary,
+                muted_fg: colors.sidebar.secondary,
+                ring: colors.sidebar.primary,
             },
-            SidebarPalette::Content => Palette {
+            Kind::Content => Palette {
                 hover: colors.hover,
                 active_bg: colors.surface,
                 active_fg: colors.primary,
                 muted_fg: colors.secondary,
                 ring: colors.primary,
             },
+        }
+    }
+
+    fn has_label(&self) -> bool {
+        self.all_items().any(|item| item.label.is_some())
+    }
+
+    fn neighbors(&self, is_active: &Matcher<T>) -> (Option<T>, Option<T>) {
+        let values = || self.all_items().filter_map(|item| item.value.as_ref());
+        let count = values().count();
+
+        if count == 0 {
+            return (None, None);
+        }
+
+        let active_ix = self
+            .value
+            .as_ref()
+            .and_then(|current| values().position(|value| is_active(value, current)));
+
+        let at = |offset: isize| {
+            let ix = match active_ix {
+                Some(ix) => (ix as isize + offset).rem_euclid(count as isize) as usize,
+                None if offset > 0 => 0,
+                None => count - 1,
+            };
+            values().nth(ix).cloned()
         };
 
-        let all_items = || self.items.iter().chain(self.bottom_items.iter());
-        let active_ix = all_items().position(|item| item.active);
-        let handlers: Vec<Option<ClickHandler>> =
-            all_items().map(|item| item.on_click.clone()).collect();
+        (at(-1), at(1))
+    }
+}
 
-        let select = Rc::new({
-            let focus_handle = focus_handle.clone();
-            let wrap = self.wrap;
-            move |delta: isize, window: &mut Window, cx: &mut App| {
-                let count = handlers.len();
-                if count == 0 {
-                    return;
+impl<T: SidebarValue> Default for Sidebar<T> {
+    #[track_caller]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: SidebarValue> Styled for Sidebar<T> {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl<T: SidebarValue> RenderOnce for Sidebar<T> {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let focus_handle = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| {
+                cx.focus_handle().tab_stop(true)
+            })
+            .read(cx)
+            .clone();
+
+        let focused = focus_handle.is_focused(window) && window.last_input_was_keyboard();
+        let palette = self.palette(cx);
+        let has_label = self.has_label();
+
+        let is_active: Matcher<T> = self.matches.take().unwrap_or_else(|| Rc::new(T::eq) as _);
+        let (prev, next) = self.neighbors(&is_active);
+
+        let current = self.value.take();
+
+        let on_change = self.on_change.take().map(|handler| {
+            let current = current.clone();
+
+            Rc::new(move |value: &T, window: &mut Window, cx: &mut App| {
+                if current.as_ref() != Some(value) {
+                    handler(value, window, cx);
                 }
-
-                let target = match active_ix {
-                    None if delta > 0 => 0,
-                    None => count - 1,
-                    Some(current) => {
-                        let next = current as isize + delta;
-                        if next < 0 {
-                            if !wrap {
-                                return;
-                            }
-                            count - 1
-                        } else if next as usize >= count {
-                            if !wrap {
-                                return;
-                            }
-                            0
-                        } else {
-                            next as usize
-                        }
-                    }
-                };
-
-                if let Some(handler) = &handlers[target] {
-                    handler(&ClickEvent::default(), window, cx);
-                }
-
-                let focus_handle = focus_handle.clone();
-                window.defer(cx, move |window, cx| focus_handle.focus(window, cx));
-            }
+            }) as ChangeHandler<T>
         });
 
-        let group =
-            |items: Vec<SidebarItem>, focus_handle: FocusHandle| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .gap(rems(0.75))
-                    .children(items.into_iter().map(move |item| {
-                        item.render(palette, radius, focused, focus_handle.clone())
-                    }))
-            };
+        let prepare = |item: SidebarItem<T>| {
+            let active = item
+                .value
+                .as_ref()
+                .zip(current.as_ref())
+                .is_some_and(|(value, current)| is_active(value, current));
+
+            item.with_context(ItemContext {
+                palette,
+                focused,
+                active,
+                focus_handle: focus_handle.clone(),
+                on_change: on_change.clone(),
+            })
+        };
+
+        let group = |items: Vec<SidebarItem<T>>| {
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .w_full()
+                .gap(rems(0.625))
+                .children(items.into_iter().map(&prepare))
+        };
+
+        let on_key = |value: Option<T>| {
+            let focus_handle = focus_handle.clone();
+            let on_change = on_change.clone();
+
+            move |window: &mut Window, cx: &mut App| {
+                let (Some(value), Some(on_change)) = (&value, &on_change) else {
+                    return;
+                };
+                on_change(value, window, cx);
+                refocus(&focus_handle, window, cx);
+            }
+        };
 
         let mut sidebar = div()
             .id(self.id)
             .key_context(CONTEXT)
             .track_focus(&focus_handle)
             .on_action({
-                let select = select.clone();
-                move |_: &SelectPrev, window, cx| select(-1, window, cx)
+                let on_key = on_key(prev);
+                move |_: &SelectPrev, window, cx| on_key(window, cx)
             })
-            .on_action(move |_: &SelectNext, window, cx| select(1, window, cx))
+            .on_action({
+                let on_key = on_key(next);
+                move |_: &SelectNext, window, cx| on_key(window, cx)
+            })
             .flex()
             .flex_col()
             .justify_between()
-            .child(group(self.items, focus_handle.clone()))
-            .child(group(self.bottom_items, focus_handle));
+            .when(has_label, |div| div.min_w(rems(13.)))
+            .child(group(self.items))
+            .child(group(self.bottom_items));
 
         sidebar.style().refine(&self.style);
         sidebar

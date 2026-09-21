@@ -2,7 +2,20 @@ use domain::component::{Image, ImageFormat};
 use gpui::{Image as GpuiImage, ImageFormat as GpuiImageFormat};
 use std::sync::Arc;
 
-pub fn image_format_to_gpui(format: ImageFormat) -> GpuiImageFormat {
+pub trait ImageExt {
+    fn to_gpui(&self) -> Arc<GpuiImage>;
+}
+
+impl ImageExt for Image {
+    fn to_gpui(&self) -> Arc<GpuiImage> {
+        Arc::new(GpuiImage::from_bytes(
+            image_format_to_gpui(self.format),
+            self.bytes.clone(),
+        ))
+    }
+}
+
+fn image_format_to_gpui(format: ImageFormat) -> GpuiImageFormat {
     match format {
         ImageFormat::Png => GpuiImageFormat::Png,
         ImageFormat::Jpeg => GpuiImageFormat::Jpeg,
@@ -14,11 +27,4 @@ pub fn image_format_to_gpui(format: ImageFormat) -> GpuiImageFormat {
         ImageFormat::Ico => GpuiImageFormat::Ico,
         ImageFormat::Pnm => GpuiImageFormat::Pnm,
     }
-}
-
-pub fn image_to_gpui(image: &Image) -> Arc<GpuiImage> {
-    Arc::new(GpuiImage::from_bytes(
-        image_format_to_gpui(image.format),
-        image.bytes.clone(),
-    ))
 }

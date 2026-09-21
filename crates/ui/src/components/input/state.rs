@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
+// Parts of this module are adapted from gpui-kit,
+// Copyright (C) Longbridge, licensed under Apache-2.0:
+// https://github.com/longbridge/gpui-kit/blob/main/crates/base/src/input/base/mod.rs
+//
 // Parts of this module are adapted from the gpui text-input example,
 // Copyright (C) Zed Industries, Inc., licensed under Apache-2.0:
 // https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/input.rs
+//
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 use crate::components::input::{
@@ -595,6 +600,7 @@ impl InputState {
 
     pub(super) fn enter(&mut self, _: &Enter, window: &mut Window, cx: &mut Context<Self>) {
         self.on_change(window, cx);
+        cx.propagate();
     }
 
     // ============================================================================

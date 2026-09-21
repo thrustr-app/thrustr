@@ -41,12 +41,10 @@ impl ThemeManager {
         }
     }
 
-    /// List the manifests of all available themes.
     pub fn list_themes(&self) -> Vec<&ThemeManifest> {
         self.themes.values().map(|t| &t.manifest).collect()
     }
 
-    /// Set the active theme by its ID.
     pub fn set_active_theme(&mut self, id: String) -> Result<()> {
         if self.themes.contains_key(&id) {
             self.active_theme = id;
@@ -56,12 +54,11 @@ impl ThemeManager {
         }
     }
 
-    /// Get the currently active theme or the default theme as a fallback.
     pub fn active_theme(&self) -> Theme {
         self.themes
             .get(&self.active_theme)
             .or_else(|| self.themes.get(&self.default_theme))
-            .expect("Default theme not found")
+            .expect("the default theme should always be available")
             .clone()
     }
 }
@@ -82,8 +79,9 @@ impl ThemeExt for App {
 }
 
 fn load_default_theme_data() -> ThemeData {
-    let file = Assets::get("themes/default.toml").expect("Default theme not found");
-    toml::from_slice(&file.data).expect("Failed to parse default theme")
+    let file =
+        Assets::get("themes/default.toml").expect("the default theme should always be available");
+    toml::from_slice(&file.data).expect("the default theme should always be valid")
 }
 
 fn load_builtin_themes(default: &ThemeData) -> HashMap<String, Theme> {

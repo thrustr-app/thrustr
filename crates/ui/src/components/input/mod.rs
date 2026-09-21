@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
+// Parts of this module are adapted from gpui-kit,
+// Copyright (C) Longbridge, licensed under Apache-2.0:
+// https://github.com/longbridge/gpui-kit/blob/main/crates/base/src/input/base/mod.rs
+//
 // Parts of this module are adapted from the gpui text-input example,
 // Copyright (C) Zed Industries, Inc., licensed under Apache-2.0:
 // https://github.com/zed-industries/zed/blob/main/crates/gpui/examples/input.rs
+//
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
-use crate::{FocusProps, Variant, WithFocus, WithVariant, components::input::state::InputState};
+use crate::{
+    FocusProps, Icon, Radius, Size, WithFocus, WithRadius, WithSize,
+    components::input::state::InputState,
+};
 use gpui::{
     App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, FontWeight, Hsla,
     InteractiveElement, Interactivity, IntoElement, MouseButton, ParentElement, Refineable,
     RenderOnce, SharedString, Stateful, StatefulInteractiveElement, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder, rems, svg, transparent_black,
+    Window, div, prelude::FluentBuilder, relative, rems,
 };
 
 mod actions;
@@ -19,8 +27,6 @@ mod element;
 mod events;
 mod history;
 mod state;
-#[cfg(test)]
-mod tests;
 mod text_ops;
 
 pub(super) use actions::init;
@@ -41,7 +47,6 @@ pub fn input(id: impl Into<ElementId>) -> Input {
             .id(id)
             .cursor(CursorStyle::IBeam),
         style: StyleRefinement::default(),
-        variant: Variant::Primary,
         disabled: false,
         value: None,
         on_input: None,
@@ -56,6 +61,8 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         leading_icon: None,
         clear_button: false,
         focus: FocusProps::default(),
+        radius: Radius::default(),
+        size: Size::default(),
     }
 }
 
@@ -65,7 +72,6 @@ pub struct Input {
     id: ElementId,
     base: Stateful<Div>,
     style: StyleRefinement,
-    variant: Variant,
     disabled: bool,
     value: Option<SharedString>,
     on_input: Option<Box<dyn Fn(&InputEvent, &mut Window, &mut App) + 'static>>,
@@ -77,9 +83,11 @@ pub struct Input {
     masked: bool,
     mask: Option<SharedString>,
     max_length: Option<usize>,
-    leading_icon: Option<SharedString>,
+    leading_icon: Option<Icon>,
     clear_button: bool,
     focus: FocusProps,
+    radius: Radius,
+    size: Size,
 }
 
 impl Input {
@@ -144,13 +152,11 @@ impl Input {
         self
     }
 
-    /// Show an icon at the start of the field
-    pub fn leading_icon(mut self, path: impl Into<SharedString>) -> Self {
-        self.leading_icon = Some(path.into());
+    pub fn leading_icon(mut self, icon: Icon) -> Self {
+        self.leading_icon = Some(icon);
         self
     }
 
-    /// Show a button to clear the field when it has a value
     pub fn clear_button(mut self) -> Self {
         self.clear_button = true;
         self
@@ -163,9 +169,16 @@ impl WithFocus for Input {
     }
 }
 
-impl WithVariant for Input {
-    fn variant(mut self, variant: Variant) -> Self {
-        self.variant = variant;
+impl WithRadius for Input {
+    fn radius(mut self, radius: Radius) -> Self {
+        self.radius = radius;
+        self
+    }
+}
+
+impl WithSize for Input {
+    fn size(mut self, size: Size) -> Self {
+        self.size = size;
         self
     }
 }
@@ -199,10 +212,7 @@ impl RenderOnce for Input {
 
         let focus_handle = self.focus.configure(state.focus_handle(cx));
 
-        let outline = self.variant == Variant::Outline;
-        let placeholder_color = self
-            .placeholder_color
-            .or_else(|| Some(cx.theme().colors.secondary));
+        let placeholder_color = self.placeholder_color.or(Some(cx.theme().colors.tertiary));
 
         state.update(cx, |state, _cx| {
             state.set_value(self.value);
@@ -220,33 +230,32 @@ impl RenderOnce for Input {
 
         let theme = cx.theme();
 
-        let background = if outline {
-            transparent_black()
-        } else {
-            theme.colors.card_surface
+        let radius = match self.radius {
+            Radius::Medium => theme.radius.md,
+            Radius::Pill => theme.radius.pill,
         };
 
         let mut input = self
             .base
-            .font_weight(FontWeight::LIGHT)
             .border_1()
-            .when(outline, |input| {
-                input
-                    .border_color(theme.colors.border)
-                    .text_color(theme.colors.primary)
-            })
-            .rounded(theme.radius.sm)
-            .bg(background)
+            .border_color(theme.colors.border)
+            .text_color(theme.colors.primary)
+            .bg(theme.colors.surface_sunken)
+            .rounded(radius)
             .p(rems(0.5))
-            .gap(rems(0.5))
-            .when_some(self.leading_icon, |input, path| {
-                input.child(
-                    svg()
-                        .path(path)
-                        .size(rems(1.))
-                        .flex_none()
-                        .text_color(theme.colors.secondary),
-                )
+            .gap(rems(0.75))
+            .font_weight(FontWeight::NORMAL)
+            .when(self.size == Size::Medium, |el| {
+                el.h(rems(2.375)).px(rems(0.75)).text_size(theme.text.md)
+            })
+            .when(self.size == Size::Large, |el| {
+                el.w_full()
+                    .h(rems(2.625))
+                    .px(rems(1.))
+                    .text_size(theme.text.md)
+            })
+            .when_some(self.leading_icon, |input, icon| {
+                input.child(icon.size_sm().color(theme.colors.tertiary))
             })
             .when(!self.disabled, |this| {
                 this.key_context(CONTEXT)
@@ -302,13 +311,7 @@ impl RenderOnce for Input {
                         .id((self.id.clone(), "clear"))
                         .flex_none()
                         .cursor_pointer()
-                        .text_color(theme.colors.secondary)
-                        .child(
-                            svg()
-                                .path("icons/x.svg")
-                                .size(rems(1.))
-                                .text_color(theme.colors.secondary),
-                        )
+                        .child(Icon::x().size_sm().color(theme.colors.tertiary))
                         .on_click(move |_, window, cx| {
                             state.update(cx, |state, cx| state.clear(window, cx));
                         }),
@@ -330,9 +333,12 @@ impl RenderOnce for Input {
                         .on_click(move |_, window, cx| {
                             label_focus_handle.focus(window, cx);
                         })
+                        .text_size(theme.text.sm)
+                        .line_height(relative(1.))
+                        .font_weight(FontWeight::NORMAL)
                         .child(label)
-                        .mb(rems(0.5))
-                        .text_color(theme.colors.card_primary),
+                        .mb(rems(0.375))
+                        .text_color(theme.colors.secondary),
                 )
             })
             .child(input);

@@ -1,0 +1,54 @@
+name: "Support Request"
+description: Ask a question or get help using Thrustr.
+type: support
+labels: ["status:needs-triage"]
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      description: Please confirm the following before submitting your bug report.
+      options:
+        - label: I am running the latest version of the app.
+          required: true
+        - label: I have searched existing issues and this hasn't been asked yet.
+          required: true
+
+  - type: input
+    id: thrustr-version
+    attributes:
+      label: Thrustr version
+      placeholder: e.g. 0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: system-information
+    attributes:
+      label: System information
+      description: Operating system, version, hardware and other relevant information.
+      value: |
+        OS:
+        Version:
+        CPU:
+        Memory:
+        Disk:
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: "What are you trying to do?"
+      description: Describe what you're trying to accomplish.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: "What have you tried?"
+      description: Steps you've already taken, docs you've checked, etc.
+    validations:
+      required: false

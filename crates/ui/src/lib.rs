@@ -58,7 +58,7 @@ impl UiProvider {
     pub fn read<'a>(window: &'a Window, cx: &'a App) -> &'a Self {
         window
             .root::<Self>()
-            .expect("The window root view should be of type `ui::UiProvider`.")
+            .expect("the window root view should be of type `ui::UiProvider`.")
             .unwrap()
             .read(cx)
     }
@@ -142,6 +142,10 @@ impl UiProvider {
         } else {
             trap.focus(window, cx);
             window.focus_next(cx);
+        }
+
+        if !trap.contains_focused(window, cx) {
+            trap.focus(window, cx);
         }
     }
 }

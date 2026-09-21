@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // The window controls, title-bar dragging, and traffic-light metrics are adapted
-// from Zed's `platform_title_bar` and `ui` crates, Copyright (C) Zed Industries,
-// Inc., licensed under GPL-3.0-or-later:
+// from Zed's `platform_title_bar` and `ui` crates,
+// Copyright (C) Zed Industries, Inc., licensed under GPL-3.0-or-later:
 // https://github.com/zed-industries/zed
+//
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 use crate::ClientDecorations;
@@ -11,18 +12,16 @@ use gpui::{
     AnyElement, App, Corners, Decorations, ElementId, FontWeight, Hsla, InteractiveElement,
     IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString,
     StatefulInteractiveElement, Styled, Window, WindowButton, WindowButtonLayout,
-    WindowControlArea, actions, div, point, prelude::FluentBuilder, px, rems, svg,
+    WindowControlArea, actions, div, point, prelude::FluentBuilder, px, relative, rems, svg,
 };
 use theme::ThemeExt;
 
 actions!(title_bar, [CloseWindow]);
 
 pub const TITLE_BAR_HEIGHT: gpui::Rems = gpui::Rems(2.);
-
 pub const TRAFFIC_LIGHT_POSITION: Point<Pixels> = point(px(13.), px(9.));
 
 const TRAFFIC_LIGHT_WIDTH: f32 = 75.;
-
 const CAPTION_BUTTON_WIDTH: f32 = 46.;
 
 #[allow(dead_code)]
@@ -110,9 +109,9 @@ impl RenderOnce for TitleBar {
             .w_full()
             .h(TITLE_BAR_HEIGHT)
             .flex_shrink_0()
-            .bg(theme.colors.background)
+            .bg(theme.colors.titlebar.background)
             .border_b_1()
-            .border_color(theme.colors.border)
+            .border_color(theme.colors.titlebar.border)
             .rounded_client_corners(
                 Corners {
                     top_left: true,
@@ -165,10 +164,10 @@ impl RenderOnce for TitleBar {
                     .justify_center()
                     .child(
                         div()
-                            .mt_0p5()
-                            .text_size(rems(0.875))
+                            .text_size(theme.text.sm)
+                            .line_height(relative(1.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.colors.secondary)
+                            .text_color(theme.colors.titlebar.secondary)
                             .child(title),
                     )
             }))
@@ -233,7 +232,7 @@ impl RenderOnce for CaptionButton {
         .into();
         let (hover_bg, hover_fg) = match self {
             Self::Close => (close_bg, gpui::white()),
-            _ => (theme.colors.hover, theme.colors.primary),
+            _ => (theme.colors.titlebar.hover, theme.colors.titlebar.primary),
         };
 
         div()
@@ -245,6 +244,7 @@ impl RenderOnce for CaptionButton {
             .w(px(CAPTION_BUTTON_WIDTH))
             .h_full()
             .text_size(px(10.))
+            .line_height(relative(1.))
             .text_color(theme.colors.primary)
             .hover(|style| style.bg(hover_bg).text_color(hover_fg))
             .active(|style| {
@@ -332,14 +332,14 @@ impl RenderOnce for WindowControl {
             .size(rems(1.25))
             .rounded_full()
             .cursor_pointer()
-            .hover(|style| style.bg(theme.colors.hover))
+            .hover(|style| style.bg(theme.colors.titlebar.hover))
             .child(
                 svg()
                     .size(rems(0.875))
                     .path(self.icon())
-                    .text_color(theme.colors.secondary)
+                    .text_color(theme.colors.titlebar.secondary)
                     .group_hover("window-control", |this| {
-                        this.text_color(theme.colors.primary)
+                        this.text_color(theme.colors.titlebar.primary)
                     }),
             )
             .on_click(move |_, window, cx| {

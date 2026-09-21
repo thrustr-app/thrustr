@@ -1,18 +1,19 @@
 use crate::{
-    conversions::image::image_to_gpui,
-    extensions::EventListenerExt,
+    adapters::ImageExt,
+    context::EventListenerExt,
     globals::ComponentRegistryExt,
     navigation::{NavigatorExt, SettingsPage},
 };
 use domain::component::Status;
 use event::Topic;
 use gpui::{
-    Context, FontWeight, Image as GpuiImage, ImageSource, IntoElement, ParentElement, Render,
-    SharedString, Styled, Task, Window, div, img, prelude::FluentBuilder, rems, svg,
+    Context, FontWeight, Image as GpuiImage, ImageSource, InteractiveElement, IntoElement,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Task, Transformation,
+    Window, div, img, percentage, prelude::FluentBuilder, relative, rems,
 };
 use std::sync::Arc;
-use theme::ThemeExt;
-use ui::{Alert, Card};
+use theme::{Theme, ThemeExt};
+use ui::{Alert, Icon, Label, WithSize, WithVariant};
 
 #[derive(Clone)]
 struct Storefront {
@@ -53,15 +54,15 @@ impl Storefronts {
             .map(|storefront| {
                 let component = storefront.component();
                 Storefront {
-                    id: component.id().to_owned().into(),
-                    name: component.metadata().name.to_owned().into(),
+                    id: component.id().into(),
+                    name: component.metadata().name.into(),
                     status: component.status(),
-                    icon: component.metadata().icon.map(image_to_gpui),
+                    icon: component.metadata().icon.map(|i| i.to_gpui()),
                     plugin: component
                         .metadata()
                         .origin
                         .is_plugin()
-                        .then(|| component.id().to_string().into()),
+                        .then(|| component.id().into()),
                 }
             })
             .collect();
@@ -76,92 +77,123 @@ impl Storefronts {
 impl Render for Storefronts {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let count = self.storefronts.len();
+        let rows = self
+            .storefronts
+            .iter()
+            .enumerate()
+            .map(|(index, storefront)| render_row(index, count, storefront, &theme));
 
-        let cards = self.storefronts.clone().into_iter().map(|storefront| {
-            let mut status = div().font_weight(FontWeight::BOLD).text_size(rems(0.6));
-            match storefront.status {
-                Status::Initializing => {
-                    status = status
-                        .text_color(theme.colors.warning)
-                        .child("INITIALIZING");
-                }
-                Status::Unauthenticated => {
-                    status = status
-                        .text_color(theme.colors.warning)
-                        .child("UNAUTHENTICATED");
-                }
-                Status::Active => {
-                    status = status.text_color(theme.colors.accent).child("ACTIVE");
-                }
-                Status::Inactive => {
-                    status = status
-                        .text_color(theme.colors.card_secondary)
-                        .child("INACTIVE");
-                }
-                Status::Error(_) | Status::InitError(_) => {
-                    status = status.text_color(theme.colors.error).child("ERROR");
-                }
-            }
+        div()
+            .flex_grow_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(rems(1.25))
+            .when(self.has_errors, |div| {
+                div.child(Alert::new(SharedString::new_static(
+                    "There are storefronts with errors. Open them to see more details.",
+                )))
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .border_1()
+                    .border_color(theme.colors.border)
+                    .rounded(theme.radius.lg)
+                    .overflow_hidden()
+                    .children(rows),
+            )
+    }
+}
 
-            let storefront_id = storefront.id.clone();
-            let is_plugin = storefront.plugin.is_some();
+fn render_row(
+    index: usize,
+    count: usize,
+    storefront: &Storefront,
+    theme: &Theme,
+) -> impl IntoElement {
+    let storefront_id = storefront.id.clone();
+    let is_plugin = storefront.plugin.is_some();
 
-            Card::new(storefront.id)
-                .relative()
-                .gap(rems(1.))
-                .size(rems(11.))
-                .when_some(storefront.icon, |card, icon| {
-                    card.child(img(ImageSource::Image(icon)).size_full())
-                })
-                .on_click(move |_, _, cx| {
-                    let route = if is_plugin {
-                        SettingsPage::Plugins(Some(storefront_id.clone()))
-                    } else {
-                        SettingsPage::Storefronts(Some(storefront_id.clone()))
-                    };
+    div()
+        .id(storefront.id.clone())
+        .focusable()
+        .tab_stop(true)
+        .w_full()
+        .h(rems(3.5))
+        .px(rems(1.25))
+        .flex()
+        .justify_between()
+        .items_center()
+        .cursor_pointer()
+        .when(index == 0, |this| this.rounded_t(theme.radius.lg))
+        .hover(|this| this.bg(theme.colors.hover))
+        .focus_visible(|this| this.bg(theme.colors.hover))
+        .when_else(
+            index + 1 < count,
+            |this| this.border_b_1().border_color(theme.colors.border),
+            |this| this.rounded_b(theme.radius.lg),
+        )
+        .on_click(move |_, _, cx| {
+            let route = if is_plugin {
+                SettingsPage::Plugins(Some(storefront_id.clone()))
+            } else {
+                SettingsPage::Storefronts(Some(storefront_id.clone()))
+            };
 
-                    cx.navigate(route);
+            cx.navigate(route);
+        })
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(rems(0.875))
+                .when_some(storefront.icon.clone(), |this, icon| {
+                    this.child(
+                        img(ImageSource::Image(icon))
+                            .size(rems(1.5))
+                            .rounded(theme.radius.md),
+                    )
                 })
                 .child(
                     div()
                         .flex()
-                        .flex_col()
                         .items_center()
-                        .child(
-                            div()
-                                .w_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .gap(rems(0.5))
-                                .when_some(storefront.plugin, |this, _| {
-                                    this.child(
-                                        svg()
-                                            .path("icons/plugins.svg")
-                                            .size(rems(1.))
-                                            .flex_shrink_0()
-                                            .text_color(theme.colors.card_primary),
-                                    )
-                                })
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(theme.colors.card_primary)
-                                .child(storefront.name),
-                        )
-                        .child(status),
-                )
-        });
+                        .gap(rems(0.375))
+                        .when(is_plugin, |this| {
+                            this.child(Icon::plugin().size_sm().color(theme.colors.secondary))
+                        })
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_size(rems(0.875))
+                        .line_height(relative(1.))
+                        .text_color(theme.colors.primary)
+                        .child(storefront.name.clone()),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(rems(0.875))
+                .child(status_label(&storefront.status))
+                .child(
+                    Icon::arrow()
+                        .size_sm()
+                        .color(theme.colors.tertiary)
+                        .transform(Transformation::rotate(percentage(0.5))),
+                ),
+        )
+}
 
-        div()
-            .flex_grow_1()
-            .flex()
-            .flex_col()
-            .px(rems(1.5))
-            .gap(rems(1.5))
-            .when(self.has_errors, |div| {
-                div.child(Alert::new().title("Storefront errors").description(
-                    "One or more storefronts have encountered errors, open them to view details.",
-                ))
-            })
-            .child(div().flex().gap(rems(1.5)).children(cards))
+fn status_label(status: &Status) -> Label {
+    match status {
+        Status::Initializing => Label::transparent("INITIALIZING").variant_secondary(),
+        Status::Unauthenticated => Label::transparent("UNAUTHENTICATED").variant_warning(),
+        Status::Active => Label::transparent("ACTIVE").variant_accent(),
+        Status::Inactive => Label::transparent("INACTIVE"),
+        Status::Error(_) | Status::InitError(_) => Label::transparent("ERROR").variant_danger(),
     }
+    .status_dot(matches!(status, Status::Initializing))
 }

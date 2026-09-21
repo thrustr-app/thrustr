@@ -1,4 +1,4 @@
-use crate::app::Route;
+use super::Route;
 use gpui::{Context, IntoElement, Render, Styled, Window, div};
 use theme::ThemeExt;
 

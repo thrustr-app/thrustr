@@ -2,8 +2,7 @@ use crate::{
     globals::ArtworkServiceExt,
     navigation::{NavigatorExt, Page},
     routes::library::{
-        CARD_ASPECT_RATIO, CARD_ICON_SIZE, CARD_INNER_GAP, CARD_PADDING, CARD_TEXT_SIZE,
-        CARD_TITLE_HEIGHT, CARD_WIDTH,
+        CARD_ASPECT_RATIO, CARD_ICON_SIZE, CARD_INNER_GAP, CARD_PADDING, CARD_TITLE_SIZE,
     },
 };
 use config::paths;
@@ -13,8 +12,8 @@ use domain::{
 };
 use gpui::{
     App, Empty, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement, ObjectFit,
-    ParentElement, RenderOnce, Resource, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, Window, div, img, prelude::FluentBuilder, rgba, transparent_black,
+    ParentElement, Pixels, RenderOnce, Resource, SharedString, StatefulInteractiveElement, Styled,
+    StyledImage, Window, div, img, prelude::FluentBuilder, relative, rgba, transparent_black,
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
 use theme::ThemeExt;
@@ -30,7 +29,6 @@ pub(super) fn accent_hsla(color: Color) -> Hsla {
 #[derive(Clone)]
 pub(super) struct GameEntry {
     pub id: GameId,
-    pub element_id: SharedString,
     pub name: SharedString,
     pub cover_url: Option<SharedString>,
     pub cover_path: Option<Arc<Path>>,
@@ -46,7 +44,6 @@ impl GameEntry {
         };
         Self {
             id: item.id,
-            element_id: item.id.to_string().into(),
             name: item.name.into(),
             cover_url: item.cover_url.map(Into::into),
             source_icon: icons.get(&item.source_id).cloned(),
@@ -66,27 +63,31 @@ enum CardKind {
 pub(super) struct GameCard {
     kind: CardKind,
     selected: bool,
+    width: Pixels,
 }
 
 impl GameCard {
-    pub(super) fn new(game: GameEntry) -> Self {
+    pub(super) fn new(game: GameEntry, width: Pixels) -> Self {
         Self {
             kind: CardKind::Game(game),
             selected: false,
+            width,
         }
     }
 
-    pub(super) fn unloaded() -> Self {
+    pub(super) fn unloaded(width: Pixels) -> Self {
         Self {
             kind: CardKind::Unloaded,
             selected: false,
+            width,
         }
     }
 
-    pub(super) fn spacer() -> Self {
+    pub(super) fn spacer(width: Pixels) -> Self {
         Self {
             kind: CardKind::Spacer,
             selected: false,
+            width,
         }
     }
 
@@ -97,14 +98,14 @@ impl GameCard {
 }
 
 impl RenderOnce for GameCard {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
         let game = match self.kind {
             CardKind::Game(game) => Some(game),
             CardKind::Unloaded => None,
             CardKind::Spacer => {
-                return div().flex_shrink_0().w(CARD_WIDTH).into_any_element();
+                return div().flex_shrink_0().w(self.width).into_any_element();
             }
         };
 
@@ -120,26 +121,27 @@ impl RenderOnce for GameCard {
             .flex_col()
             .gap(CARD_INNER_GAP)
             .p(CARD_PADDING)
-            .w(CARD_WIDTH)
-            .rounded(theme.radius.lg)
+            .w(self.width)
+            .rounded(theme.radius.lg.to_rems(window.rem_size()) + CARD_PADDING)
             .border_1()
             .border_color(ring);
 
         let mut cover = div()
             .aspect_ratio(CARD_ASPECT_RATIO)
             .w_full()
-            .bg(theme.colors.card_background)
-            .rounded(theme.radius.md);
+            .bg(theme.colors.surface)
+            .rounded(theme.radius.lg);
 
         let mut title = div()
-            .h(CARD_TITLE_HEIGHT)
+            .h(CARD_TITLE_SIZE)
             .overflow_hidden()
             .whitespace_nowrap()
             .w_full()
             .text_ellipsis()
             .text_color(theme.colors.primary)
-            .text_size(CARD_TEXT_SIZE)
-            .font_weight(FontWeight::MEDIUM);
+            .text_size(CARD_TITLE_SIZE)
+            .line_height(relative(1.))
+            .font_weight(FontWeight::SEMIBOLD);
 
         let mut icon_row = div().h(CARD_ICON_SIZE).flex_shrink_0();
 
@@ -153,10 +155,10 @@ impl RenderOnce for GameCard {
 
         if let Some(path) = game.cover_path {
             let mut cover_img = img(ImageSource::Resource(Resource::Path(path)))
-                .object_fit(ObjectFit::Contain)
+                .object_fit(ObjectFit::Cover)
                 .w_full()
                 .h_full()
-                .rounded(theme.radius.md);
+                .rounded(theme.radius.lg);
 
             // The file is recorded but can still be missing or unreadable, in
             // which case the download is worth another try.
@@ -177,12 +179,9 @@ impl RenderOnce for GameCard {
             icon_row = icon_row.child(img(ImageSource::Image(icon)).size(CARD_ICON_SIZE));
         }
 
-        let accent = game
-            .accent
-            .unwrap_or(theme.colors.card_background)
-            .opacity(0.3);
+        let accent = game.accent.unwrap_or(theme.colors.surface).opacity(0.3);
 
-        base.id(game.element_id.clone())
+        base.id(("game-card", u64::from(game.id)))
             .on_click(move |_, _, cx| {
                 cx.navigate(Page::Game(game.id));
             })

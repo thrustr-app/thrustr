@@ -3,30 +3,62 @@ use serde::Deserialize;
 use std::ops::Deref;
 use std::sync::Arc;
 
-define_theme_colors!(
-    background,
-    primary,
-    secondary,
-    surface,
-    hover,
-    accent,
-    border,
-    error,
-    warning,
-    overlay,
-    sidebar_background,
-    sidebar_primary,
-    sidebar_secondary,
-    sidebar_surface,
-    sidebar_hover,
-    sidebar_logo,
-    card_background,
-    card_surface,
-    card_primary,
-    card_secondary,
+define_theme_color_group!(
+    SidebarColors,
+    PartialSidebarColors {
+        background,
+        primary,
+        secondary,
+        border,
+        surface,
+        hover,
+        logo,
+    }
 );
 
-define_theme_radius!(sm, md, lg, full);
+define_theme_color_group!(
+    TitlebarColors,
+    PartialTitlebarColors {
+        background,
+        primary,
+        secondary,
+        border,
+        hover,
+    }
+);
+
+define_theme_colors!(
+    colors: [
+        background,
+        primary,
+        secondary,
+        secondary_background,
+        secondary_foreground,
+        tertiary,
+        surface,
+        surface_sunken,
+        hover,
+        accent,
+        accent_background,
+        accent_foreground,
+        border,
+        warning,
+        warning_background,
+        warning_foreground,
+        danger,
+        danger_background,
+        danger_foreground,
+        overlay,
+    ],
+    groups: [
+        sidebar: SidebarColors / PartialSidebarColors,
+        titlebar: TitlebarColors / PartialTitlebarColors,
+    ]
+);
+
+define_theme_radius!(sm, md, lg, pill);
+
+define_theme_text!(sm, md, lg, xl);
 
 #[doc(hidden)]
 #[derive(Debug, Deserialize)]
@@ -34,6 +66,7 @@ pub struct ThemeData {
     pub manifest: ThemeManifest,
     pub colors: ThemeColors,
     pub radius: ThemeRadius,
+    pub text: ThemeText,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +104,7 @@ pub struct PartialTheme {
     pub manifest: ThemeManifest,
     pub colors: Option<PartialThemeColors>,
     pub radius: Option<PartialThemeRadius>,
+    pub text: Option<PartialThemeText>,
 }
 
 impl PartialTheme {
@@ -87,6 +121,11 @@ impl PartialTheme {
                 .take()
                 .map(|r| r.merge(&other.radius))
                 .unwrap_or_else(|| other.radius.clone()),
+            text: self
+                .text
+                .take()
+                .map(|t| t.merge(&other.text))
+                .unwrap_or_else(|| other.text.clone()),
         })
     }
 }

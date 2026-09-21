@@ -1,0 +1,80 @@
+name: Bug Report
+description: Report a problem with the app.
+type: bug
+labels: ["status:needs-triage"]
+body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      description: Please confirm the following before submitting your bug report.
+      options:
+        - label: I am running the latest version of the app.
+          required: true
+        - label: I have searched existing issues and this hasn't been reported yet.
+          required: true
+
+  - type: input
+    id: thrustr-version
+    attributes:
+      label: Thrustr version
+      placeholder: e.g. 0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: system-information
+    attributes:
+      label: System information
+      description: Operating system, version, hardware and other relevant information.
+      value: |
+        OS:
+        Version:
+        CPU:
+        Memory:
+        Disk:
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: false
+
+  - type: upload
+    id: logs
+    attributes:
+      label: Logs
+      description: Upload the latest log file.
+    validations:
+      required: true
+
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Upload relevant screenshots if applicable.
+    validations:
+      required: false

@@ -1,8 +1,11 @@
-use crate::{app::RouteHandle, globals::ComponentRegistryExt, routes};
+use crate::{
+    globals::ComponentRegistryExt,
+    routes::{self, RouteHandle},
+};
 use domain::game::GameId;
-use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString};
+use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString, Window};
 use std::{collections::VecDeque, mem::replace};
-use ui::SidebarItem;
+use ui::{Icon, Sidebar, SidebarItem};
 
 const MAX_HISTORY: usize = 20;
 
@@ -13,18 +16,26 @@ pub fn init(cx: &mut App) {
 /// A navigable node in the page tree.
 pub trait NavNode: Into<Page> + Clone {
     fn label(&self) -> &'static str;
-    fn icon_path(&self) -> &'static str;
+    fn icon(&self) -> Icon;
     fn is_parent_of(&self, other: &Self) -> bool;
 }
 
-/// Builds a sidebar item that navigates to `page` and reflects its active state.
-pub fn nav_item<T: NavNode + 'static>(page: T, cx: &App) -> SidebarItem {
-    let is_active = cx.navigator().is_active_for(page.clone());
+/// Binds a sidebar to the navigator.
+pub trait NavSidebar<T> {
+    fn nav(self, current: T) -> Self;
+}
 
-    SidebarItem::new(page.label())
-        .icon(page.icon_path())
-        .active(is_active)
-        .on_click(move |_, _, cx| cx.navigate(page.clone()))
+impl<T: NavNode + PartialEq + 'static> NavSidebar<T> for Sidebar<T> {
+    fn nav(self, current: T) -> Self {
+        self.value(current)
+            .matches(T::is_parent_of)
+            .on_change(|page: &T, _, cx| cx.navigate(page.clone()))
+    }
+}
+
+/// Builds a sidebar item that navigates to `page` and reflects its active state.
+pub fn nav_item<T: NavNode + PartialEq + 'static>(page: T) -> SidebarItem<T> {
+    SidebarItem::new(page.label()).icon(page.icon()).value(page)
 }
 
 /// Determines whether two pages reuse the same root view.
@@ -58,13 +69,13 @@ impl NavNode for Page {
         }
     }
 
-    fn icon_path(&self) -> &'static str {
+    fn icon(&self) -> Icon {
         match self {
-            Self::Home => "icons/home.svg",
-            Self::Library => "icons/library.svg",
-            Self::Collections => "icons/collections.svg",
-            Self::Game(_) => "icons/library.svg",
-            Self::Settings(_) => "icons/settings.svg",
+            Self::Home => Icon::home(),
+            Self::Library => Icon::library(),
+            Self::Collections => Icon::collections(),
+            Self::Game(_) => Icon::library(),
+            Self::Settings(_) => Icon::settings(),
         }
     }
 
@@ -79,6 +90,19 @@ impl NavNode for Page {
 }
 
 impl Page {
+    pub fn build_view(&self, window: &mut Window, cx: &mut App) -> Box<dyn RouteHandle> {
+        match self {
+            Self::Home => Box::new(cx.new(|_| routes::Home)),
+            Self::Library => Box::new(cx.new(|cx| routes::Library::new(window, cx))),
+            Self::Collections => Box::new(cx.new(|_| routes::Collections)),
+            Self::Game(id) => Box::new(cx.new(|cx| routes::Game::new(*id, cx))),
+            Self::Settings(Some(sub)) => {
+                Box::new(cx.new(|cx| routes::Settings::new(sub.clone(), cx)))
+            }
+            _ => Box::new(cx.new(|_| EmptyView)),
+        }
+    }
+
     pub(crate) fn section(&self) -> Section {
         match self {
             Self::Home => Section::Home,
@@ -89,16 +113,10 @@ impl Page {
         }
     }
 
-    pub fn build_view(&self, cx: &mut App) -> Box<dyn RouteHandle> {
+    fn resolve(self) -> Self {
         match self {
-            Self::Home => Box::new(cx.new(|_| routes::Home)),
-            Self::Library => Box::new(cx.new(routes::Library::new)),
-            Self::Collections => Box::new(cx.new(|_| routes::Collections)),
-            Self::Game(id) => Box::new(cx.new(|cx| routes::Game::new(*id, cx))),
-            Self::Settings(Some(sub)) => {
-                Box::new(cx.new(|cx| routes::Settings::new(sub.clone(), cx)))
-            }
-            _ => Box::new(cx.new(|_| EmptyView)),
+            Self::Settings(None) => SettingsPage::Storefronts(None).into(),
+            other => other,
         }
     }
 }
@@ -131,11 +149,11 @@ impl NavNode for SettingsPage {
         }
     }
 
-    fn icon_path(&self) -> &'static str {
+    fn icon(&self) -> Icon {
         match self {
-            Self::Storefronts(_) => "icons/storefronts.svg",
-            Self::Plugins(_) => "icons/plugins.svg",
-            Self::Appearance => "icons/appearance.svg",
+            Self::Storefronts(_) => Icon::storefront(),
+            Self::Plugins(_) => Icon::plugin(),
+            Self::Appearance => Icon::appearance(),
         }
     }
 
@@ -182,18 +200,7 @@ impl Navigator {
         self.current.clone()
     }
 
-    /// Returns `true` if the given page is the same or a parent of the current page.
-    pub fn is_active_for(&self, page: impl Into<Page>) -> bool {
-        page.into().is_parent_of(&self.current)
-    }
-
-    fn navigate(&mut self, page: impl Into<Page>) {
-        let mut next = page.into();
-
-        if let Page::Settings(None) = next {
-            next = SettingsPage::Storefronts(None).into();
-        }
-
+    fn navigate(&mut self, next: Page) {
         if self.current.is_parent_of(&next) || next.is_parent_of(&self.current) {
             self.current = next;
             return;
@@ -230,14 +237,20 @@ impl NavigatorExt for App {
     }
 
     fn navigate(&mut self, page: impl Into<Page>) {
-        self.global_mut::<Navigator>().navigate(page);
+        let next = page.into().resolve();
+
+        if self.global::<Navigator>().current == next {
+            return;
+        }
+
+        self.global_mut::<Navigator>().navigate(next);
     }
 
     fn navigate_back(&mut self) {
-        // Check first so observers are not notified when there is nothing to pop.
         if self.global::<Navigator>().history.is_empty() {
             return;
         }
+
         self.global_mut::<Navigator>().navigate_back();
     }
 }

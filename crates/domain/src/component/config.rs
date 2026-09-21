@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum Field {
+pub enum Element {
     Text {
         id: String,
         label: String,
@@ -10,12 +10,17 @@ pub enum Field {
         #[serde(default)]
         required: bool,
     },
+    Hbox {
+        #[serde(rename = "field")]
+        elements: Vec<Element>,
+    },
 }
 
-impl Field {
-    pub fn id(&self) -> &str {
+impl Element {
+    pub fn id(&self) -> Option<&str> {
         match self {
-            Field::Text { id, .. } => id,
+            Element::Text { id, .. } => Some(id),
+            Element::Hbox { .. } => None,
         }
     }
 }
@@ -24,7 +29,7 @@ impl Field {
 pub struct ConfigSection {
     pub name: String,
     #[serde(rename = "field")]
-    pub fields: Vec<Field>,
+    pub elements: Vec<Element>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

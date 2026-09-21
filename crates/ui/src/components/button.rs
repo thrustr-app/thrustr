@@ -1,13 +1,22 @@
-use crate::{FocusProps, Size, Variant, WithFocus, WithSize, WithVariant};
+use crate::{FocusProps, Icon, Size, Variant, WithFocus, WithSize, WithVariant};
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, InteractiveElement,
-    IntoElement, ParentElement, Refineable, RenderOnce, StatefulInteractiveElement,
-    StyleRefinement, Styled, Transformation, Window, div, percentage, prelude::FluentBuilder, rems,
-    svg, transparent_black,
+    Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla,
+    InteractiveElement, IntoElement, ParentElement, Refineable, Rems, RenderOnce,
+    StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div, percentage,
+    prelude::FluentBuilder, relative, rems, transparent_black,
 };
 use smallvec::SmallVec;
 use std::time::Duration;
-use theme::ThemeExt;
+use theme::{Theme, ThemeExt};
+
+#[derive(Clone, Copy)]
+struct Palette {
+    background: Hsla,
+    foreground: Hsla,
+    border: Hsla,
+    ring: Hsla,
+    weight: FontWeight,
+}
 
 #[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
@@ -16,6 +25,7 @@ pub struct Button {
     style: StyleRefinement,
     variant: Variant,
     size: Size,
+    icon: Option<Icon>,
     children: SmallVec<[AnyElement; 1]>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     focus: FocusProps,
@@ -28,13 +38,21 @@ impl Button {
         Self {
             id: (id.into(), "button").into(),
             style: StyleRefinement::default(),
-            variant: Variant::Primary,
-            size: Size::Medium,
+            variant: Variant::default(),
+            size: Size::default(),
+            icon: None,
             children: SmallVec::new(),
             on_click: None,
             focus: FocusProps::default(),
             loading: false,
             disabled: false,
+        }
+    }
+
+    pub fn icon(id: impl Into<ElementId>, icon: Icon) -> Self {
+        Self {
+            icon: Some(icon),
+            ..Self::new(id)
         }
     }
 
@@ -54,6 +72,63 @@ impl Button {
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
         self
+    }
+
+    fn height(&self) -> Rems {
+        if self.variant == Variant::Ghost {
+            return rems(1.);
+        }
+
+        match self.size {
+            Size::Small => rems(2.),
+            Size::Medium => rems(2.375),
+            Size::Large => rems(2.625),
+        }
+    }
+
+    fn padding(&self) -> Rems {
+        if self.variant == Variant::Ghost {
+            return rems(0.25);
+        }
+
+        match self.size {
+            Size::Small => rems(0.75),
+            Size::Medium => rems(1.125),
+            Size::Large => rems(1.25),
+        }
+    }
+
+    fn palette(&self, theme: &Theme) -> Palette {
+        let colors = &theme.colors;
+
+        let solid = |background, foreground| Palette {
+            background,
+            foreground,
+            border: transparent_black(),
+            ring: colors.primary,
+            weight: FontWeight::SEMIBOLD,
+        };
+
+        match self.variant {
+            Variant::Secondary => solid(colors.secondary, colors.secondary_foreground),
+            Variant::Accent => solid(colors.accent, colors.accent_foreground),
+            Variant::Warning => solid(colors.warning, colors.warning_foreground),
+            Variant::Danger => solid(colors.danger, colors.danger_foreground),
+            Variant::Outline => Palette {
+                background: transparent_black(),
+                foreground: colors.primary,
+                border: colors.border,
+                ring: colors.primary,
+                weight: FontWeight::SEMIBOLD,
+            },
+            Variant::Ghost => Palette {
+                background: transparent_black(),
+                foreground: colors.secondary,
+                border: transparent_black(),
+                ring: colors.secondary,
+                weight: FontWeight::NORMAL,
+            },
+        }
     }
 }
 
@@ -104,82 +179,61 @@ impl RenderOnce for Button {
         let focus_handle = self.focus.configure(focus_handle);
 
         let theme = cx.theme();
+        let palette = self.palette(&theme);
+        let height = self.height();
+        let is_icon = self.icon.is_some();
+        let interactive = !self.disabled && !self.loading;
 
         let mut button = div()
             .id(self.id.clone())
-            .rounded(theme.radius.full)
-            .when(!self.disabled && !self.loading, |button| {
+            .flex()
+            .items_center()
+            .justify_center()
+            .h(height)
+            .rounded(theme.radius.pill)
+            .when(is_icon, |button| button.min_w(height))
+            .when(!is_icon, |button| button.px(self.padding()))
+            .border_1()
+            .border_color(palette.border)
+            .bg(palette.background)
+            .text_color(palette.foreground)
+            .text_size(theme.text.md)
+            .line_height(relative(1.))
+            .font_weight(palette.weight)
+            .focus_visible(move |button| button.border_color(palette.ring))
+            .when(self.disabled, |button| button.opacity(0.6))
+            .when(interactive, |button| {
                 button
                     .track_focus(&focus_handle)
                     .cursor_pointer()
                     .when_some(self.on_click, |button, on_click| button.on_click(on_click))
             })
-            .when(self.disabled, |button| button.opacity(0.6))
-            .when(self.size == Size::Medium, |button| {
-                button
-                    .h(rems(2.25))
-                    .min_w(rems(2.25))
-                    .p(rems(0.6))
-                    .text_size(rems(1.))
-            })
-            .when(self.size == Size::Large, |button| {
-                button
-                    .h(rems(2.5))
-                    .min_w(rems(2.5))
-                    .p(rems(0.625))
-                    .text_size(rems(1.))
-            })
-            .border_1()
-            .flex()
-            .items_center()
-            .justify_center()
             .when_else(
                 self.loading,
                 |button| {
                     button.child(
-                        svg()
-                            .path("icons/loader.svg")
-                            .size(rems(1.25))
-                            .text_color(theme.colors.background)
-                            .when(self.variant == Variant::Outline, |svg| {
-                                svg.text_color(theme.colors.primary)
-                            })
+                        Icon::loader()
+                            .size(self.size)
+                            .color(palette.foreground)
                             .with_animation(
                                 "loading",
-                                Animation::new(Duration::from_millis(850)).repeat(),
-                                |loader, delta| {
-                                    loader.with_transformation(Transformation::rotate(percentage(
-                                        delta,
-                                    )))
+                                Animation::new(Duration::from_millis(850))
+                                    .repeat()
+                                    .with_max_fps(30.),
+                                |loader: Icon, delta| {
+                                    loader.transform(Transformation::rotate(percentage(delta)))
                                 },
                             ),
                     )
                 },
-                |button| button.children(self.children),
+                |button| {
+                    button
+                        .when_some(self.icon, |button, icon| {
+                            button.child(icon.size(self.size).color(palette.foreground))
+                        })
+                        .children(self.children)
+                },
             );
-
-        match self.variant {
-            Variant::Primary => {
-                button = button
-                    .bg(theme.colors.primary)
-                    .text_color(theme.colors.background)
-                    .focus_visible(|input| input.border_color(theme.colors.accent))
-            }
-            Variant::Accent => {
-                button = button
-                    .bg(theme.colors.accent)
-                    .text_color(theme.colors.background)
-                    .focus_visible(|input| input.border_color(theme.colors.primary));
-            }
-            Variant::Outline => {
-                button = button
-                    .bg(transparent_black())
-                    .text_color(theme.colors.primary)
-                    .border_color(theme.colors.border)
-                    .focus_visible(|input| input.border_color(theme.colors.primary));
-            }
-            _ => {}
-        }
 
         button.style().refine(&self.style);
 

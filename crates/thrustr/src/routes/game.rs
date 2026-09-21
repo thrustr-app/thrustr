@@ -1,5 +1,5 @@
-use crate::globals::GameServiceExt;
-use crate::{app::Route, extensions::SpawnTaskExt};
+use super::Route;
+use crate::{context::SpawnTaskExt, globals::GameServiceExt};
 use domain::game::GameId;
 use gpui::{
     Context, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
@@ -47,7 +47,7 @@ impl Render for Game {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        div().flex_grow_1().min_w_0().px(rems(2.)).child(
+        div().flex_grow_1().min_w_0().px(rems(2.5)).child(
             div()
                 .w_full()
                 .overflow_hidden()

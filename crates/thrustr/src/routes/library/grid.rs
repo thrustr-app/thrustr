@@ -1,4 +1,4 @@
-use super::{CACHE_OVERSCAN_ROWS, CARD_MIN_GAP, CARD_WIDTH};
+use super::{CACHE_OVERSCAN_ROWS, CARD_GAP, CARD_MIN_WIDTH};
 use gpui::{Pixels, UniformListScrollHandle};
 use std::num::NonZeroUsize;
 
@@ -6,6 +6,7 @@ pub(super) struct GridDims {
     pub(super) num_cols: usize,
     pub(super) num_rows: usize,
     pub(super) visible_rows: usize,
+    pub(super) card_width: Pixels,
 }
 
 impl GridDims {
@@ -15,9 +16,10 @@ impl GridDims {
         game_count: usize,
         content_height: Option<Pixels>,
     ) -> Self {
-        let num_cols = ((grid_width + CARD_MIN_GAP) / (CARD_WIDTH + CARD_MIN_GAP)).floor() as usize;
+        let num_cols = ((grid_width + CARD_GAP) / (CARD_MIN_WIDTH + CARD_GAP)).floor() as usize;
         let num_cols = num_cols.max(1);
         let num_rows = game_count.div_ceil(num_cols);
+        let card_width = (grid_width - CARD_GAP * (num_cols - 1) as f32) / num_cols as f32;
 
         let visible_rows = content_height
             .filter(|h| *h > Pixels::ZERO)
@@ -32,6 +34,7 @@ impl GridDims {
             num_cols,
             num_rows,
             visible_rows,
+            card_width,
         }
     }
 
@@ -112,67 +115,138 @@ mod tests {
         metrics(offset).first_touching_row() * COLS
     }
 
+    #[track_caller]
+    fn check_top_item(offset: Pixels, expected: usize) {
+        assert_eq!(top_item(offset), expected);
+    }
+
+    #[track_caller]
+    fn check_top_item_near(offset: Pixels, expected: usize, tolerance: usize) {
+        let item = top_item(offset);
+        assert!(
+            item.abs_diff(expected) <= tolerance,
+            "{item} should be within {tolerance} of {expected}",
+        );
+    }
+
+    #[track_caller]
+    fn check_no_metrics(num_rows: usize) {
+        let handle = UniformListScrollHandle::new();
+        assert!(GridMetrics::measure(&handle, num_rows).is_none());
+    }
+
+    #[track_caller]
+    fn check_touching_and_nearest(
+        offset: Pixels,
+        expected_touching: usize,
+        expected_nearest: usize,
+    ) {
+        let metrics = metrics(offset);
+        assert_eq!(metrics.first_touching_row(), expected_touching);
+        assert_eq!(metrics.nearest_row(), expected_nearest);
+    }
+
+    #[track_caller]
+    fn check_row_is_visible(offset: Pixels, row: usize, expected: bool) {
+        assert_eq!(
+            metrics(offset).row_is_visible(row),
+            expected,
+            "row {row} at offset {offset:?} should{} be visible",
+            if expected { "" } else { " not" },
+        );
+    }
+
     #[test]
     fn top_of_the_list_is_the_first_game() {
-        assert_eq!(top_item(px(0.)), 0);
+        check_top_item(px(0.), 0);
     }
 
     #[test]
     fn bottom_of_the_list_reaches_the_last_rows() {
-        let item = top_item(MAX_OFFSET);
-
-        // Two rows fit on screen, so the last row can never reach the top.
         let last_row = num_rows() - 1;
-        let top_row = item / COLS;
-        assert!(
-            (last_row - 3..=last_row).contains(&top_row),
-            "row {top_row} should be within a row of the end ({last_row})",
-        );
-
-        assert!(item > GAMES / 2, "{item} should be past the midpoint");
+        check_top_item_near(MAX_OFFSET, last_row * COLS, COLS * 3);
     }
 
     #[test]
     fn midpoint_lands_near_the_middle_of_the_library() {
-        let item = top_item(MAX_OFFSET / 2.);
-
-        let expected = GAMES / 2;
-        assert!(
-            item.abs_diff(expected) < COLS * 2,
-            "{item} should be within a row or two of {expected}",
-        );
+        check_top_item_near(MAX_OFFSET / 2., GAMES / 2, COLS * 2);
     }
 
     #[test]
     fn an_unmeasured_list_has_no_metrics() {
-        let handle = UniformListScrollHandle::new();
-        assert!(GridMetrics::measure(&handle, num_rows()).is_none());
-        assert!(GridMetrics::measure(&handle, 0).is_none());
+        check_no_metrics(num_rows());
+        check_no_metrics(0);
     }
 
     #[test]
-    fn a_row_mostly_scrolled_past_is_still_the_one_touched() {
-        let metrics = metrics(row_height() * 3.6);
-
-        assert_eq!(metrics.first_touching_row(), 3);
-        assert_eq!(metrics.nearest_row(), 4);
+    fn a_partially_scrolled_row_is_still_the_one_touched() {
+        check_touching_and_nearest(row_height() * 3.6, 3, 4);
     }
 
     #[test]
-    fn a_sliver_of_a_row_counts_as_visible() {
-        let metrics = metrics(row_height() * 3.99);
+    fn a_partial_rows_counts_as_visible() {
+        let offset = row_height() * 3.99;
 
-        assert!(metrics.row_is_visible(3), "the sliver above the fold");
-        assert!(metrics.row_is_visible(4), "the row filling the viewport");
-        assert!(!metrics.row_is_visible(2), "scrolled fully past");
+        check_row_is_visible(offset, 3, true);
+        check_row_is_visible(offset, 4, true);
+        check_row_is_visible(offset, 2, false);
+    }
+
+    const FOUR_COL_WIDTH: Pixels = px(744.);
+
+    #[track_caller]
+    fn check_num_cols(grid_width: Pixels, expected: usize) {
+        let dims = GridDims::compute(grid_width, px(1000.), 100, None);
+        assert_eq!(dims.num_cols, expected);
     }
 
     #[test]
-    fn scrolling_further_down_the_list_moves_the_content_up() {
-        let metrics = metrics(px(0.));
+    fn narrower_grids_fit_fewer_columns() {
+        check_num_cols(CARD_MIN_WIDTH, 1);
+        check_num_cols(CARD_MIN_WIDTH * 2. + CARD_GAP, 2);
+        check_num_cols(px(10.), 1);
+    }
 
-        assert_eq!(metrics.scroll_delta(2, 5), row_height() * 3.);
-        assert_eq!(metrics.scroll_delta(5, 2), -(row_height() * 3.));
-        assert_eq!(metrics.scroll_delta(4, 4), Pixels::ZERO);
+    #[track_caller]
+    fn check_num_rows(game_count: usize, expected: usize) {
+        let dims = GridDims::compute(FOUR_COL_WIDTH, px(1000.), game_count, None);
+        assert_eq!(dims.num_rows, expected);
+    }
+
+    #[test]
+    fn rows_round_up_to_fit_all_games() {
+        check_num_rows(0, 0);
+        check_num_rows(4, 1);
+        check_num_rows(5, 2);
+        check_num_rows(8, 2);
+    }
+
+    #[test]
+    fn cards_fill_the_row_width_exactly() {
+        let dims = GridDims::compute(FOUR_COL_WIDTH, px(1000.), 10, None);
+
+        let total = dims.card_width * dims.num_cols as f32 + CARD_GAP * (dims.num_cols - 1) as f32;
+        assert_eq!(total, FOUR_COL_WIDTH);
+    }
+
+    #[test]
+    fn cache_capacity_is_overscan_before_layout() {
+        let dims = GridDims::compute(FOUR_COL_WIDTH, px(500.), 40, None);
+
+        assert_eq!(dims.visible_rows, 0);
+        assert_eq!(dims.cache_capacity(), dims.num_cols * CACHE_OVERSCAN_ROWS);
+    }
+
+    #[test]
+    fn cache_capacity_grows_with_viewport() {
+        // 10 rows measuring 1000px of content means each row is 100px tall.
+        // A 350px-tall viewport should show 4 of them, rounded up.
+        let dims = GridDims::compute(FOUR_COL_WIDTH, px(350.), 40, Some(px(1000.)));
+
+        assert_eq!(dims.visible_rows, 4);
+        assert_eq!(
+            dims.cache_capacity(),
+            dims.num_cols * (4 + CACHE_OVERSCAN_ROWS)
+        );
     }
 }

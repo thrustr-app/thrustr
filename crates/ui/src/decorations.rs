@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Adapted from Zed's `workspace` and `theme` crates, Copyright (C) Zed
-// Industries, Inc., licensed under GPL-3.0-or-later:
+// Adapted from Zed's `workspace` and `theme` crates,
+// Copyright (C) Zed Industries, Inc., licensed under GPL-3.0-or-later:
 // https://github.com/zed-industries/zed
+//
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 use gpui::{
