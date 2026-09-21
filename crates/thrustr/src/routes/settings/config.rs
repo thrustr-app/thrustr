@@ -18,7 +18,7 @@ use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Dialog, Icon, InputEvent, Label, PortalContext, WithFocus, WithScrollbar,
+    Alert, Button, Dialog, Empty, Icon, InputEvent, Label, PortalContext, WithFocus, WithScrollbar,
     WithSize, WithVariant, input,
 };
 
@@ -475,6 +475,9 @@ impl Config {
             })
             .when_some(self.status_error.clone(), |div, error| {
                 div.child(Alert::new(error))
+            })
+            .when(self.sections.is_empty(), |div| {
+                div.child(Empty::new("This plugin has no configuration options."))
             })
             .children(sections)
     }

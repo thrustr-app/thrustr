@@ -106,7 +106,7 @@ impl Button {
             foreground,
             border: transparent_black(),
             ring: colors.primary,
-            weight: FontWeight::SEMIBOLD,
+            weight: FontWeight::BOLD,
         };
 
         match self.variant {
