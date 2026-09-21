@@ -287,7 +287,7 @@ mod tests {
     fn offline_manager() -> ConnectivityManager {
         manager(ConnectivityConfig {
             initial_state: ConnectivityState::Offline,
-            probe_endpoints: dead_endpoints(),
+            probe_endpoints: vec![],
             probe_timeout: Duration::from_millis(100),
             ..Default::default()
         })
