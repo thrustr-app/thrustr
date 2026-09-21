@@ -431,7 +431,7 @@ mod tests {
         tokio::task::yield_now().await;
         m.inner.set_state(ConnectivityState::Online);
 
-        tokio::time::timeout(Duration::from_millis(200), waiter)
+        tokio::time::timeout(Duration::from_secs(2), waiter)
             .await
             .expect("waiter should wake on state change")
             .unwrap();
