@@ -840,9 +840,9 @@ impl Element for ScrollbarElement {
                     );
 
                     let color = if active {
-                        theme.colors.primary
-                    } else {
                         theme.colors.secondary
+                    } else {
+                        theme.colors.tertiary
                     }
                     .opacity(opacity);
 
