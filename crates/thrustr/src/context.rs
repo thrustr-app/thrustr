@@ -54,7 +54,7 @@ impl<'a, T: 'static> EventListenerExt<T> for Context<'a, T> {
     ) -> Task<()> {
         let mut receiver = event::listen(topic);
         self.spawn(async move |entity, cx| {
-            while receiver.recv().await.is_ok() {
+            while receiver.changed().await.is_ok() {
                 let _ = entity.update(cx, &handler);
             }
         })

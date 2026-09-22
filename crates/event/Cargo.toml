@@ -5,5 +5,5 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
-async-broadcast.workspace = true
 dashmap.workspace = true
+tokio.workspace = true
