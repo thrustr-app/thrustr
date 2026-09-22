@@ -3,29 +3,23 @@ use serde::Deserialize;
 use std::ops::Deref;
 use std::sync::Arc;
 
-define_theme_color_group!(
-    SidebarColors,
-    PartialSidebarColors {
-        background,
-        primary,
-        secondary,
-        border,
-        surface,
-        hover,
-        logo,
-    }
-);
+define_theme_group!(SidebarColors: Hsla {
+    background,
+    primary,
+    secondary,
+    border,
+    surface,
+    hover,
+    logo,
+});
 
-define_theme_color_group!(
-    TitlebarColors,
-    PartialTitlebarColors {
-        background,
-        primary,
-        secondary,
-        border,
-        hover,
-    }
-);
+define_theme_group!(TitlebarColors: Hsla {
+    background,
+    primary,
+    secondary,
+    border,
+    hover,
+});
 
 define_theme_colors!(
     colors: [
@@ -51,14 +45,24 @@ define_theme_colors!(
         overlay,
     ],
     groups: [
-        sidebar: SidebarColors / PartialSidebarColors,
-        titlebar: TitlebarColors / PartialTitlebarColors,
+        sidebar: SidebarColors,
+        titlebar: TitlebarColors,
     ]
 );
 
-define_theme_radius!(sm, md, lg, pill);
+define_theme_group!(ThemeRadius: AbsoluteLength {
+    sm,
+    md,
+    lg,
+    pill,
+});
 
-define_theme_text!(sm, md, lg, xl);
+define_theme_group!(ThemeText: AbsoluteLength {
+    sm,
+    md,
+    lg,
+    xl,
+});
 
 #[doc(hidden)]
 #[derive(Debug, Deserialize)]
