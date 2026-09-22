@@ -1,6 +1,7 @@
 use gpui::{
     App, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels, Refineable,
     RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Window, div, px, relative,
+    rems,
 };
 use std::rc::Rc;
 use theme::ThemeExt;
@@ -82,7 +83,7 @@ impl RenderOnce for IndexRail {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap(px(1.))
+            .gap(rems(0.25))
             .children(INDEX_RAIL_LETTERS.iter().enumerate().map(|(i, &letter)| {
                 let available = self.available & (1 << i) != 0;
 

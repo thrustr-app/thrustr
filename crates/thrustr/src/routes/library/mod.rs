@@ -50,7 +50,9 @@ const CARD_ICON_SIZE: Rems = rems(1.25);
 const CARD_ROW_GAP: Rems = rems(1.25);
 
 const GRID_PADDING: Rems = rems(3. - CARD_PADDING.0);
-const INDEX_RAIL_GAP: Pixels = px(4.);
+// FIXME: this should be 4px but because gpui does not have built-in support for outlines,
+// the game card has to set a 1px border. An extra px here makes it visually more centered.
+const INDEX_RAIL_GAP: Pixels = px(5.);
 
 const CACHE_OVERSCAN_ROWS: usize = 3;
 
