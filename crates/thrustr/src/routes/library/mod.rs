@@ -116,7 +116,7 @@ impl Library {
                     this.scroll_handle
                         .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
                 }
-                cx.notify();
+                cx.defer_in(window, |_, _, cx| cx.notify());
             }
         });
 

@@ -85,8 +85,12 @@ impl InputState {
                     }
                 }
             }),
-            cx.on_focus(&focus_handle, window, Self::on_focus),
-            cx.on_blur(&focus_handle, window, Self::on_blur),
+            cx.on_focus(&focus_handle, window, |_, window, cx| {
+                cx.defer_in(window, Self::on_focus)
+            }),
+            cx.on_blur(&focus_handle, window, |_, window, cx| {
+                cx.defer_in(window, Self::on_blur)
+            }),
         ];
 
         Self {
@@ -229,13 +233,7 @@ impl InputState {
         self.cursor.update(cx, |cursor, _| {
             cursor.stop();
         });
-        // TODO - for some reason cx.notify() doesn't trigger a re-render here
-        cx.spawn(async |this, cx| {
-            if let Some(this) = this.upgrade() {
-                this.update(cx, |_, cx| cx.notify())
-            }
-        })
-        .detach();
+        cx.notify();
         self.on_change(window, cx);
     }
 

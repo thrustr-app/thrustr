@@ -182,12 +182,14 @@ struct RevealListener {
 
 impl RevealListener {
     fn new(focus_handle: &FocusHandle, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let _subscription = cx.on_focus_in(focus_handle, window, |this, window, _| {
-            if window.last_input_was_keyboard()
-                && let Some(reveal) = &this.reveal
-            {
-                reveal.scroll_into_view(window);
-            }
+        let _subscription = cx.on_focus_in(focus_handle, window, |_, window, cx| {
+            cx.defer_in(window, |this, window, _| {
+                if window.last_input_was_keyboard()
+                    && let Some(reveal) = &this.reveal
+                {
+                    reveal.scroll_into_view(window);
+                }
+            });
         });
 
         Self {
