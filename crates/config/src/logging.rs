@@ -26,6 +26,9 @@ pub fn init() -> WorkerGuard {
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy()
+        // Prevents "can't render at a zero size" spam when the window is too small
+        // to render the SVG.
+        .add_directive("gpui::elements::svg=off".parse().unwrap())
         .add_directive("gpui::asset_cache=off".parse().unwrap());
 
     let file_layer = fmt::layer().with_ansi(false).with_writer(non_blocking);
