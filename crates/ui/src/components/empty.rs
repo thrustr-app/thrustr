@@ -40,7 +40,7 @@ impl RenderOnce for Empty {
             .rounded(theme.radius.lg)
             .border_1()
             .border_dashed()
-            .border_color(theme.colors.tertiary.opacity(0.2))
+            .border_color(theme.colors.tertiary.opacity(0.4))
             .text_color(theme.colors.tertiary)
             .text_size(theme.text.md)
             .child(self.text);

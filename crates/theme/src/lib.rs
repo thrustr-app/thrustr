@@ -10,14 +10,15 @@ mod theme;
 
 pub use theme::*;
 
+const DEFAULT_THEME_PATH: &str = "themes/default.toml";
+
 pub fn init(cx: &mut App) {
     cx.set_global(ThemeManager::new());
 }
 
 pub struct ThemeManager {
     themes: HashMap<String, Theme>,
-    active_theme: String,
-    default_theme: String,
+    active: Theme,
 }
 
 impl Default for ThemeManager {
@@ -28,16 +29,14 @@ impl Default for ThemeManager {
 
 impl ThemeManager {
     pub fn new() -> Self {
-        let default_data = load_default_theme_data();
-        let default_id = default_data.manifest.id.clone();
+        let default_theme = Theme::new(load_default_theme_data());
 
-        let mut themes = load_builtin_themes(&default_data);
-        themes.insert(default_id.clone(), Theme::new(default_data));
+        let mut themes = load_builtin_themes(&default_theme);
+        themes.insert(default_theme.id().to_owned(), default_theme.clone());
 
         Self {
             themes,
-            default_theme: default_id.clone(),
-            active_theme: default_id,
+            active: default_theme,
         }
     }
 
@@ -45,21 +44,18 @@ impl ThemeManager {
         self.themes.values().map(|t| &t.manifest).collect()
     }
 
-    pub fn set_active_theme(&mut self, id: String) -> Result<()> {
-        if self.themes.contains_key(&id) {
-            self.active_theme = id;
-            Ok(())
-        } else {
-            Err(ThemeError::NotFound(id))
-        }
+    pub fn set_active_theme(&mut self, id: &str) -> Result<()> {
+        let theme = self
+            .themes
+            .get(id)
+            .cloned()
+            .ok_or_else(|| ThemeError::NotFound(id.to_owned()))?;
+        self.active = theme;
+        Ok(())
     }
 
     pub fn active_theme(&self) -> Theme {
-        self.themes
-            .get(&self.active_theme)
-            .or_else(|| self.themes.get(&self.default_theme))
-            .expect("the default theme should always be available")
-            .clone()
+        self.active.clone()
     }
 }
 
@@ -80,14 +76,14 @@ impl ThemeExt for App {
 
 fn load_default_theme_data() -> ThemeData {
     let file =
-        Assets::get("themes/default.toml").expect("the default theme should always be available");
+        Assets::get(DEFAULT_THEME_PATH).expect("the default theme should always be available");
     toml::from_slice(&file.data).expect("the default theme should always be valid")
 }
 
 fn load_builtin_themes(default: &ThemeData) -> HashMap<String, Theme> {
     Assets::iter()
         .filter(|path| {
-            path.starts_with("themes/") && path.ends_with(".toml") && !path.contains("default")
+            path.starts_with("themes/") && path.ends_with(".toml") && path != DEFAULT_THEME_PATH
         })
         .filter_map(|path| {
             let data = Assets::get(&path)?;
@@ -96,4 +92,18 @@ fn load_builtin_themes(default: &ThemeData) -> HashMap<String, Theme> {
             Some((theme.id().to_owned(), theme))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_theme_deserializes_properly() {
+        let theme = ThemeManager::default().active_theme();
+
+        assert_eq!(theme.id(), "thrustr.dark");
+        assert!(!theme.manifest.name.is_empty());
+        assert!(!theme.manifest.version.is_empty());
+    }
 }
