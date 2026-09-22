@@ -30,7 +30,7 @@ overlay = "#000000A6"
     [colors.sidebar]
     background = "#05080A"
     primary = "#F0F2F4"
-    secondary = "#51565B"
+    secondary = "#7A7F84"
     border = "#1F222599"
     surface = "#2B2E32"
     hover = "#1A1A1A"

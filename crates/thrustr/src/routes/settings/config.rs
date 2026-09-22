@@ -454,7 +454,7 @@ impl Config {
                 .text_size(rems(0.875))
                 .line_height(relative(1.))
                 .font_weight(FontWeight::BOLD)
-                .text_color(theme.colors.tertiary)
+                .text_color(theme.colors.secondary)
                 .gap(rems(0.875))
                 .child(s.name.clone())
                 .child(div().flex().flex_col().gap(rems(1.5)).children(elements))

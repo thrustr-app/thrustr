@@ -212,7 +212,7 @@ impl RenderOnce for Input {
 
         let focus_handle = self.focus.configure(state.focus_handle(cx));
 
-        let placeholder_color = self.placeholder_color.or(Some(cx.theme().colors.tertiary));
+        let placeholder_color = self.placeholder_color.or(Some(cx.theme().colors.secondary));
 
         state.update(cx, |state, _cx| {
             state.set_value(self.value);
@@ -255,7 +255,7 @@ impl RenderOnce for Input {
                     .text_size(theme.text.md)
             })
             .when_some(self.leading_icon, |input, icon| {
-                input.child(icon.size_sm().color(theme.colors.tertiary))
+                input.child(icon.size_sm().color(theme.colors.secondary))
             })
             .when(!self.disabled, |this| {
                 this.key_context(CONTEXT)
@@ -311,7 +311,7 @@ impl RenderOnce for Input {
                         .id((self.id.clone(), "clear"))
                         .flex_none()
                         .cursor_pointer()
-                        .child(Icon::x().size_sm().color(theme.colors.tertiary))
+                        .child(Icon::x().size_sm().color(theme.colors.secondary))
                         .on_click(move |_, window, cx| {
                             state.update(cx, |state, cx| state.clear(window, cx));
                         }),

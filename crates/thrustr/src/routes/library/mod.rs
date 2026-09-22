@@ -31,9 +31,9 @@ use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
-    Activate, GRID_CONTEXT, GridDir, Icon, IndexRail, ListScrollbar, SCROLLBAR_WIDTH,
-    ScrollbarState, SelectDown, SelectLeft, SelectRight, SelectUp, WithRadius, WithSize, grid_step,
-    index_rail_position, input, list_scrollbar_state,
+    Activate, GRID_CONTEXT, GridDir, Icon, ListScrollbar, SCROLLBAR_WIDTH, ScrollbarState,
+    Scrubber, SelectDown, SelectLeft, SelectRight, SelectUp, WithRadius, WithSize, grid_step,
+    input, list_scrollbar_state, scrubber_position,
 };
 
 mod cache;
@@ -52,7 +52,7 @@ const CARD_ROW_GAP: Rems = rems(1.25);
 const GRID_PADDING: Rems = rems(3. - CARD_PADDING.0);
 // FIXME: this should be 4px but because gpui does not have built-in support for outlines,
 // the game card has to set a 1px border. An extra px here makes it visually more centered.
-const INDEX_RAIL_GAP: Pixels = px(5.);
+const SCRUBBER_GAP: Pixels = px(5.);
 
 const CACHE_OVERSCAN_ROWS: usize = 3;
 
@@ -69,7 +69,7 @@ type ChunkCache = LruCache<usize, Vec<GameEntry>>;
 
 fn available_letters(sections: &SectionIndex) -> u32 {
     sections.sections().iter().fold(0, |mask, section| {
-        index_rail_position(&section.label).map_or(mask, |i| mask | (1 << i))
+        scrubber_position(&section.label).map_or(mask, |i| mask | (1 << i))
     })
 }
 
@@ -313,7 +313,7 @@ impl Library {
         let cols = self.cols();
         self.scroll_handle
             .scroll_to_item(start / cols, ScrollStrategy::Top);
-        self.pinned_letter = index_rail_position(label);
+        self.pinned_letter = scrubber_position(label);
         self.pinned_offset = None;
         if let Some(scrollbar) = &self.scrollbar {
             scrollbar.update(cx, |scrollbar, cx| scrollbar.flash(cx));
@@ -586,12 +586,12 @@ impl Render for Library {
                         .and_then(|metrics| {
                             sections.label_for(metrics.first_touching_row() * dims.num_cols)
                         })
-                        .and_then(index_rail_position)
+                        .and_then(scrubber_position)
                 });
 
-                let index_rail = (!sections.is_empty()).then(|| {
+                let scrubber = (!sections.is_empty()).then(|| {
                     let library = library.clone();
-                    IndexRail::new()
+                    Scrubber::new()
                         .available(available_letters)
                         .current(current_letter)
                         .on_select(move |label, _, cx| {
@@ -602,7 +602,7 @@ impl Render for Library {
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .right(SCROLLBAR_WIDTH + INDEX_RAIL_GAP)
+                        .right(SCROLLBAR_WIDTH + SCRUBBER_GAP)
                 });
 
                 div()
@@ -639,7 +639,7 @@ impl Render for Library {
                         .with_decoration(ListScrollbar::new(scrollbar.clone()))
                         .size_full(),
                     )
-                    .children(index_rail)
+                    .children(scrubber)
             }))
     }
 }

@@ -8,12 +8,12 @@ use theme::ThemeExt;
 
 const ITEM_WIDTH: Pixels = px(16.);
 
-pub const INDEX_RAIL_LETTERS: [&str; 27] = [
+pub const SCRUBBER_LETTERS: [&str; 27] = [
     "#", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R",
     "S", "T", "U", "V", "W", "X", "Y", "Z",
 ];
 
-pub fn index_rail_position(label: &str) -> Option<usize> {
+pub fn scrubber_position(label: &str) -> Option<usize> {
     match label.as_bytes() {
         b"#" => Some(0),
         [c] if c.is_ascii_uppercase() => Some(1 + (c - b'A') as usize),
@@ -24,14 +24,14 @@ pub fn index_rail_position(label: &str) -> Option<usize> {
 type SelectHandler = Rc<dyn Fn(&'static str, &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
-pub struct IndexRail {
+pub struct Scrubber {
     style: StyleRefinement,
     available: u32,
     current: Option<usize>,
     on_select: Option<SelectHandler>,
 }
 
-impl IndexRail {
+impl Scrubber {
     pub fn new() -> Self {
         Self {
             style: StyleRefinement::default(),
@@ -41,7 +41,7 @@ impl IndexRail {
         }
     }
 
-    /// Bitmask over [`INDEX_RAIL_LETTERS`] marking which sections currently exist.
+    /// Bitmask over [`SCRUBBER_LETTERS`] marking which sections currently exist.
     pub fn available(mut self, mask: u32) -> Self {
         self.available = mask;
         self
@@ -61,30 +61,30 @@ impl IndexRail {
     }
 }
 
-impl Default for IndexRail {
+impl Default for Scrubber {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Styled for IndexRail {
+impl Styled for Scrubber {
     fn style(&mut self) -> &mut StyleRefinement {
         &mut self.style
     }
 }
 
-impl RenderOnce for IndexRail {
+impl RenderOnce for Scrubber {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let unavailable = theme.colors.secondary.opacity(0.3);
 
-        let mut rail = div()
+        let mut scrubber = div()
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
             .gap(rems(0.25))
-            .children(INDEX_RAIL_LETTERS.iter().enumerate().map(|(i, &letter)| {
+            .children(SCRUBBER_LETTERS.iter().enumerate().map(|(i, &letter)| {
                 let available = self.available & (1 << i) != 0;
 
                 let color = if self.current == Some(i) {
@@ -96,7 +96,7 @@ impl RenderOnce for IndexRail {
                 };
 
                 let cell = div()
-                    .id(("index-rail-letter", i))
+                    .id(("scrubber-letter", i))
                     .w(ITEM_WIDTH)
                     .flex()
                     .justify_center()
@@ -116,7 +116,7 @@ impl RenderOnce for IndexRail {
                 }
             }));
 
-        rail.style().refine(&self.style);
-        rail
+        scrubber.style().refine(&self.style);
+        scrubber
     }
 }
