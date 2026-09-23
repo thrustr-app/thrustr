@@ -1,9 +1,10 @@
 use crate::navigation::{NavNode, NavSidebar, Navigator, NavigatorExt, Page, nav_item};
 use gpui::{
-    AnyElement, AnyView, App, Context, Corners, EmptyView, Entity, FocusHandle, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, SharedString, Styled,
-    Window, div, relative, rems, svg,
+    Animation, AnimationExt, AnyElement, AnyView, App, Context, Corners, EmptyView, Entity,
+    FocusHandle, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
+    SharedString, Styled, Window, div, px, relative, rems, svg,
 };
+use std::time::Duration;
 use theme::ThemeExt;
 use ui::{ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, TitleBar, client_side_decorations};
 
@@ -165,6 +166,7 @@ impl Root {
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let active_view = self.active_view.view();
 
         let root = div()
             .track_focus(&self.focus_handle)
@@ -187,11 +189,17 @@ impl Render for Root {
                             .flex()
                             .flex_col()
                             .min_w_0()
+                            .relative()
+                            .with_animation(
+                                ("page-transition", active_view.entity_id()),
+                                Animation::new(Duration::from_millis(150)),
+                                |page, delta| page.opacity(delta).top(px((1.0 - delta) * 6.0)),
+                            )
                             .child(Topbar::new(
                                 self.current_page.label(),
                                 self.active_view.render_header(cx),
                             ))
-                            .child(self.active_view.view()),
+                            .child(active_view),
                     ),
             );
 
