@@ -1,13 +1,22 @@
 use crate::{FocusProps, Icon, Size, Variant, WithFocus, WithSize, WithVariant};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Refineable, Rems, RenderOnce,
-    StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div, percentage,
-    prelude::FluentBuilder, relative, rems, transparent_black,
+    InteractiveElement, IntoElement, KeyBinding, NoAction, ParentElement, Refineable, Rems,
+    RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div,
+    percentage, prelude::FluentBuilder, relative, rems, transparent_black,
 };
 use smallvec::SmallVec;
 use std::time::Duration;
 use theme::{Theme, ThemeExt};
+
+const CONTEXT: &str = "button";
+
+pub(super) fn init(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("enter", NoAction, Some(CONTEXT)),
+        KeyBinding::new("space", NoAction, Some(CONTEXT)),
+    ]);
+}
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -204,6 +213,7 @@ impl RenderOnce for Button {
             .when(self.disabled, |button| button.opacity(0.6))
             .when(interactive, |button| {
                 button
+                    .key_context(CONTEXT)
                     .track_focus(&focus_handle)
                     .cursor_pointer()
                     .when_some(self.on_click, |button, on_click| button.on_click(on_click))

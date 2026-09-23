@@ -58,20 +58,11 @@ impl TextElement {
             return (state.value.clone(), text_color);
         }
 
-        if state.mask.is_empty() {
-            return (SharedString::from(""), text_color);
-        }
-
-        let committed_grapheme_count = if let Some(marked_range) = &state.marked_range {
-            let before_count = state.value[..marked_range.start].graphemes(true).count();
-            let after_count = state.value[marked_range.end..].graphemes(true).count();
-            before_count + after_count
-        } else {
-            state.value.graphemes(true).count()
-        };
-
         (
-            state.mask.repeat(committed_grapheme_count).into(),
+            state
+                .mask
+                .repeat(state.value.graphemes(true).count())
+                .into(),
             text_color,
         )
     }
@@ -80,15 +71,8 @@ impl TextElement {
         &self,
         display_text: &str,
         base_run: TextRun,
-        marked_range: Option<&Range<usize>>,
-        is_masked: bool,
+        marked_range: Option<Range<usize>>,
     ) -> Vec<TextRun> {
-        // For masked text, we've already excluded marked text from display_text,
-        // so no need for marked text styling
-        if is_masked || marked_range.is_none() {
-            return vec![base_run];
-        }
-
         if let Some(marked_range) = marked_range {
             // Ensure marked_range doesn't exceed display_text bounds
             let display_len = display_text.len();
@@ -175,12 +159,10 @@ impl Element for TextElement {
             strikethrough: None,
         };
 
-        let runs = self.create_text_runs(
-            &display_text,
-            base_run,
-            state.marked_range.as_ref(),
-            state.masked,
-        );
+        let display_marked_range = state.marked_range.as_ref().map(|range| {
+            state.actual_to_display_offset(range.start)..state.actual_to_display_offset(range.end)
+        });
+        let runs = self.create_text_runs(&display_text, base_run, display_marked_range);
 
         let font_size = style.font_size.to_pixels(window.rem_size());
         let line = window
@@ -206,32 +188,30 @@ impl Element for TextElement {
         }
 
         let state = self.state.read(cx);
-        let scroll_offset = state.scroll_handle.offset();
-        let cursor_pos = line.x_for_index(state.display_cursor_offset());
 
         let (selection, cursor) = if state.selected_range.is_empty() {
+            let cursor_x = state.x_for_offset(&line, bounds, state.cursor_offset());
             (
                 None,
                 Some(fill(
                     Bounds::new(
-                        point(bounds.left() + cursor_pos - scroll_offset.x, bounds.top()),
+                        point(cursor_x, bounds.top()),
                         size(px(CURSOR_WIDTH), bounds.bottom() - bounds.top()),
                     ),
                     text_color,
                 )),
             )
         } else {
-            let selection_range = state.display_selection_range();
+            let selection = &state.selected_range;
             (
                 Some(fill(
                     Bounds::from_corners(
                         point(
-                            bounds.left() + line.x_for_index(selection_range.start)
-                                - scroll_offset.x,
+                            state.x_for_offset(&line, bounds, selection.start),
                             bounds.top(),
                         ),
                         point(
-                            bounds.left() + line.x_for_index(selection_range.end) - scroll_offset.x,
+                            state.x_for_offset(&line, bounds, selection.end),
                             bounds.bottom(),
                         ),
                     ),

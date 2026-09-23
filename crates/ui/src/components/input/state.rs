@@ -761,7 +761,7 @@ impl InputState {
     // ============================================================================
 
     /// Get the current cursor offset
-    fn cursor_offset(&self) -> usize {
+    pub(super) fn cursor_offset(&self) -> usize {
         if self.selection_reversed {
             self.selected_range.start
         } else {
@@ -774,59 +774,13 @@ impl InputState {
         self.actual_to_display_offset(self.cursor_offset())
     }
 
-    /// Convert actual text range to display text range for masked text fields
-    pub(super) fn display_selection_range(&self) -> std::ops::Range<usize> {
-        let start = self.actual_to_display_offset(self.selected_range.start);
-        let end = self.actual_to_display_offset(self.selected_range.end);
-        start..end
-    }
-
     /// Convert actual text offset to display text offset
-    fn actual_to_display_offset(&self, actual_offset: usize) -> usize {
+    pub(super) fn actual_to_display_offset(&self, actual_offset: usize) -> usize {
         if !self.masked {
             return actual_offset;
         }
 
-        if let Some(marked_range) = &self.marked_range {
-            if actual_offset <= marked_range.start {
-                // Before marked range: count graphemes and multiply by mask length
-                let grapheme_count = self.value[..actual_offset].graphemes(true).count();
-                grapheme_count * self.mask.len()
-            } else if actual_offset <= marked_range.end {
-                // Inside marked range: masked graphemes before + unmarked bytes within
-                let before_graphemes = self.value[..marked_range.start].graphemes(true).count();
-                before_graphemes * self.mask.len() + (actual_offset - marked_range.start)
-            } else {
-                // After marked range: before masked + marked bytes + after masked
-                let before_graphemes = self.value[..marked_range.start].graphemes(true).count();
-                let after_graphemes = self.value[marked_range.end..actual_offset]
-                    .graphemes(true)
-                    .count();
-                before_graphemes * self.mask.len()
-                    + (marked_range.end - marked_range.start)
-                    + after_graphemes * self.mask.len()
-            }
-        } else {
-            // No marked text: count graphemes and multiply by mask length
-            let grapheme_count = self.value[..actual_offset].graphemes(true).count();
-            grapheme_count * self.mask.len()
-        }
-    }
-
-    /// Calculate text index for mouse position
-    fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
-        if self.value.is_empty() {
-            return 0;
-        }
-
-        let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref())
-        else {
-            return 0;
-        };
-
-        let scroll_offset = self.scroll_handle.offset();
-        let display_index = line.closest_index_for_x(position.x - bounds.left() + scroll_offset.x);
-        self.display_to_actual_offset(display_index)
+        self.value[..actual_offset].graphemes(true).count() * self.mask.len()
     }
 
     /// Convert display text offset back to actual text offset
@@ -835,48 +789,37 @@ impl InputState {
             return display_offset;
         }
 
-        let mask_len = self.mask.len();
+        TextOps::grapheme_offset_to_byte_offset(&self.value, display_offset / self.mask.len())
+    }
 
-        if let Some(marked_range) = &self.marked_range {
-            let before_graphemes = self.value[..marked_range.start].graphemes(true).count();
-            let masked_before_end = before_graphemes * mask_len;
-            let marked_end = masked_before_end + (marked_range.end - marked_range.start);
+    /// Window x coordinate at which the given actual text offset is painted
+    pub(super) fn x_for_offset(
+        &self,
+        line: &ShapedLine,
+        bounds: Bounds<Pixels>,
+        actual_offset: usize,
+    ) -> Pixels {
+        bounds.left() + line.x_for_index(self.actual_to_display_offset(actual_offset))
+            - self.scroll_handle.offset().x
+    }
 
-            if display_offset <= masked_before_end {
-                // In masked text before marked range - find grapheme boundary
-                let target_grapheme = display_offset / mask_len;
-                TextOps::grapheme_offset_to_byte_offset(
-                    &self.value,
-                    target_grapheme.min(before_graphemes),
-                )
-            } else if display_offset <= marked_end {
-                // In unmarked marked range
-                marked_range.start + (display_offset - masked_before_end)
-            } else {
-                // In masked text after marked range - find grapheme boundary
-                let after_display = display_offset - marked_end;
-                let target_after_grapheme = after_display / mask_len;
-                let after_graphemes = self.value[marked_range.end..].graphemes(true).count();
-                let actual_after_grapheme = target_after_grapheme.min(after_graphemes);
+    /// Convert a window x coordinate to an x coordinate within the shaped line
+    fn line_x(&self, bounds: Bounds<Pixels>, window_x: Pixels) -> Pixels {
+        window_x - bounds.left() + self.scroll_handle.offset().x
+    }
 
-                // Convert grapheme index to byte offset from marked_range.end
-                let after_byte_offset = self.value[marked_range.end..]
-                    .grapheme_indices(true)
-                    .nth(actual_after_grapheme)
-                    .map(|(i, _)| i)
-                    .unwrap_or(self.value.len() - marked_range.end);
-
-                marked_range.end + after_byte_offset
-            }
-        } else {
-            // No marked text: find grapheme boundary
-            let target_grapheme = display_offset / mask_len;
-            let total_graphemes = self.value.graphemes(true).count();
-            TextOps::grapheme_offset_to_byte_offset(
-                &self.value,
-                target_grapheme.min(total_graphemes),
-            )
+    /// Calculate text index for mouse position
+    fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
+        if self.value.is_empty() {
+            return 0;
         }
+
+        let (Some(bounds), Some(line)) = (self.last_bounds, self.last_layout.as_ref()) else {
+            return 0;
+        };
+
+        let display_index = line.closest_index_for_x(self.line_x(bounds, position.x));
+        self.display_to_actual_offset(display_index)
     }
 
     fn prepare_replace_text(
@@ -1050,18 +993,12 @@ impl EntityInputHandler for InputState {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let last_layout = self.last_layout.as_ref()?;
+        let line = self.last_layout.as_ref()?;
         let range = TextOps::range_from_utf16(&self.value, &range_utf16);
 
         Some(Bounds::from_corners(
-            point(
-                bounds.left() + last_layout.x_for_index(range.start),
-                bounds.top(),
-            ),
-            point(
-                bounds.left() + last_layout.x_for_index(range.end),
-                bounds.bottom(),
-            ),
+            point(self.x_for_offset(line, bounds, range.start), bounds.top()),
+            point(self.x_for_offset(line, bounds, range.end), bounds.bottom()),
         ))
     }
 
@@ -1071,11 +1008,15 @@ impl EntityInputHandler for InputState {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        let line_point = self.last_bounds?.localize(&point)?;
-        let last_layout = self.last_layout.as_ref()?;
+        let bounds = self.last_bounds?;
+        if !bounds.contains(&point) {
+            return None;
+        }
+        let line = self.last_layout.as_ref()?;
 
-        let utf8_index = last_layout.index_for_x(point.x - line_point.x)?;
-        Some(TextOps::offset_to_utf16(&self.value, utf8_index))
+        let display_index = line.index_for_x(self.line_x(bounds, point.x))?;
+        let actual_offset = self.display_to_actual_offset(display_index);
+        Some(TextOps::offset_to_utf16(&self.value, actual_offset))
     }
 }
 

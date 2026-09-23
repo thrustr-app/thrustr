@@ -25,6 +25,7 @@ pub use sidebar::{Sidebar, SidebarItem};
 pub use title_bar::*;
 
 pub fn init(cx: &mut App) {
+    button::init(cx);
     dialog::init(cx);
     input::init(cx);
     sidebar::init(cx);

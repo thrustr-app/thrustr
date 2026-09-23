@@ -199,16 +199,13 @@ impl StatefulInteractiveElement for Input {}
 
 impl RenderOnce for Input {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window
-            .use_keyed_state(self.id.clone(), cx, |window, cx| {
-                let state = cx.new(|cx| InputState::new(window, cx));
-                if self.focus.auto_focus {
-                    state.focus_handle(cx).focus(window, cx);
-                }
-                state
-            })
-            .read(cx)
-            .clone();
+        let state = window.use_keyed_state(self.id.clone(), cx, |window, cx| {
+            let state = InputState::new(window, cx);
+            if self.focus.auto_focus {
+                state.focus_handle(cx).focus(window, cx);
+            }
+            state
+        });
 
         let focus_handle = self.focus.configure(state.focus_handle(cx));
 

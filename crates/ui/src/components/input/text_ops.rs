@@ -210,113 +210,129 @@ impl TextOps {
 mod tests {
     use super::*;
 
-    #[test]
-    fn snap_to_grapheme_boundary_ascii() {
-        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 0), 0);
-        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 2), 2);
-        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 3), 3);
-        assert_eq!(TextOps::snap_to_grapheme_boundary("abc", 10), 3);
+    /// `expected[i]` is the snapped result for byte offset `i` including
+    /// one past the end of `text`.
+    #[track_caller]
+    fn check_snap(text: &str, expected: &[usize]) {
+        let actual: Vec<usize> = (0..=text.len() + 1)
+            .map(|offset| TextOps::snap_to_grapheme_boundary(text, offset))
+            .collect();
+        assert_eq!(actual, expected, "snapping every offset of {text:?}");
     }
 
     #[test]
-    fn snap_to_grapheme_boundary_multibyte() {
-        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 1), 0);
-        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 3), 3);
-        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 4), 3);
-        assert_eq!(TextOps::snap_to_grapheme_boundary("日本", 6), 6);
+    fn snap_clamps_offsets_past_end() {
+        check_snap("abc", &[0, 1, 2, 3, 3]);
+        check_snap("", &[0, 0]);
     }
 
     #[test]
-    fn snap_to_grapheme_boundary_combining() {
-        let s = "e\u{301}x";
-        assert_eq!(TextOps::snap_to_grapheme_boundary(s, 1), 0);
-        assert_eq!(TextOps::snap_to_grapheme_boundary(s, 2), 0);
-        assert_eq!(TextOps::snap_to_grapheme_boundary(s, 3), 3);
+    fn snap_moves_offsets_inside_multibyte_char_to_start() {
+        check_snap("日本", &[0, 0, 0, 3, 3, 3, 6, 6]);
     }
 
     #[test]
-    fn snap_to_grapheme_boundary_empty() {
-        assert_eq!(TextOps::snap_to_grapheme_boundary("", 5), 0);
+    fn snap_keeps_combining_marks_with_base() {
+        check_snap("e\u{301}x", &[0, 0, 0, 3, 4, 4]);
     }
 
-    fn test_boundaries(text: &str, cursor: usize, expected_prev: usize, expected_next: usize) {
-        let prev = TextOps::previous_word_boundary(text, cursor);
-        let next = TextOps::next_word_boundary(text, cursor);
-        assert_eq!(
-            prev, expected_prev,
-            "prev_word_boundary failed for text='{text}', cursor={cursor}"
-        );
-        assert_eq!(
-            next, expected_next,
-            "next_word_boundary failed for text='{text}', cursor={cursor}"
-        );
-    }
+    /// `fixture` is the text annotated with `|` at the cursor and `[` and `]`
+    /// at the expected previous and next word boundaries.
+    #[track_caller]
+    fn check_word_boundaries(fixture: &str) {
+        let mut text = String::new();
+        let mut cursor = None;
+        for ch in fixture.chars() {
+            match ch {
+                '|' => cursor = Some(text.len()),
+                '[' | ']' => {}
+                _ => text.push(ch),
+            }
+        }
+        let cursor = cursor.expect("fixture should contain a `|` cursor");
 
-    #[test]
-    fn simple_words() {
-        test_boundaries("hello world", 6, 0, 11);
-        test_boundaries("hello world", 5, 0, 11);
-        test_boundaries("hello world", 0, 0, 5);
-    }
+        let prev = TextOps::previous_word_boundary(&text, cursor);
+        let next = TextOps::next_word_boundary(&text, cursor);
 
-    #[test]
-    fn multiple_spaces() {
-        test_boundaries("hello  world", 6, 0, 12);
-        test_boundaries("hello  world", 5, 0, 12);
-        test_boundaries("hello  world", 0, 0, 5);
-        test_boundaries("  hello world  ", 7, 2, 13);
-        test_boundaries("  hello world  ", 6, 2, 7);
-        test_boundaries("  hello world  ", 0, 0, 7);
-        test_boundaries("   ", 0, 0, 3);
+        let mut marks = [(cursor, '|'), (prev, '['), (next, ']')];
+        marks.sort_by_key(|&(offset, _)| std::cmp::Reverse(offset));
+        let mut actual = text;
+        for (offset, mark) in marks {
+            actual.insert(offset, mark);
+        }
+
+        assert_eq!(actual, fixture);
     }
 
     #[test]
-    fn punctuation() {
-        test_boundaries("hello, world!", 6, 5, 12);
-        test_boundaries("hello, world!", 5, 0, 6);
-        test_boundaries("hello, world!", 0, 0, 5);
-        test_boundaries("hello... world!", 6, 5, 8);
-        test_boundaries("hello@world.com", 0, 0, 5);
-        test_boundaries("hello@world.com", 5, 0, 6);
-        test_boundaries("hello@world.com", 6, 5, 11);
-        test_boundaries("hello-world_test", 0, 0, 5);
-        test_boundaries("hello-world_test", 5, 0, 6);
-        test_boundaries("hello-world_test", 6, 5, 16);
+    fn word_boundaries_split_on_whitespace() {
+        check_word_boundaries("[|hello] world");
+        check_word_boundaries("[hello| world]");
+        check_word_boundaries("[hello |world]");
+        check_word_boundaries("[|hello]  world");
+        check_word_boundaries("[hello|  world]");
+        check_word_boundaries("[hello | world]");
+        check_word_boundaries("[|  hello] world  ");
+        check_word_boundaries("  [hell|o] world  ");
+        check_word_boundaries("  [hello| world]  ");
     }
 
     #[test]
-    fn numbers() {
-        test_boundaries("123 456", 3, 0, 7);
-        test_boundaries("123 456", 2, 0, 3);
-        test_boundaries("123 456", 0, 0, 3);
-        test_boundaries("123.456", 3, 0, 7);
-        test_boundaries("123.456", 2, 0, 7);
-        test_boundaries("123.456", 0, 0, 7);
-        test_boundaries("1.23e10", 5, 0, 7);
+    fn whitespace_only_text_skips_to_ends() {
+        check_word_boundaries("[|   ]");
     }
 
     #[test]
-    fn emojis() {
-        test_boundaries("hello 👋 world", 6, 0, 10);
-        test_boundaries("hello 👋 world", 5, 0, 10);
-        test_boundaries("hello 👋 world", 0, 0, 5);
-        test_boundaries("👋 hello world", 0, 0, 4);
-        test_boundaries("👋 hello world", 4, 0, 10);
-        test_boundaries("👋 hello world", 7, 5, 10);
+    fn punctuation_runs_form_separate_words() {
+        check_word_boundaries("[|hello], world!");
+        check_word_boundaries("[hello|,] world!");
+        check_word_boundaries("hello[,| world]!");
+        check_word_boundaries("hello[.|..] world!");
+        check_word_boundaries("[|hello]@world.com");
+        check_word_boundaries("[hello|@]world.com");
+        check_word_boundaries("hello[@|world].com");
     }
 
     #[test]
-    fn mixed() {
-        test_boundaries("file_name_v2-final.txt", 0, 0, 12);
-        test_boundaries("file_name_v2-final.txt", 12, 0, 13);
-        test_boundaries("file_name_v2-final.txt", 13, 12, 18);
-        test_boundaries("file_name_v2-final.txt", 18, 13, 19);
-        test_boundaries("file_name_v2-final.txt", 19, 18, 22);
-        test_boundaries("the quick-brown_fox42 jumps!", 0, 0, 3);
-        test_boundaries("the quick-brown_fox42 jumps!", 3, 0, 9);
-        test_boundaries("the quick-brown_fox42 jumps!", 9, 4, 10);
-        test_boundaries("the quick-brown_fox42 jumps!", 10, 9, 21);
-        test_boundaries("the quick-brown_fox42 jumps!", 21, 10, 27);
-        test_boundaries("the quick-brown_fox42 jumps!", 27, 22, 28);
+    fn underscores_join_words_hyphens_split() {
+        check_word_boundaries("[|hello]-world_test");
+        check_word_boundaries("[hello|-]world_test");
+        check_word_boundaries("hello[-|world_test]");
+    }
+
+    #[test]
+    fn decimal_numbers_stay_together() {
+        check_word_boundaries("[|123] 456");
+        check_word_boundaries("[12|3] 456");
+        check_word_boundaries("[123| 456]");
+        check_word_boundaries("[|123.456]");
+        check_word_boundaries("[12|3.456]");
+        check_word_boundaries("[123|.456]");
+        check_word_boundaries("[1.23e|10]");
+    }
+
+    #[test]
+    fn emojis_are_separate_words() {
+        check_word_boundaries("[|hello] 👋 world");
+        check_word_boundaries("[hello| 👋] world");
+        check_word_boundaries("[hello |👋] world");
+        check_word_boundaries("[|👋] hello world");
+        check_word_boundaries("[👋| hello] world");
+        check_word_boundaries("👋 [he|llo] world");
+    }
+
+    #[test]
+    fn identifiers_split_on_punctuation() {
+        check_word_boundaries("[|file_name_v2]-final.txt");
+        check_word_boundaries("[file_name_v2|-]final.txt");
+        check_word_boundaries("file_name_v2[-|final].txt");
+        check_word_boundaries("file_name_v2-[final|.]txt");
+        check_word_boundaries("file_name_v2-final[.|txt]");
+        check_word_boundaries("[|the] quick-brown_fox42 jumps!");
+        check_word_boundaries("[the| quick]-brown_fox42 jumps!");
+        check_word_boundaries("the [quick|-]brown_fox42 jumps!");
+        check_word_boundaries("the quick[-|brown_fox42] jumps!");
+        check_word_boundaries("the quick-[brown_fox42| jumps]!");
+        check_word_boundaries("the quick-brown_fox42 [jumps|!]");
     }
 }
