@@ -2,8 +2,8 @@ use super::Route;
 use crate::{context::SpawnTaskExt, globals::GameServiceExt};
 use domain::game::GameId;
 use gpui::{
-    Context, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
-    linear_color_stop, linear_gradient, relative, rems, rgb,
+    Context, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Task, Window,
+    div, linear_color_stop, linear_gradient, relative, rems, rgb,
 };
 use theme::ThemeExt;
 use tracing::error;
@@ -14,12 +14,13 @@ pub struct Game {
     _id: GameId,
     name: SharedString,
     summary: Option<SharedString>,
+    _load_task: Task<()>,
 }
 
 impl Game {
     pub fn new(id: GameId, cx: &mut Context<Self>) -> Self {
         let game_service = cx.game_service();
-        cx.spawn_and_update(
+        let load_task = cx.spawn_and_update(
             async move { game_service.get(id) },
             |game, result, _| match result {
                 Ok(Some(loaded)) => {
@@ -37,6 +38,7 @@ impl Game {
             _id: id,
             name: SharedString::default(),
             summary: None,
+            _load_task: load_task,
         }
     }
 }

@@ -4,8 +4,8 @@ use gpui::{
     HitboxBehavior, Hsla, InspectorElementId, InteractiveElement, Interactivity, IntoElement,
     IsZero, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
     Pixels, Point, Position, Render, RenderOnce, ScrollHandle, ScrollWheelEvent, Stateful,
-    StatefulInteractiveElement, Style, StyleRefinement, Styled, Task, UniformList,
-    UniformListDecoration, UniformListScrollHandle, Window, px, quad, relative, size,
+    StatefulInteractiveElement, Style, StyleRefinement, Styled, Task, UniformListDecoration,
+    UniformListScrollHandle, Window, px, quad, relative, size,
 };
 use smallvec::SmallVec;
 use std::{
@@ -92,14 +92,14 @@ impl RenderOnce for Scrollable {
         } = self;
 
         let state = window.use_keyed_state(id, cx, |_, _| match &handle {
-            Some(handle) => ScrollbarState::borrowed(ScrollbarTarget::Div(handle.clone()), axes),
+            Some(handle) => ScrollbarState::borrowed(handle.clone(), axes),
             None => ScrollbarState::owned(axes),
         });
         state.update(cx, |state, _| {
             state.axes = axes;
             // The caller may have swapped handles between frames.
             if let Some(handle) = &handle {
-                state.handle = ScrollbarTarget::Div(handle.clone());
+                state.handle = handle.clone();
             }
         });
 
@@ -153,50 +153,6 @@ impl WithScrollbar for Stateful<Div> {
     }
 }
 
-/// Adds a scrollbar to a [`UniformList`].
-pub trait WithListScrollbar: Sized {
-    #[track_caller]
-    fn vertical_scrollbar(
-        self,
-        handle: &UniformListScrollHandle,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Self;
-}
-
-impl WithListScrollbar for UniformList {
-    #[track_caller]
-    fn vertical_scrollbar(
-        self,
-        handle: &UniformListScrollHandle,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Self {
-        let state = list_scrollbar_state(caller_id(), handle, window, cx);
-        self.with_decoration(ListScrollbar(state))
-    }
-}
-
-pub fn list_scrollbar_state(
-    id: impl Into<ElementId>,
-    handle: &UniformListScrollHandle,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<ScrollbarState> {
-    let state = window.use_keyed_state(id.into(), cx, {
-        let handle = handle.clone();
-        move |_, _| {
-            ScrollbarState::borrowed(ScrollbarTarget::UniformList(handle), ScrollAxes::Vertical)
-        }
-    });
-
-    // The caller may have swapped handles between frames.
-    state.update(cx, |state, _| {
-        state.handle = ScrollbarTarget::UniformList(handle.clone())
-    });
-    state
-}
-
 pub struct ListScrollbar(Entity<ScrollbarState>);
 
 impl ListScrollbar {
@@ -227,33 +183,6 @@ const THUMB_INSET: Pixels = px(3.);
 const MIN_THUMB_SIZE: Pixels = px(25.);
 const HIDE_DELAY: Duration = Duration::from_millis(1200);
 const FADE_DURATION: Duration = Duration::from_millis(400);
-
-#[derive(Clone)]
-enum ScrollbarTarget {
-    Div(ScrollHandle),
-    UniformList(UniformListScrollHandle),
-}
-
-impl ScrollbarTarget {
-    fn base_handle(&self) -> ScrollHandle {
-        match self {
-            Self::Div(handle) => handle.clone(),
-            Self::UniformList(handle) => handle.0.borrow().base_handle.clone(),
-        }
-    }
-
-    fn max_offset(&self) -> Point<Pixels> {
-        self.base_handle().max_offset()
-    }
-
-    fn set_offset(&self, offset: Point<Pixels>) {
-        self.base_handle().set_offset(offset);
-    }
-
-    fn offset(&self) -> Point<Pixels> {
-        self.base_handle().offset()
-    }
-}
 
 #[derive(Debug, Default, PartialEq, Eq)]
 enum ThumbState {
@@ -291,7 +220,7 @@ impl FadeTimer {
 }
 
 pub struct ScrollbarState {
-    handle: ScrollbarTarget,
+    handle: ScrollHandle,
     /// Set only when the scrollbar created the handle itself, in which case the
     /// container needs `track_scroll` wired to it.
     owned_handle: Option<ScrollHandle>,
@@ -301,11 +230,11 @@ pub struct ScrollbarState {
     scroll: FadeTimer,
     last_layout: Option<LayoutState>,
     was_hovered: bool,
-    _fade_wake: Option<Task<()>>,
+    fade_wake: Option<(Instant, Task<()>)>,
 }
 
 impl ScrollbarState {
-    fn new(handle: ScrollbarTarget, owned_handle: Option<ScrollHandle>, axes: ScrollAxes) -> Self {
+    fn new(handle: ScrollHandle, owned_handle: Option<ScrollHandle>, axes: ScrollAxes) -> Self {
         Self {
             handle,
             owned_handle,
@@ -315,17 +244,22 @@ impl ScrollbarState {
             scroll: FadeTimer::default(),
             last_layout: None,
             was_hovered: false,
-            _fade_wake: None,
+            fade_wake: None,
         }
     }
 
     fn owned(axes: ScrollAxes) -> Self {
         let handle = ScrollHandle::new();
-        Self::new(ScrollbarTarget::Div(handle.clone()), Some(handle), axes)
+        Self::new(handle.clone(), Some(handle), axes)
     }
 
-    fn borrowed(handle: ScrollbarTarget, axes: ScrollAxes) -> Self {
+    fn borrowed(handle: ScrollHandle, axes: ScrollAxes) -> Self {
         Self::new(handle, None, axes)
+    }
+
+    pub fn for_uniform_list(handle: &UniformListScrollHandle) -> Self {
+        let handle = handle.0.borrow().base_handle.clone();
+        Self::borrowed(handle, ScrollAxes::Vertical)
     }
 
     pub fn is_dragging(&self) -> bool {
@@ -376,16 +310,24 @@ impl ScrollbarState {
     }
 
     fn schedule_fade(&mut self, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        if self.fade_wake.as_ref().is_some_and(|(at, _)| *at > now) {
+            return;
+        }
         let Some(since) = self.activity.since().max(self.scroll.since()) else {
             return;
         };
-        let Some(delay) = HIDE_DELAY.checked_sub(since.elapsed()) else {
+
+        let deadline = since + HIDE_DELAY;
+        let Some(delay) = deadline.checked_duration_since(now) else {
             return;
         };
-        self._fade_wake = Some(cx.spawn(async move |state, cx| {
+
+        let task = cx.spawn(async move |state, cx| {
             cx.background_executor().timer(delay).await;
             state.update(cx, |_, cx| cx.notify()).ok();
-        }));
+        });
+        self.fade_wake = Some((deadline, task));
     }
 
     fn needs_fade_wakeup(&self, container_hovered: bool) -> bool {
@@ -444,9 +386,8 @@ impl ScrollbarState {
     }
 
     fn scrollable_axes(&self) -> impl Iterator<Item = ScrollbarAxis> + '_ {
-        let handle = self.handle.base_handle();
-        let max_offset = handle.max_offset();
-        let viewport = handle.bounds().size;
+        let max_offset = self.handle.max_offset();
+        let viewport = self.handle.bounds().size;
 
         [ScrollbarAxis::Horizontal, ScrollbarAxis::Vertical]
             .into_iter()
@@ -731,7 +672,7 @@ impl Element for ScrollbarElement {
         let state = self.state.read(cx);
         let axes = state.scrollable_axes().collect::<SmallVec<[_; 2]>>();
 
-        let handle = state.handle.base_handle();
+        let handle = &state.handle;
         let max_offset = handle.max_offset();
         let offset = handle.offset();
 

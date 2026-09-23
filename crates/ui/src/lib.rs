@@ -69,18 +69,15 @@ impl UiProvider {
         }
     }
 
-    pub fn render_dialogs(window: &mut Window, cx: &mut App) -> Option<impl IntoElement> {
-        let root = window.root::<Self>()??;
-
-        let active_dialogs = root.read(cx).active_dialogs.clone();
-
-        if active_dialogs.is_empty() {
+    fn render_dialogs(&self, window: &mut Window, cx: &mut App) -> Option<impl IntoElement> {
+        if self.active_dialogs.is_empty() {
             return None;
         }
 
         let mut show_overlay_ix = None;
 
-        let mut dialogs = active_dialogs
+        let mut dialogs = self
+            .active_dialogs
             .iter()
             .enumerate()
             .map(|(i, active_dialog)| {
@@ -180,10 +177,12 @@ fn focus_last_child(trap: &FocusHandle, window: &mut Window, cx: &mut App) {
 }
 
 impl Render for UiProvider {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .font_family("Sora")
             .size_full()
             .child(self.view.clone())
+            .children(self.render_dialogs(window, cx))
             .id("ui-provider")
             .on_action(cx.listener(Self::on_tab))
             .on_action(cx.listener(Self::on_tab_prev))

@@ -6,90 +6,61 @@
 //
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
-use gpui::Context;
+use gpui::{Context, Task};
 use std::time::Duration;
 
-static INTERVAL: Duration = Duration::from_millis(500);
-static PAUSE_DELAY: Duration = Duration::from_millis(500);
+const INTERVAL: Duration = Duration::from_millis(500);
+const PAUSE_DELAY: Duration = Duration::from_millis(500);
 
 pub struct Cursor {
     visible: bool,
-    paused: bool,
-    epoch: usize,
-    pause_epoch: usize,
+    blink_task: Option<Task<()>>,
 }
 
 impl Cursor {
     pub fn new() -> Self {
         Self {
             visible: true,
-            paused: false,
-            epoch: 0,
-            pause_epoch: 0,
+            blink_task: None,
         }
-    }
-
-    /// Start the blinking
-    pub fn start(&mut self, cx: &mut Context<Self>) {
-        self.blink(self.epoch, cx);
-        self.visible = true;
-    }
-
-    /// Stop the blinking
-    pub fn stop(&mut self) {
-        self.epoch = 0;
-        self.visible = false;
-        self.paused = false;
-    }
-
-    fn next_epoch(&mut self) -> usize {
-        self.epoch += 1;
-        self.epoch
-    }
-
-    fn blink(&mut self, epoch: usize, cx: &mut Context<Self>) {
-        if self.paused || epoch != self.epoch {
-            return;
-        }
-
-        self.visible = !self.visible;
-        cx.notify();
-
-        let epoch = self.next_epoch();
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(INTERVAL).await;
-            if let Some(this) = this.upgrade() {
-                this.update(cx, |this, cx| this.blink(epoch, cx));
-            }
-        })
-        .detach();
     }
 
     pub fn visible(&self) -> bool {
-        self.paused || self.visible
+        self.visible
     }
 
-    /// Pause the blinking and wait for resuming.
+    pub fn start(&mut self, cx: &mut Context<Self>) {
+        self.show_and_blink_after(INTERVAL, cx);
+    }
+
+    pub fn stop(&mut self) {
+        self.blink_task = None;
+        self.visible = false;
+    }
+
     pub fn pause(&mut self, cx: &mut Context<Self>) {
-        self.paused = true;
+        if self.blink_task.is_some() {
+            self.show_and_blink_after(PAUSE_DELAY, cx);
+        }
+    }
+
+    fn show_and_blink_after(&mut self, delay: Duration, cx: &mut Context<Self>) {
+        self.visible = true;
         cx.notify();
 
-        self.pause_epoch += 1;
-        let pause_epoch = self.pause_epoch;
-        let resume_epoch = self.next_epoch();
-
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(PAUSE_DELAY).await;
-
-            if let Some(this) = this.upgrade() {
-                this.update(cx, |this, cx| {
-                    if this.pause_epoch == pause_epoch {
-                        this.paused = false;
-                        this.blink(resume_epoch, cx);
-                    }
+        self.blink_task = Some(cx.spawn(async move |this, cx| {
+            let mut delay = delay;
+            loop {
+                cx.background_executor().timer(delay).await;
+                let toggled = this.update(cx, |this, cx| {
+                    this.visible = !this.visible;
+                    cx.notify();
                 });
+                if toggled.is_err() {
+                    break;
+                }
+                delay = INTERVAL;
             }
-        })
-        .detach();
+        }));
     }
 }

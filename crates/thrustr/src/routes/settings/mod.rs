@@ -2,8 +2,9 @@ use super::Route;
 use crate::navigation::{
     NavNode, NavSidebar, Navigator, NavigatorExt, Page, SettingsPage, nav_item,
 };
+use domain::component::Status;
 use gpui::{AnyView, Context, IntoElement, ParentElement, Render, Styled, Window, div, rems};
-use ui::{Sidebar, SidebarItem};
+use ui::{Label, Sidebar, SidebarItem, WithVariant};
 
 mod appearance;
 mod config;
@@ -18,6 +19,16 @@ pub use storefronts::Storefronts;
 fn settings_item(page: SettingsPage) -> SidebarItem<SettingsPage> {
     let label = page.label();
     nav_item(page).label(label)
+}
+
+fn status_label(status: &Status) -> Label {
+    match status {
+        Status::Initializing => Label::new("INITIALIZING").variant_secondary(),
+        Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
+        Status::Active => Label::new("ACTIVE").variant_accent(),
+        Status::Inactive => Label::new("INACTIVE"),
+        Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_danger(),
+    }
 }
 
 pub struct Settings {

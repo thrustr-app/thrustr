@@ -25,23 +25,18 @@ pub struct Label {
 impl Label {
     #[track_caller]
     pub fn new(text: impl Into<SharedString>) -> Self {
-        Self::build(text, true)
-    }
-
-    #[track_caller]
-    pub fn transparent(text: impl Into<SharedString>) -> Self {
-        Self::build(text, false)
-    }
-
-    #[track_caller]
-    fn build(text: impl Into<SharedString>, filled: bool) -> Self {
         Self {
             id: (ElementId::CodeLocation(*panic::Location::caller()), "label").into(),
             text: text.into(),
             variant: Variant::default(),
-            filled,
+            filled: false,
             status_dot: None,
         }
+    }
+
+    pub fn filled(mut self) -> Self {
+        self.filled = true;
+        self
     }
 
     pub fn status_dot(mut self, pulse: bool) -> Self {

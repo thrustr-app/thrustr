@@ -1,5 +1,5 @@
 use crate::{
-    globals::ArtworkServiceExt,
+    globals::{ArtworkServiceExt, ComponentRegistryExt},
     navigation::{NavigatorExt, Page},
     routes::library::{
         CARD_ASPECT_RATIO, CARD_ICON_SIZE, CARD_INNER_GAP, CARD_PADDING, CARD_TITLE_SIZE,
@@ -11,11 +11,11 @@ use domain::{
     game::{GameId, GameListItem},
 };
 use gpui::{
-    App, Empty, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement, ObjectFit,
+    App, Empty, FontWeight, Hsla, ImageSource, InteractiveElement, IntoElement, ObjectFit,
     ParentElement, Pixels, RenderOnce, Resource, SharedString, StatefulInteractiveElement, Styled,
     StyledImage, Window, div, img, prelude::FluentBuilder, relative, rgba, transparent_black,
 };
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 use theme::ThemeExt;
 
 pub(super) fn cover_path(hash: &str) -> Option<Arc<Path>> {
@@ -33,11 +33,11 @@ pub(super) struct GameEntry {
     pub cover_url: Option<SharedString>,
     pub cover_path: Option<Arc<Path>>,
     pub accent: Option<Hsla>,
-    pub source_icon: Option<Arc<Image>>,
+    pub source_id: SharedString,
 }
 
 impl GameEntry {
-    pub(super) fn from_list_item(item: GameListItem, icons: &HashMap<String, Arc<Image>>) -> Self {
+    pub(super) fn from_list_item(item: GameListItem) -> Self {
         let (cover_path, accent) = match item.cover {
             Some(art) => (cover_path(&art.hash), art.accent.map(accent_hsla)),
             None => (None, None),
@@ -46,7 +46,7 @@ impl GameEntry {
             id: item.id,
             name: item.name.into(),
             cover_url: item.cover_url.map(Into::into),
-            source_icon: icons.get(&item.source_id).cloned(),
+            source_id: item.source_id.into(),
             cover_path,
             accent,
         }
@@ -175,7 +175,7 @@ impl RenderOnce for GameCard {
 
         title = title.child(game.name);
 
-        if let Some(icon) = game.source_icon {
+        if let Some(icon) = cx.component_icon(&game.source_id) {
             icon_row = icon_row.child(img(ImageSource::Image(icon)).size(CARD_ICON_SIZE));
         }
 

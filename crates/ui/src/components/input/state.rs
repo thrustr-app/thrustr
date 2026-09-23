@@ -76,14 +76,15 @@ impl InputState {
                 }
             }),
             cx.observe_window_activation(window, |state, window, cx| {
-                if window.is_window_active() {
-                    let focus_handle = state.focus_handle.clone();
-                    if focus_handle.is_focused(window) {
-                        state.cursor.update(cx, |cursor, cx| {
-                            cursor.start(cx);
-                        });
+                let active = window.is_window_active();
+                let focused = state.focus_handle.is_focused(window);
+                state.cursor.update(cx, |cursor, cx| {
+                    if !active {
+                        cursor.stop();
+                    } else if focused {
+                        cursor.start(cx);
                     }
-                }
+                });
             }),
             cx.on_focus(&focus_handle, window, |_, window, cx| {
                 cx.defer_in(window, Self::on_focus)

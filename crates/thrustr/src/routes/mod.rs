@@ -1,14 +1,11 @@
 use crate::navigation::{NavNode, NavSidebar, Navigator, NavigatorExt, Page, nav_item};
 use gpui::{
-    AnyElement, AnyView, App as GpuiApp, Context, Corners, EmptyView, Entity, FocusHandle,
-    Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    SharedString, Styled, Window, div, relative, rems, svg,
+    AnyElement, AnyView, App, Context, Corners, EmptyView, Entity, FocusHandle, FontWeight,
+    InteractiveElement, IntoElement, ParentElement, Render, RenderOnce, SharedString, Styled,
+    Window, div, relative, rems, svg,
 };
 use theme::ThemeExt;
-use ui::{
-    ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, TitleBar, UiProvider,
-    client_side_decorations,
-};
+use ui::{ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, TitleBar, client_side_decorations};
 
 mod collections;
 mod game;
@@ -22,7 +19,7 @@ pub use home::*;
 pub use library::*;
 pub use settings::*;
 
-fn sidebar(window: &Window, cx: &GpuiApp) -> impl IntoElement {
+fn sidebar(window: &Window, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
 
     div()
@@ -62,14 +59,14 @@ fn sidebar(window: &Window, cx: &GpuiApp) -> impl IntoElement {
 }
 
 pub trait Route: Render {
-    fn header(&mut self, _cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn header(&self, _this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
         None
     }
 }
 
 pub trait RouteHandle {
     fn view(&self) -> AnyView;
-    fn render_header(&self, cx: &mut GpuiApp) -> Option<AnyElement>;
+    fn render_header(&self, cx: &App) -> Option<AnyElement>;
 }
 
 impl Route for EmptyView {}
@@ -79,8 +76,8 @@ impl<T: Route> RouteHandle for Entity<T> {
         self.clone().into()
     }
 
-    fn render_header(&self, cx: &mut GpuiApp) -> Option<AnyElement> {
-        self.update(cx, |page, cx| page.header(cx))
+    fn render_header(&self, cx: &App) -> Option<AnyElement> {
+        self.read(cx).header(self, cx)
     }
 }
 
@@ -100,7 +97,7 @@ impl Topbar {
 }
 
 impl RenderOnce for Topbar {
-    fn render(self, _window: &mut Window, cx: &mut GpuiApp) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
 
         div()
@@ -124,13 +121,13 @@ impl RenderOnce for Topbar {
     }
 }
 
-pub struct App {
+pub struct Root {
     current_page: Page,
     active_view: Box<dyn RouteHandle>,
     focus_handle: FocusHandle,
 }
 
-impl App {
+impl Root {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let current_page = cx.navigator().current_page();
         let active_view = current_page.build_view(window, cx);
@@ -165,19 +162,12 @@ impl App {
     }
 }
 
-impl Focusable for App {
-    fn focus_handle(&self, _: &GpuiApp) -> FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
-impl Render for App {
+impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
         let root = div()
-            .font_family("Sora")
-            .track_focus(&self.focus_handle(cx))
+            .track_focus(&self.focus_handle)
             .flex()
             .flex_col()
             .size_full()
@@ -203,8 +193,7 @@ impl Render for App {
                             ))
                             .child(self.active_view.view()),
                     ),
-            )
-            .children(UiProvider::render_dialogs(window, cx));
+            );
 
         client_side_decorations(root, window, cx)
     }

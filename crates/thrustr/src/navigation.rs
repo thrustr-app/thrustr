@@ -172,7 +172,7 @@ impl SettingsPage {
             Self::Storefronts(None) => cx.new(routes::Storefronts::new).into(),
             Self::Plugins(None) => cx.new(routes::Plugins::new).into(),
             Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => match cx.component(id) {
-                Some(component) => cx.new(|cx| routes::Config::new(cx, component)).into(),
+                Some(component) => cx.new(|cx| routes::Config::new(component, cx)).into(),
                 None => cx.new(|_| EmptyView).into(),
             },
             Self::Appearance => cx.new(|_| routes::Appearance).into(),
