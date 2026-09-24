@@ -83,6 +83,17 @@ impl GridMetrics {
     pub(super) fn scroll_delta(&self, from_row: usize, to_row: usize) -> Pixels {
         self.row_height * (to_row as f32 - from_row as f32)
     }
+
+    pub(super) fn rows_from_top(&self, row: usize) -> f32 {
+        row as f32 - self.offset / self.row_height
+    }
+
+    /// The scroll offset that puts `row` at `rows_from_top`.
+    pub(super) fn offset_for_row(&self, row: usize, rows_from_top: f32, num_rows: usize) -> Pixels {
+        let rows_from_top = rows_from_top.min(self.viewport / self.row_height - 1.);
+        let max_offset = (self.row_height * num_rows as f32 - self.viewport).max(Pixels::ZERO);
+        (self.row_height * (row as f32 - rows_from_top)).clamp(Pixels::ZERO, max_offset)
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +201,37 @@ mod tests {
         check_row_is_visible(offset, 3, true);
         check_row_is_visible(offset, 4, true);
         check_row_is_visible(offset, 2, false);
+    }
+
+    #[track_caller]
+    fn check_offset_for_row(offset: Pixels, row: usize, rows_from_top: f32, expected: Pixels) {
+        let placed = metrics(offset).offset_for_row(row, rows_from_top, num_rows());
+        assert!(
+            (placed - expected).abs() < px(0.01),
+            "{placed:?} should be {expected:?}",
+        );
+    }
+
+    #[test]
+    fn a_row_is_placed_where_it_was() {
+        let offset = row_height() * 40.3;
+        let rows_from_top = metrics(offset).rows_from_top(41);
+
+        check_offset_for_row(px(0.), 41, rows_from_top, offset);
+    }
+
+    #[test]
+    fn a_row_past_the_bottom_is_pulled_into_view() {
+        let visible_rows = VIEWPORT / row_height();
+        let expected = row_height() * (51. - visible_rows);
+
+        check_offset_for_row(px(0.), 50, visible_rows + 5., expected);
+    }
+
+    #[test]
+    fn placing_a_row_stays_within_the_list() {
+        check_offset_for_row(px(0.), 1, 3., px(0.));
+        check_offset_for_row(px(0.), num_rows() - 1, 0., MAX_OFFSET);
     }
 
     const FOUR_COL_WIDTH: Pixels = px(744.);

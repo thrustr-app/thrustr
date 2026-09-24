@@ -67,42 +67,59 @@ fn available_letters(sections: &SectionIndex) -> u32 {
     })
 }
 
+#[derive(Clone, Default)]
+pub struct LibraryState {
+    search_query: SharedString,
+    anchor: Option<ViewAnchor>,
+    selected: Option<GameId>,
+}
+
+#[derive(Clone, Copy)]
+struct ViewAnchor {
+    game: GameId,
+    rows_from_top: f32,
+}
+
 pub struct Library {
     ids: Rc<Vec<GameId>>,
     sections: Rc<SectionIndex>,
     available_letters: u32,
-
     pinned_letter: Option<usize>,
     pinned_offset: Option<Point<Pixels>>,
     scroll_handle: UniformListScrollHandle,
+    pending_anchor: Option<ViewAnchor>,
     selected: Option<usize>,
+    pending_selection: Option<GameId>,
     num_cols: Rc<Cell<usize>>,
     scrollbar: Entity<ScrollbarState>,
-
     chunks: Rc<ChunkCache>,
     loading_chunks: HashMap<usize, Task<()>>,
-
     search_query: SharedString,
     _search_debounce: Option<Task<()>>,
-
     image_cache: Entity<LruImageCache>,
-
     focus_handle: FocusHandle,
     _focus_subscription: Subscription,
     _refresh_task: Option<Task<()>>,
     _tasks: Vec<Task<()>>,
 }
 
-impl Library {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+impl Route for Library {
+    const PADDING: Rems = rems(0.);
+
+    type Args = ();
+    type State = LibraryState;
+
+    fn build(_: (), state: LibraryState, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle().tab_stop(false);
         let focus_subscription = cx.on_focus(&focus_handle, window, |this, window, cx| {
             if window.last_input_was_keyboard() {
-                this.selected = this.top_visible_item();
-                if let Some(idx) = this.selected {
-                    let cols = this.cols();
-                    this.scroll_handle
-                        .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
+                if !this.is_restoring() {
+                    this.selected = this.scroll_anchor();
+                    if let Some(idx) = this.selected {
+                        let cols = this.cols();
+                        this.scroll_handle
+                            .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
+                    }
                 }
                 cx.defer_in(window, |_, _, cx| cx.notify());
             }
@@ -118,12 +135,14 @@ impl Library {
             pinned_letter: None,
             pinned_offset: None,
             scroll_handle,
+            pending_anchor: state.anchor,
             selected: None,
+            pending_selection: state.selected,
             num_cols: Rc::new(Cell::new(1)),
             scrollbar,
             chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
             loading_chunks: HashMap::new(),
-            search_query: SharedString::default(),
+            search_query: state.search_query,
             _search_debounce: None,
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             focus_handle,
@@ -155,9 +174,51 @@ impl Library {
         page._tasks.push(artwork_task);
 
         page.refresh_games(cx);
+
+        if page.is_restoring() {
+            page.focus_handle.focus(window, cx);
+        }
         page
     }
 
+    fn header(&self, this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
+        let library = this.downgrade();
+        Some(
+            input("library-search")
+                .placeholder("Search library")
+                .value(self.search_query.clone())
+                .leading_icon(Icon::search())
+                .radius_pill()
+                .size_lg()
+                .clear_button()
+                .w(rems(28.))
+                .on_input(move |event, _, cx| {
+                    let query = event.value.clone();
+                    library
+                        .update(cx, |library, cx| library.set_query(query, cx))
+                        .ok();
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn save_state(&self, next: &Page, _cx: &App) -> Option<LibraryState> {
+        let opened = match next {
+            Page::Game(id) => Some(*id),
+            _ => None,
+        };
+
+        Some(LibraryState {
+            search_query: self.search_query.clone(),
+            anchor: self.pending_anchor.or_else(|| self.view_anchor(opened)),
+            selected: opened
+                .or_else(|| self.selected_id())
+                .or(self.pending_selection),
+        })
+    }
+}
+
+impl Library {
     fn cols(&self) -> usize {
         self.num_cols.get().max(1)
     }
@@ -165,6 +226,21 @@ impl Library {
     /// The list's inner scroll handle.
     fn base_scroll(&self) -> ScrollHandle {
         self.scroll_handle.0.borrow().base_handle.clone()
+    }
+
+    fn set_scroll_y(&self, y: Pixels) {
+        let base = self.base_scroll();
+        let mut offset = base.offset();
+        offset.y = y;
+        base.set_offset(offset);
+    }
+
+    fn is_restoring(&self) -> bool {
+        self.pending_anchor.is_some() || self.pending_selection.is_some()
+    }
+
+    fn selected_id(&self) -> Option<GameId> {
+        self.selected.and_then(|idx| self.ids.get(idx)).copied()
     }
 
     fn chunks_mut(&mut self) -> &mut ChunkCache {
@@ -212,10 +288,7 @@ impl Library {
             async move { game_service.list_index(Some(&query)) },
             |library, result, _| match result {
                 Ok(index) => {
-                    let selected_id = library
-                        .selected
-                        .and_then(|idx| library.ids.get(idx))
-                        .copied();
+                    let selected_id = library.selected_id().or(library.pending_selection.take());
                     let anchor = library.scroll_anchor();
                     let old_ids = library.ids.clone();
 
@@ -239,6 +312,10 @@ impl Library {
 
                     library.selected = selected_id.and_then(|id| positions.get(&id).copied());
                     library.restore_scroll(&old_ids, anchor, &positions);
+                    // Lets `save_state` fall back to the current view if the game is gone.
+                    library.pending_anchor = library
+                        .pending_anchor
+                        .filter(|anchor| positions.contains_key(&anchor.game));
                 }
                 Err(e) => {
                     error!("failed to list game index: {e:#}");
@@ -349,15 +426,49 @@ impl Library {
         let Some(metrics) = self.metrics(old_ids.len()) else {
             return;
         };
-        let base = self.base_scroll();
-        let mut offset = base.offset();
+        let y = self.base_scroll().offset().y;
+        self.set_scroll_y(y - metrics.scroll_delta(old_row, new_row));
+    }
 
-        offset.y -= metrics.scroll_delta(old_row, new_row);
-        base.set_offset(offset);
+    /// Anchors the viewport on the game being opened, or on the top visible one otherwise.
+    fn view_anchor(&self, opened: Option<GameId>) -> Option<ViewAnchor> {
+        let metrics = self.metrics(self.ids.len())?;
+        let idx = opened
+            .and_then(|opened| self.ids.iter().position(|&id| id == opened))
+            .or_else(|| self.top_visible_item())?;
+
+        Some(ViewAnchor {
+            game: self.ids[idx],
+            rows_from_top: metrics.rows_from_top(idx / self.cols()),
+        })
+    }
+
+    fn apply_pending_anchor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(anchor) = self.pending_anchor else {
+            return;
+        };
+        let count = self.ids.len();
+        let Some(metrics) = self.metrics(count) else {
+            if count > 0 {
+                cx.on_next_frame(window, |_, _, cx| cx.notify());
+            }
+            return;
+        };
+        self.pending_anchor = None;
+
+        let Some(idx) = self.ids.iter().position(|&id| id == anchor.game) else {
+            return;
+        };
+        let cols = self.cols();
+        self.set_scroll_y(-metrics.offset_for_row(
+            idx / cols,
+            anchor.rows_from_top,
+            count.div_ceil(cols),
+        ));
     }
 
     fn activate_selected(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected.and_then(|idx| self.ids.get(idx)).copied() {
+        if let Some(id) = self.selected_id() {
             cx.navigate(Page::Game(id));
         }
     }
@@ -464,31 +575,6 @@ fn render_row(
         .children((0..dims.num_cols - (end - start)).map(|_| GameCard::spacer(dims.card_width)))
 }
 
-impl Route for Library {
-    const PADDING: Rems = rems(0.);
-
-    fn header(&self, this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
-        let library = this.downgrade();
-        Some(
-            input("library-search")
-                .placeholder("Search library")
-                .value(self.search_query.clone())
-                .leading_icon(Icon::search())
-                .radius_pill()
-                .size_lg()
-                .clear_button()
-                .w(rems(28.))
-                .on_input(move |event, _, cx| {
-                    let query = event.value.clone();
-                    library
-                        .update(cx, |library, cx| library.set_query(query, cx))
-                        .ok();
-                })
-                .into_any_element(),
-        )
-    }
-}
-
 impl Render for Library {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -503,6 +589,7 @@ impl Render for Library {
         let sections = self.sections.clone();
 
         let is_focused = self.focus_handle.is_focused(window);
+        self.apply_pending_anchor(window, cx);
         self.track_pinned_letter(window, cx);
 
         let focused = is_focused && window.last_input_was_keyboard();

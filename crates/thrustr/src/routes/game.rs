@@ -1,5 +1,7 @@
 use super::{Route, cover_path};
-use crate::{adapters::ColorExt, context::SpawnTaskExt, globals::GameServiceExt};
+use crate::{
+    adapters::ColorExt, context::SpawnTaskExt, globals::GameServiceExt, navigation::NavigatorExt,
+};
 use domain::game::GameId;
 use gpui::{
     AnyElement, BoxShadow, Context, Entity, FontWeight, Hsla, ImageSource, IntoElement, ObjectFit,
@@ -9,7 +11,7 @@ use gpui::{
 use std::{path::Path, sync::Arc};
 use theme::ThemeExt;
 use tracing::error;
-use ui::{Button, Icon, WithSize, WithVariant};
+use ui::{Button, Icon, WithFocus, WithSize, WithVariant};
 
 // FIXME: gpui gradients only take two stops, so this is a workaround to simulate
 // a multi-stop gradient by stacking layers
@@ -27,8 +29,13 @@ pub struct Game {
     _load_task: Task<()>,
 }
 
-impl Game {
-    pub fn new(id: GameId, cx: &mut Context<Self>) -> Self {
+impl Route for Game {
+    const TOPBAR: bool = false;
+
+    type Args = GameId;
+    type State = ();
+
+    fn build(id: GameId, _state: (), _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let game_service = cx.game_service();
         let load_task = cx.spawn_and_update(
             async move { game_service.get(id) },
@@ -58,7 +65,9 @@ impl Game {
             _load_task: load_task,
         }
     }
+}
 
+impl Game {
     fn render_cover(&self, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let shadow = vec![BoxShadow::new(px(0.), px(4.), black().opacity(0.3)).blur_radius(px(5.))];
@@ -114,6 +123,16 @@ impl Game {
             .bg(self.accent.unwrap_or(theme.colors.surface))
             .children(fade)
             .child(
+                Button::icon("back-button", Icon::arrow())
+                    .auto_focus(true)
+                    .variant_outline()
+                    .size_sm()
+                    .absolute()
+                    .top(rems(1.5))
+                    .left(rems(1.5))
+                    .on_click(|_, _, cx| cx.navigate_back()),
+            )
+            .child(
                 div()
                     .min_w_0()
                     .flex()
@@ -156,10 +175,6 @@ impl Game {
                     ),
             )
     }
-}
-
-impl Route for Game {
-    const TOPBAR: bool = false;
 }
 
 impl Render for Game {
