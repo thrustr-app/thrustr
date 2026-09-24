@@ -31,6 +31,7 @@ pub struct Game {
 
 impl Route for Game {
     const TOPBAR: bool = false;
+    const PADDING: Rems = rems(0.);
 
     type Args = GameId;
     type State = ();
@@ -97,39 +98,33 @@ impl Game {
     fn render_header(&self, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let background = theme.colors.background;
-        let radius = theme.radius.lg;
         let fade = (0..HEADER_GRADIENT_LAYERS).map(|_| {
-            div()
-                .absolute()
-                .inset_0()
-                .rounded(radius)
-                .bg(linear_gradient(
-                    0.,
-                    linear_color_stop(background, 0.),
-                    linear_color_stop(background.opacity(0.), 1.),
-                ))
+            div().absolute().inset_0().bg(linear_gradient(
+                0.,
+                linear_color_stop(background, 0.),
+                linear_color_stop(background.opacity(0.), 1.),
+            ))
         });
 
         div()
             .relative()
             .flex_shrink_0()
             .h(rems(22.))
-            .p(rems(1.5))
+            .p(rems(2.))
             .flex()
             .items_end()
             .justify_between()
             .gap(rems(1.5))
-            .rounded(radius)
             .bg(self.accent.unwrap_or(theme.colors.surface))
             .children(fade)
             .child(
                 Button::icon("back-button", Icon::arrow())
-                    .auto_focus(true)
+                    .auto_focus()
                     .variant_outline()
                     .size_sm()
                     .absolute()
-                    .top(rems(1.5))
-                    .left(rems(1.5))
+                    .top(rems(2.))
+                    .left(rems(2.))
                     .on_click(|_, _, cx| cx.navigate_back()),
             )
             .child(
@@ -181,7 +176,6 @@ impl Render for Game {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .image_cache(self.image_cache.clone())
-            .pt(rems(2.))
             .flex()
             .flex_col()
             .child(self.render_header(cx))

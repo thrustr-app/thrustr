@@ -324,7 +324,7 @@ impl Config {
                         Button::icon("back-button", Icon::arrow())
                             .variant_outline()
                             .size_sm()
-                            .auto_focus(autofocus_back)
+                            .when(autofocus_back, |field| field.auto_focus())
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
                     .child(
@@ -508,7 +508,9 @@ fn render_field(
     let field_id = field.id.clone();
     input(field.id.clone())
         .when(!can_configure, |this| this.disabled())
-        .auto_focus(autofocus_field == Some(&field.id))
+        .when(autofocus_field == Some(&field.id), |field| {
+            field.auto_focus()
+        })
         .reveal_on_focus(scroll_handle)
         .label(field.label.clone())
         .w(rems(20.))
@@ -591,7 +593,7 @@ impl Render for LoginFormState {
                 .size_lg()
                 .label(f.label.clone())
                 .w_full()
-                .auto_focus(i == 0)
+                .when(i == 0, |field| field.auto_focus())
                 .when(self.submitting, |field| field.disabled())
                 .when_some(f.placeholder.clone(), |input, placeholder| {
                     input.placeholder(placeholder)
