@@ -1,10 +1,11 @@
 use crate::navigation::{NavNode, NavSidebar, Navigator, NavigatorExt, Page, nav_item};
+use config::paths;
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, Context, Corners, EmptyView, Entity,
-    FocusHandle, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    SharedString, Styled, Window, div, px, relative, rems, svg,
+    FocusHandle, FontWeight, InteractiveElement, IntoElement, ParentElement, Rems, Render,
+    RenderOnce, SharedString, Styled, Window, div, px, relative, rems, svg,
 };
-use std::time::Duration;
+use std::{path::Path, sync::Arc, time::Duration};
 use theme::ThemeExt;
 use ui::{ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, TitleBar, client_side_decorations};
 
@@ -59,7 +60,16 @@ fn sidebar(window: &Window, cx: &App) -> impl IntoElement {
         )
 }
 
+pub const ROUTE_PADDING: Rems = rems(3.);
+
+pub(crate) fn cover_path(hash: &str) -> Option<Arc<Path>> {
+    paths::artwork_path(hash, "webp").ok().map(Into::into)
+}
+
 pub trait Route: Render {
+    const PADDING: Rems = ROUTE_PADDING;
+    const TOPBAR: bool = true;
+
     fn header(&self, _this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
         None
     }
@@ -67,6 +77,8 @@ pub trait Route: Render {
 
 pub trait RouteHandle {
     fn view(&self) -> AnyView;
+    fn padding(&self) -> Rems;
+    fn has_topbar(&self) -> bool;
     fn render_header(&self, cx: &App) -> Option<AnyElement>;
 }
 
@@ -75,6 +87,14 @@ impl Route for EmptyView {}
 impl<T: Route> RouteHandle for Entity<T> {
     fn view(&self) -> AnyView {
         self.clone().into()
+    }
+
+    fn padding(&self) -> Rems {
+        T::PADDING
+    }
+
+    fn has_topbar(&self) -> bool {
+        T::TOPBAR
     }
 
     fn render_header(&self, cx: &App) -> Option<AnyElement> {
@@ -102,7 +122,7 @@ impl RenderOnce for Topbar {
         let theme = cx.theme();
 
         div()
-            .px(rems(3.))
+            .px(ROUTE_PADDING)
             .h(rems(6.))
             .bg(theme.colors.background)
             .w_full()
@@ -195,11 +215,21 @@ impl Render for Root {
                                 Animation::new(Duration::from_millis(150)),
                                 |page, delta| page.opacity(delta).top(px((1.0 - delta) * 6.0)),
                             )
-                            .child(Topbar::new(
-                                self.current_page.label(),
-                                self.active_view.render_header(cx),
-                            ))
-                            .child(active_view),
+                            .children(self.active_view.has_topbar().then(|| {
+                                Topbar::new(
+                                    self.current_page.label(),
+                                    self.active_view.render_header(cx),
+                                )
+                            }))
+                            .child(
+                                div()
+                                    .flex_grow_1()
+                                    .flex()
+                                    .flex_col()
+                                    .min_h_0()
+                                    .px(self.active_view.padding())
+                                    .child(active_view),
+                            ),
                     ),
             );
 

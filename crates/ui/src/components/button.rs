@@ -65,6 +65,11 @@ impl Button {
         }
     }
 
+    pub fn with_icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -92,6 +97,7 @@ impl Button {
             Size::Small => rems(2.),
             Size::Medium => rems(2.375),
             Size::Large => rems(2.625),
+            Size::ExtraLarge => rems(2.875),
         }
     }
 
@@ -104,6 +110,7 @@ impl Button {
             Size::Small => rems(0.75),
             Size::Medium => rems(1.125),
             Size::Large => rems(1.25),
+            Size::ExtraLarge => rems(1.75),
         }
     }
 
@@ -190,7 +197,7 @@ impl RenderOnce for Button {
         let theme = cx.theme();
         let palette = self.palette(&theme);
         let height = self.height();
-        let is_icon = self.icon.is_some();
+        let is_icon = self.icon.is_some() && self.children.is_empty();
         let interactive = !self.disabled && !self.loading;
 
         let mut button = div()
@@ -198,6 +205,7 @@ impl RenderOnce for Button {
             .flex()
             .items_center()
             .justify_center()
+            .gap(rems(0.5))
             .h(height)
             .rounded(theme.radius.pill)
             .when(is_icon, |button| button.min_w(height))

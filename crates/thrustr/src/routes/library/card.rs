@@ -1,30 +1,20 @@
 use crate::{
+    adapters::ColorExt,
     globals::{ArtworkServiceExt, ComponentRegistryExt},
     navigation::{NavigatorExt, Page},
+    routes::cover_path,
     routes::library::{
         CARD_ASPECT_RATIO, CARD_ICON_SIZE, CARD_INNER_GAP, CARD_PADDING, CARD_TITLE_SIZE,
     },
 };
-use config::paths;
-use domain::{
-    artwork::Color,
-    game::{GameId, GameListItem},
-};
+use domain::game::{GameId, GameListItem};
 use gpui::{
     App, Empty, FontWeight, Hsla, ImageSource, InteractiveElement, IntoElement, ObjectFit,
     ParentElement, Pixels, RenderOnce, Resource, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, Window, div, img, prelude::FluentBuilder, relative, rgba, transparent_black,
+    StyledImage, Window, div, img, prelude::FluentBuilder, relative, transparent_black,
 };
 use std::{path::Path, sync::Arc};
 use theme::ThemeExt;
-
-pub(super) fn cover_path(hash: &str) -> Option<Arc<Path>> {
-    paths::artwork_path(hash, "webp").ok().map(Into::into)
-}
-
-pub(super) fn accent_hsla(color: Color) -> Hsla {
-    rgba(color.to_rgba_hex()).into()
-}
 
 #[derive(Clone)]
 pub(super) struct GameEntry {
@@ -39,7 +29,7 @@ pub(super) struct GameEntry {
 impl GameEntry {
     pub(super) fn from_list_item(item: GameListItem) -> Self {
         let (cover_path, accent) = match item.cover {
-            Some(art) => (cover_path(&art.hash), art.accent.map(accent_hsla)),
+            Some(art) => (cover_path(&art.hash), art.accent.map(|c| c.to_gpui_hsla())),
             None => (None, None),
         };
         Self {

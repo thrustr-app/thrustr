@@ -63,7 +63,6 @@ impl Route for Settings {}
 impl Render for Settings {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .px(rems(3.))
             .pb(rems(1.5))
             .flex_grow_1()
             .flex()

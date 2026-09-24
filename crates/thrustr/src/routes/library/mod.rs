@@ -1,12 +1,13 @@
-use super::Route;
+use super::{ROUTE_PADDING, Route, cover_path};
 use crate::{
+    adapters::ColorExt,
     context::{EventListenerExt, SpawnTaskExt},
     globals::{ArtworkServiceExt, GameServiceExt},
     navigation::{NavigatorExt, Page},
 };
 use artwork::ArtworkReady;
 use cache::{LruImageCache, lru_image_cache};
-use card::{GameCard, GameEntry, accent_hsla, cover_path};
+use card::{GameCard, GameEntry};
 use domain::{game::GameId, section_index::SectionIndex};
 use event::Topic;
 use gpui::{
@@ -42,7 +43,7 @@ const CARD_TITLE_SIZE: Rems = rems(0.875);
 const CARD_ICON_SIZE: Rems = rems(1.25);
 const CARD_ROW_GAP: Rems = rems(1.25);
 
-const GRID_PADDING: Rems = rems(3. - CARD_PADDING.0);
+const GRID_PADDING: Rems = rems(ROUTE_PADDING.0 - CARD_PADDING.0);
 // FIXME: this should be 4px but because gpui does not have built-in support for outlines,
 // the game card has to set a 1px border. An extra px here makes it visually more centered.
 const SCRUBBER_GAP: Pixels = px(5.);
@@ -189,7 +190,7 @@ impl Library {
             let entry = &mut self.chunks_mut().peek_mut(&chunk_idx).unwrap()[offset];
             let path = cover_path(&update.hash);
             entry.cover_path = path.clone();
-            entry.accent = update.accent.map(accent_hsla);
+            entry.accent = update.accent.map(|c| c.to_gpui_hsla());
 
             if let Some(path) = path {
                 let resource = Resource::Path(path);
@@ -464,6 +465,8 @@ fn render_row(
 }
 
 impl Route for Library {
+    const PADDING: Rems = rems(0.);
+
     fn header(&self, this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
         let library = this.downgrade();
         Some(

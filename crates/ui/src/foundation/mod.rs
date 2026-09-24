@@ -47,6 +47,7 @@ pub enum Size {
     #[default]
     Medium,
     Large,
+    ExtraLarge,
 }
 
 pub trait WithSize: Sized {
@@ -62,6 +63,10 @@ pub trait WithSize: Sized {
 
     fn size_lg(self) -> Self {
         self.size(Size::Large)
+    }
+
+    fn size_xl(self) -> Self {
+        self.size(Size::ExtraLarge)
     }
 }
 

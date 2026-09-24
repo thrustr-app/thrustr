@@ -21,11 +21,13 @@ icon_constructors! {
     arrow => "icons/arrow.svg",
     collections => "icons/collections.svg",
     danger => "icons/danger.svg",
+    download => "icons/download.svg",
     home => "icons/home.svg",
     library => "icons/library.svg",
     loader => "icons/loader.svg",
     logo => "icons/logo.svg",
     maximize => "icons/maximize.svg",
+    menu => "icons/menu.svg",
     minimize => "icons/minimize.svg",
     plugin => "icons/plugin.svg",
     restore => "icons/restore.svg",
@@ -67,7 +69,7 @@ impl Icon {
         match size {
             Size::Small => rems(1.),
             Size::Medium => rems(1.125),
-            Size::Large => rems(1.25),
+            Size::Large | Size::ExtraLarge => rems(1.25),
         }
     }
 }
