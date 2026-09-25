@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use crate::{globals::PluginServiceExt, routes::App};
+use crate::{globals::PluginServiceExt, routes::Root};
 use assets::Assets;
 use config::{logging, paths, tls};
 use gpui::{AppContext, CursorHideMode, TitlebarOptions, WindowDecorations, WindowOptions};
@@ -34,7 +34,9 @@ fn main() {
     gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx| {
-            Assets.load_fonts(cx).expect("embedded fonts should load");
+            Assets
+                .load_fonts(cx)
+                .expect("failed to load embedded fonts");
 
             cx.set_cursor_hide_mode(CursorHideMode::Never);
 
@@ -73,11 +75,11 @@ fn main() {
                         ..Default::default()
                     },
                     |window, cx| {
-                        let view = cx.new(|cx| App::new(window, cx));
+                        let view = cx.new(|cx| Root::new(window, cx));
                         UiProvider::new(view, window, cx)
                     },
                 )
-                .unwrap();
+                .expect("failed to open main window")
             })
             .detach();
         });

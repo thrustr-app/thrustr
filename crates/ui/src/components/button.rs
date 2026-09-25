@@ -1,13 +1,22 @@
 use crate::{FocusProps, Icon, Size, Variant, WithFocus, WithSize, WithVariant};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Refineable, Rems, RenderOnce,
-    StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div, percentage,
-    prelude::FluentBuilder, relative, rems, transparent_black,
+    InteractiveElement, IntoElement, KeyBinding, NoAction, ParentElement, Refineable, Rems,
+    RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div,
+    percentage, prelude::FluentBuilder, relative, rems, transparent_black,
 };
 use smallvec::SmallVec;
 use std::time::Duration;
 use theme::{Theme, ThemeExt};
+
+const CONTEXT: &str = "button";
+
+pub(super) fn init(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("enter", NoAction, Some(CONTEXT)),
+        KeyBinding::new("space", NoAction, Some(CONTEXT)),
+    ]);
+}
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -56,6 +65,11 @@ impl Button {
         }
     }
 
+    pub fn with_icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -83,6 +97,7 @@ impl Button {
             Size::Small => rems(2.),
             Size::Medium => rems(2.375),
             Size::Large => rems(2.625),
+            Size::ExtraLarge => rems(2.875),
         }
     }
 
@@ -95,6 +110,7 @@ impl Button {
             Size::Small => rems(0.75),
             Size::Medium => rems(1.125),
             Size::Large => rems(1.25),
+            Size::ExtraLarge => rems(1.75),
         }
     }
 
@@ -181,7 +197,7 @@ impl RenderOnce for Button {
         let theme = cx.theme();
         let palette = self.palette(&theme);
         let height = self.height();
-        let is_icon = self.icon.is_some();
+        let is_icon = self.icon.is_some() && self.children.is_empty();
         let interactive = !self.disabled && !self.loading;
 
         let mut button = div()
@@ -189,6 +205,7 @@ impl RenderOnce for Button {
             .flex()
             .items_center()
             .justify_center()
+            .gap(rems(0.5))
             .h(height)
             .rounded(theme.radius.pill)
             .when(is_icon, |button| button.min_w(height))
@@ -204,6 +221,7 @@ impl RenderOnce for Button {
             .when(self.disabled, |button| button.opacity(0.6))
             .when(interactive, |button| {
                 button
+                    .key_context(CONTEXT)
                     .track_focus(&focus_handle)
                     .cursor_pointer()
                     .when_some(self.on_click, |button, on_click| button.on_click(on_click))

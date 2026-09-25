@@ -1,5 +1,5 @@
+use super::status_label;
 use crate::{
-    adapters::ImageExt,
     context::EventListenerExt,
     globals::ComponentRegistryExt,
     navigation::{NavigatorExt, SettingsPage},
@@ -13,7 +13,7 @@ use gpui::{
 };
 use std::sync::Arc;
 use theme::{Theme, ThemeExt};
-use ui::{Alert, Icon, Label, WithSize, WithVariant};
+use ui::{Alert, Icon, WithSize};
 
 #[derive(Clone)]
 struct Storefront {
@@ -57,7 +57,7 @@ impl Storefronts {
                     id: component.id().into(),
                     name: component.metadata().name.into(),
                     status: component.status(),
-                    icon: component.metadata().icon.map(|i| i.to_gpui()),
+                    icon: cx.component_icon(component.id()),
                     plugin: component
                         .metadata()
                         .origin
@@ -177,7 +177,10 @@ fn render_row(
                 .flex()
                 .items_center()
                 .gap(rems(0.875))
-                .child(status_label(&storefront.status))
+                .child(
+                    status_label(&storefront.status)
+                        .status_dot(matches!(storefront.status, Status::Initializing)),
+                )
                 .child(
                     Icon::arrow()
                         .size_sm()
@@ -185,15 +188,4 @@ fn render_row(
                         .transform(Transformation::rotate(percentage(0.5))),
                 ),
         )
-}
-
-fn status_label(status: &Status) -> Label {
-    match status {
-        Status::Initializing => Label::transparent("INITIALIZING").variant_secondary(),
-        Status::Unauthenticated => Label::transparent("UNAUTHENTICATED").variant_warning(),
-        Status::Active => Label::transparent("ACTIVE").variant_accent(),
-        Status::Inactive => Label::transparent("INACTIVE"),
-        Status::Error(_) | Status::InitError(_) => Label::transparent("ERROR").variant_danger(),
-    }
-    .status_dot(matches!(status, Status::Initializing))
 }

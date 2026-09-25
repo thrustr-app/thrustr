@@ -1,7 +1,8 @@
+use super::status_label;
 use crate::{
-    adapters::ImageExt,
     auth_webview::{WebviewError, open_auth_webview},
     context::{EventListenerExt, SpawnTaskExt},
+    globals::ComponentRegistryExt,
     navigation::NavigatorExt,
 };
 use component::{ComponentHandle, Operation, Permit};
@@ -12,13 +13,13 @@ use event::Topic;
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource,
     InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled,
-    Task, WeakEntity, Window, div, img, prelude::FluentBuilder, relative, rems,
+    Task, Window, div, img, prelude::FluentBuilder, relative, rems,
 };
 use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Dialog, Empty, Icon, InputEvent, Label, PortalContext, WithFocus, WithScrollbar,
+    Alert, Button, Dialog, Empty, Icon, InputEvent, PortalContext, WithFocus, WithScrollbar,
     WithSize, WithVariant, input,
 };
 
@@ -58,15 +59,14 @@ pub struct Config {
     local_error: Option<SharedString>,
     status_error: Option<SharedString>,
     login_method: Option<LoginMethod>,
-    login_form_view: Option<Entity<LoginFormState>>,
     scroll_handle: ScrollHandle,
     _tasks: Vec<Task<()>>,
 }
 
 impl Config {
-    pub fn new(cx: &mut Context<Self>, component: ComponentHandle) -> Self {
+    pub fn new(component: ComponentHandle, cx: &mut Context<Self>) -> Self {
         let metadata = component.metadata();
-        let icon = metadata.icon.map(|i| i.to_gpui());
+        let icon = cx.component_icon(component.id());
 
         let mut local_error = None;
         let values: HashMap<SharedString, SharedString> = match component.config_values() {
@@ -98,7 +98,6 @@ impl Config {
             values,
             local_error,
             login_method: None,
-            login_form_view: None,
             scroll_handle: ScrollHandle::new(),
             _tasks,
         };
@@ -116,7 +115,7 @@ impl Config {
 
     fn load_login_method(&mut self, cx: &mut Context<Self>) {
         let component = self.component.clone();
-        cx.spawn_and_update(
+        let task = cx.spawn_and_update(
             async move { component.login_method().await },
             |config, result, _| {
                 config.login_method = match result {
@@ -128,6 +127,7 @@ impl Config {
                 };
             },
         );
+        self._tasks.push(task);
     }
 
     fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -143,8 +143,8 @@ impl Config {
             |config, result, _| {
                 config.local_error = result.err().map(|e| e.to_string().into());
             },
-        );
-        self.refresh_status(cx);
+        )
+        .detach();
     }
 
     fn on_login(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -160,6 +160,7 @@ impl Config {
             Ok(permit) => permit,
             Err(err) => {
                 self.local_error = Some(err.to_string().into());
+                cx.notify();
                 return;
             }
         };
@@ -181,8 +182,9 @@ impl Config {
             |config, result, _| {
                 config.local_error = result.err().map(Into::into);
             },
-        );
-        self.refresh_status(cx);
+        )
+        .detach();
+        cx.notify();
     }
 
     fn handle_login_form(
@@ -192,18 +194,14 @@ impl Config {
         cx: &mut Context<Self>,
     ) {
         let component = self.component.clone();
-        let config_entity = cx.entity().downgrade();
         let icon = self.icon.clone();
         let title = SharedString::new(format!("Log in to {}", self.name));
 
         let form_entity = cx.new(|_| LoginFormState::new(login_form));
-        self.login_form_view = Some(form_entity.clone());
 
         window.open_dialog(cx, move |dialog, _, cx| {
             let form_entity = form_entity.clone();
             let form_entity_child = form_entity.clone();
-            let config_entity_for_ok = config_entity.clone();
-            let config_entity_for_cancel = config_entity.clone();
             let component = component.clone();
             let title = title.clone();
 
@@ -261,18 +259,9 @@ impl Config {
                         permit,
                         fields,
                         form_entity.clone(),
-                        config_entity_for_ok.clone(),
                         window,
                         cx,
                     );
-                })
-                .on_cancel(move |_, _, cx| {
-                    if let Some(entity) = config_entity_for_cancel.upgrade() {
-                        entity.update(cx, |config, cx| {
-                            config.login_form_view = None;
-                            cx.notify();
-                        });
-                    }
                 })
                 .child(form_entity_child)
         });
@@ -283,6 +272,7 @@ impl Config {
             Ok(permit) => permit,
             Err(err) => {
                 self.local_error = Some(err.to_string().into());
+                cx.notify();
                 return;
             }
         };
@@ -302,8 +292,9 @@ impl Config {
             |this, result, _| {
                 this.local_error = result.err().map(Into::into);
             },
-        );
-        self.refresh_status(cx);
+        )
+        .detach();
+        cx.notify();
     }
 
     fn is_valid(&self) -> bool {
@@ -319,14 +310,6 @@ impl Config {
         let theme = cx.theme();
         let has_login = self.login_method.is_some();
 
-        let status_label = match self.status {
-            Status::Initializing => Label::new("INITIALIZING").variant_secondary(),
-            Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
-            Status::Active => Label::new("ACTIVE").variant_accent(),
-            Status::Inactive => Label::new("INACTIVE"),
-            Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_danger(),
-        };
-
         div()
             .flex()
             .justify_between()
@@ -341,7 +324,7 @@ impl Config {
                         Button::icon("back-button", Icon::arrow())
                             .variant_outline()
                             .size_sm()
-                            .auto_focus(autofocus_back)
+                            .when(autofocus_back, |field| field.auto_focus())
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
                     .child(
@@ -356,7 +339,7 @@ impl Config {
                                 div.child(img(ImageSource::Image(icon)).size(rems(1.5)))
                             })
                             .child(self.name.clone())
-                            .child(status_label),
+                            .child(status_label(&self.status).filled()),
                     ),
             )
             .child(
@@ -454,7 +437,7 @@ impl Config {
                 .text_size(rems(0.875))
                 .line_height(relative(1.))
                 .font_weight(FontWeight::BOLD)
-                .text_color(theme.colors.tertiary)
+                .text_color(theme.colors.secondary)
                 .gap(rems(0.875))
                 .child(s.name.clone())
                 .child(div().flex().flex_col().gap(rems(1.5)).children(elements))
@@ -488,7 +471,6 @@ fn submit_login_form(
     permit: Permit,
     fields: HashMap<String, String>,
     form_entity: Entity<LoginFormState>,
-    config_entity: WeakEntity<Config>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -502,15 +484,7 @@ fn submit_login_form(
         let result = task.await;
 
         let _ = cx.update_window(window_handle, move |_, window, cx| match result {
-            Ok(()) => {
-                if let Some(entity) = config_entity.upgrade() {
-                    entity.update(cx, |config, cx| {
-                        config.login_form_view = None;
-                        cx.notify();
-                    });
-                }
-                window.close_dialog(cx);
-            }
+            Ok(()) => window.close_dialog(cx),
             Err(err) => {
                 form_entity.update(cx, |form, cx| {
                     form.submitting = false;
@@ -534,7 +508,9 @@ fn render_field(
     let field_id = field.id.clone();
     input(field.id.clone())
         .when(!can_configure, |this| this.disabled())
-        .auto_focus(autofocus_field == Some(&field.id))
+        .when(autofocus_field == Some(&field.id), |field| {
+            field.auto_focus()
+        })
         .reveal_on_focus(scroll_handle)
         .label(field.label.clone())
         .w(rems(20.))
@@ -542,8 +518,9 @@ fn render_field(
             input.placeholder(placeholder)
         })
         .value(values.get(field.id.as_str()).cloned().unwrap_or_default())
-        .on_input(cx.listener(move |config, event: &InputEvent, _, _| {
+        .on_input(cx.listener(move |config, event: &InputEvent, _, cx| {
             config.values.insert(field_id.clone(), event.value.clone());
+            cx.notify();
         }))
         .into_any_element()
 }
@@ -616,14 +593,15 @@ impl Render for LoginFormState {
                 .size_lg()
                 .label(f.label.clone())
                 .w_full()
-                .auto_focus(i == 0)
+                .when(i == 0, |field| field.auto_focus())
                 .when(self.submitting, |field| field.disabled())
                 .when_some(f.placeholder.clone(), |input, placeholder| {
                     input.placeholder(placeholder)
                 })
                 .value(self.values.get(f.id.as_str()).cloned().unwrap_or_default())
-                .on_input(cx.listener(move |this, event: &InputEvent, _, _| {
+                .on_input(cx.listener(move |this, event: &InputEvent, _, cx| {
                     this.values.insert(field_id.clone(), event.value.clone());
+                    cx.notify();
                 }))
         });
 

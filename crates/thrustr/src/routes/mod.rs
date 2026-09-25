@@ -1,211 +1,142 @@
-use crate::navigation::{NavNode, NavSidebar, Navigator, NavigatorExt, Page, nav_item};
+use crate::navigation::{Page, RouteState};
+use config::paths;
+use domain::game::GameId;
 use gpui::{
-    AnyElement, AnyView, App as GpuiApp, Context, Corners, EmptyView, Entity, FocusHandle,
-    Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    SharedString, Styled, Window, div, relative, rems, svg,
+    AnyElement, AnyView, App, AppContext, Context, EmptyView, Entity, Rems, Render, Window, rems,
 };
-use theme::ThemeExt;
-use ui::{
-    ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, TitleBar, UiProvider,
-    client_side_decorations,
-};
+use std::{path::Path, sync::Arc};
 
 mod collections;
 mod game;
 mod home;
 mod library;
+mod root;
 mod settings;
 
 pub use collections::*;
 pub use game::*;
 pub use home::*;
 pub use library::*;
+pub use root::Root;
 pub use settings::*;
 
-fn sidebar(window: &Window, cx: &GpuiApp) -> impl IntoElement {
-    let theme = cx.theme();
+pub const ROUTE_PADDING: Rems = rems(3.);
 
-    div()
-        .flex()
-        .flex_col()
-        .gap(rems(1.75))
-        .items_center()
-        .flex_shrink_0()
-        .w(rems(4.75))
-        .bg(theme.colors.sidebar.background)
-        .rounded_client_corners(
-            Corners {
-                bottom_left: true,
-                ..Default::default()
-            },
-            window,
-        )
-        .border_r_1()
-        .border_color(theme.colors.sidebar.border)
-        .child(
-            svg()
-                .path("icons/logo.svg")
-                .text_color(theme.colors.sidebar.logo)
-                .mt(rems(1.5))
-                .size(rems(3.)),
-        )
-        .child(
-            Sidebar::main()
-                .nav(cx.navigator().current_page())
-                .flex_grow_1()
-                .mb(rems(1.25))
-                .item(nav_item(Page::Home))
-                .item(nav_item(Page::Library))
-                .item(nav_item(Page::Collections))
-                .bottom_item(nav_item(Page::Settings(None))),
-        )
+pub(crate) fn cover_path(hash: &str) -> Option<Arc<Path>> {
+    paths::artwork_path(hash, "webp").ok().map(Into::into)
 }
 
 pub trait Route: Render {
-    fn header(&mut self, _cx: &mut Context<Self>) -> Option<AnyElement> {
+    const PADDING: Rems = ROUTE_PADDING;
+    const TOPBAR: bool = true;
+
+    /// Arguments for building the route, taken from the `Page`.
+    type Args;
+    /// State kept in the history when navigating and handed back when returning.
+    type State: Clone + Default + 'static;
+
+    fn build(
+        args: Self::Args,
+        state: Self::State,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self;
+
+    fn header(&self, _this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
         None
+    }
+
+    /// Called when navigating from this route to `next`.
+    fn save_state(&self, _next: &Page, _cx: &App) -> Option<Self::State> {
+        None
+    }
+}
+
+impl Route for EmptyView {
+    type Args = ();
+    type State = ();
+
+    fn build(_: (), _: (), _: &mut Window, _: &mut Context<Self>) -> Self {
+        EmptyView
     }
 }
 
 pub trait RouteHandle {
     fn view(&self) -> AnyView;
-    fn render_header(&self, cx: &mut GpuiApp) -> Option<AnyElement>;
+    fn padding(&self) -> Rems;
+    fn has_topbar(&self) -> bool;
+    fn render_header(&self, cx: &App) -> Option<AnyElement>;
+    fn save_state(&self, next: &Page, cx: &App) -> Option<RouteState>;
 }
-
-impl Route for EmptyView {}
 
 impl<T: Route> RouteHandle for Entity<T> {
     fn view(&self) -> AnyView {
         self.clone().into()
     }
 
-    fn render_header(&self, cx: &mut GpuiApp) -> Option<AnyElement> {
-        self.update(cx, |page, cx| page.header(cx))
+    fn padding(&self) -> Rems {
+        T::PADDING
+    }
+
+    fn has_topbar(&self) -> bool {
+        T::TOPBAR
+    }
+
+    fn render_header(&self, cx: &App) -> Option<AnyElement> {
+        self.read(cx).header(self, cx)
+    }
+
+    fn save_state(&self, next: &Page, cx: &App) -> Option<RouteState> {
+        self.read(cx).save_state(next, cx).map(RouteState::new)
     }
 }
 
-#[derive(IntoElement)]
-pub struct Topbar {
-    title: SharedString,
-    header: Option<AnyElement>,
+fn mount<R: Route>(
+    args: R::Args,
+    state: Option<RouteState>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Box<dyn RouteHandle> {
+    let state = state
+        .and_then(|state| state.downcast::<R::State>())
+        .unwrap_or_default();
+    Box::new(cx.new(|cx| R::build(args, state, window, cx)))
 }
 
-impl Topbar {
-    fn new(title: impl Into<SharedString>, header: Option<AnyElement>) -> Self {
-        Self {
-            title: title.into(),
-            header,
+/// Determines whether two pages reuse the same route view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Home,
+    Library,
+    Collections,
+    Game(GameId),
+    Settings,
+}
+
+impl Page {
+    fn build_view(
+        &self,
+        state: Option<RouteState>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Box<dyn RouteHandle> {
+        match self {
+            Self::Home => mount::<Home>((), state, window, cx),
+            Self::Library => mount::<Library>((), state, window, cx),
+            Self::Collections => mount::<Collections>((), state, window, cx),
+            Self::Game(id) => mount::<Game>(*id, state, window, cx),
+            Self::Settings(Some(sub)) => mount::<Settings>(sub.clone(), state, window, cx),
+            Self::Settings(None) => mount::<EmptyView>((), state, window, cx),
         }
     }
-}
 
-impl RenderOnce for Topbar {
-    fn render(self, _window: &mut Window, cx: &mut GpuiApp) -> impl IntoElement {
-        let theme = cx.theme();
-
-        div()
-            .px(rems(3.))
-            .h(rems(6.))
-            .bg(theme.colors.background)
-            .w_full()
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(
-                div()
-                    .child(self.title)
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(theme.text.xl)
-                    .line_height(relative(1.))
-                    .text_color(theme.colors.primary),
-            )
-            .children(self.header)
-    }
-}
-
-pub struct App {
-    current_page: Page,
-    active_view: Box<dyn RouteHandle>,
-    focus_handle: FocusHandle,
-}
-
-impl App {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let current_page = cx.navigator().current_page();
-        let active_view = current_page.build_view(window, cx);
-
-        cx.observe_global_in::<Navigator>(window, |this, window, cx| {
-            let page = cx.navigator().current_page();
-
-            if this.current_page.section() != page.section() {
-                this.active_view = page.build_view(window, cx);
-            }
-            this.current_page = page;
-
-            cx.notify();
-        })
-        .detach();
-
-        // When the focused element disappears, fall back to the
-        // root handle so keyboard navigation keeps working.
-        cx.on_focus_lost(window, |this, window, cx| {
-            this.focus_handle.focus(window, cx);
-        })
-        .detach();
-
-        let focus_handle = cx.focus_handle();
-        focus_handle.focus(window, cx);
-
-        Self {
-            current_page,
-            active_view,
-            focus_handle,
+    fn section(&self) -> Section {
+        match self {
+            Self::Home => Section::Home,
+            Self::Library => Section::Library,
+            Self::Collections => Section::Collections,
+            Self::Game(id) => Section::Game(*id),
+            Self::Settings(_) => Section::Settings,
         }
-    }
-}
-
-impl Focusable for App {
-    fn focus_handle(&self, _: &GpuiApp) -> FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
-impl Render for App {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-
-        let root = div()
-            .font_family("Sora")
-            .track_focus(&self.focus_handle(cx))
-            .flex()
-            .flex_col()
-            .size_full()
-            .bg(theme.colors.background)
-            .rounded_client_corners(ALL_CORNERS, window)
-            .on_action(|_: &CloseWindow, window, _| window.remove_window())
-            .child(TitleBar::new("title-bar").title("Thrustr"))
-            .child(
-                div()
-                    .flex()
-                    .flex_grow_1()
-                    .min_h_0()
-                    .child(sidebar(window, cx))
-                    .child(
-                        div()
-                            .flex_grow_1()
-                            .flex()
-                            .flex_col()
-                            .min_w_0()
-                            .child(Topbar::new(
-                                self.current_page.label(),
-                                self.active_view.render_header(cx),
-                            ))
-                            .child(self.active_view.view()),
-                    ),
-            )
-            .children(UiProvider::render_dialogs(window, cx));
-
-        client_side_decorations(root, window, cx)
     }
 }

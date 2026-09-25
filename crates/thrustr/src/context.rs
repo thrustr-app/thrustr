@@ -9,8 +9,9 @@ pub trait SpawnTaskExt<T: 'static> {
     fn spawn_and_update<F, V>(
         &mut self,
         future: F,
-        handler: impl Fn(&mut T, V, &mut Context<T>) + Send + 'static,
-    ) where
+        handler: impl FnOnce(&mut T, V, &mut Context<T>) + 'static,
+    ) -> Task<()>
+    where
         F: Future<Output = V> + Send + 'static,
         V: Send + 'static;
 }
@@ -19,8 +20,9 @@ impl<'a, T: 'static> SpawnTaskExt<T> for Context<'a, T> {
     fn spawn_and_update<F, V>(
         &mut self,
         future: F,
-        handler: impl Fn(&mut T, V, &mut Context<T>) + Send + 'static,
-    ) where
+        handler: impl FnOnce(&mut T, V, &mut Context<T>) + 'static,
+    ) -> Task<()>
+    where
         F: Future<Output = V> + Send + 'static,
         V: Send + 'static,
     {
@@ -32,7 +34,6 @@ impl<'a, T: 'static> SpawnTaskExt<T> for Context<'a, T> {
                 cx.notify();
             });
         })
-        .detach();
     }
 }
 
@@ -42,7 +43,7 @@ pub trait EventListenerExt<T: 'static> {
     fn listen(
         &mut self,
         topic: Topic,
-        handler: impl Fn(&mut T, &mut Context<T>) + Send + 'static,
+        handler: impl Fn(&mut T, &mut Context<T>) + 'static,
     ) -> Task<()>;
 }
 
@@ -50,11 +51,11 @@ impl<'a, T: 'static> EventListenerExt<T> for Context<'a, T> {
     fn listen(
         &mut self,
         topic: Topic,
-        handler: impl Fn(&mut T, &mut Context<T>) + Send + 'static,
+        handler: impl Fn(&mut T, &mut Context<T>) + 'static,
     ) -> Task<()> {
         let mut receiver = event::listen(topic);
         self.spawn(async move |entity, cx| {
-            while receiver.recv().await.is_ok() {
+            while receiver.changed().await.is_ok() {
                 let _ = entity.update(cx, &handler);
             }
         })

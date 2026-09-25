@@ -1,30 +1,20 @@
 use crate::{
-    globals::ArtworkServiceExt,
+    adapters::ColorExt,
+    globals::{ArtworkServiceExt, ComponentRegistryExt},
     navigation::{NavigatorExt, Page},
+    routes::cover_path,
     routes::library::{
         CARD_ASPECT_RATIO, CARD_ICON_SIZE, CARD_INNER_GAP, CARD_PADDING, CARD_TITLE_SIZE,
     },
 };
-use config::paths;
-use domain::{
-    artwork::Color,
-    game::{GameId, GameListItem},
-};
+use domain::game::{GameId, GameListItem};
 use gpui::{
-    App, Empty, FontWeight, Hsla, Image, ImageSource, InteractiveElement, IntoElement, ObjectFit,
+    App, Empty, FontWeight, Hsla, ImageSource, InteractiveElement, IntoElement, ObjectFit,
     ParentElement, Pixels, RenderOnce, Resource, SharedString, StatefulInteractiveElement, Styled,
-    StyledImage, Window, div, img, prelude::FluentBuilder, relative, rgba, transparent_black,
+    StyledImage, Window, div, img, prelude::FluentBuilder, relative, transparent_black,
 };
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 use theme::ThemeExt;
-
-pub(super) fn cover_path(hash: &str) -> Option<Arc<Path>> {
-    paths::artwork_path(hash, "webp").ok().map(Into::into)
-}
-
-pub(super) fn accent_hsla(color: Color) -> Hsla {
-    rgba(color.to_rgba_hex()).into()
-}
 
 #[derive(Clone)]
 pub(super) struct GameEntry {
@@ -33,20 +23,20 @@ pub(super) struct GameEntry {
     pub cover_url: Option<SharedString>,
     pub cover_path: Option<Arc<Path>>,
     pub accent: Option<Hsla>,
-    pub source_icon: Option<Arc<Image>>,
+    pub source_id: SharedString,
 }
 
 impl GameEntry {
-    pub(super) fn from_list_item(item: GameListItem, icons: &HashMap<String, Arc<Image>>) -> Self {
+    pub(super) fn from_list_item(item: GameListItem) -> Self {
         let (cover_path, accent) = match item.cover {
-            Some(art) => (cover_path(&art.hash), art.accent.map(accent_hsla)),
+            Some(art) => (cover_path(&art.hash), art.accent.map(|c| c.to_gpui_hsla())),
             None => (None, None),
         };
         Self {
             id: item.id,
             name: item.name.into(),
             cover_url: item.cover_url.map(Into::into),
-            source_icon: icons.get(&item.source_id).cloned(),
+            source_id: item.source_id.into(),
             cover_path,
             accent,
         }
@@ -175,7 +165,7 @@ impl RenderOnce for GameCard {
 
         title = title.child(game.name);
 
-        if let Some(icon) = game.source_icon {
+        if let Some(icon) = cx.component_icon(&game.source_id) {
             icon_row = icon_row.child(img(ImageSource::Image(icon)).size(CARD_ICON_SIZE));
         }
 

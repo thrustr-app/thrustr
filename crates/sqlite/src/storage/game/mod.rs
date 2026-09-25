@@ -1,6 +1,7 @@
 use crate::SqliteStorage;
 use crate::id::{from_row_id, to_row_id};
 use crate::models::{ArtworkRow, GameRow, NewGameRow};
+use crate::schema::{artwork, games};
 use anyhow::Result;
 use diesel::{
     BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
@@ -71,13 +72,16 @@ impl GameRepository for SqliteStorage {
 
         let id = to_row_id(id);
         let mut conn = self.conn()?;
-        let row = dsl::games
-            .find(id)
-            .select(GameRow::as_select())
-            .first::<GameRow>(&mut conn)
+        let row: Option<(GameRow, Option<ArtworkRow>)> = with_cover()
+            .filter(dsl::id.eq(id))
+            .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
+            .first(&mut conn)
             .optional()?;
 
-        Ok(row.map(Game::from))
+        Ok(row.map(|(row, cover_row)| Game {
+            cover: cover(row.id, cover_row),
+            ..Game::from(row)
+        }))
     }
 
     fn list_index(&self, query: Option<&str>) -> Result<GameIndex> {
@@ -97,19 +101,13 @@ impl GameRepository for SqliteStorage {
     }
 
     fn list_by_ids(&self, ids: &[GameId]) -> Result<Vec<GameListItem>> {
-        use crate::schema::artwork;
         use crate::schema::games::dsl;
 
         let mut conn = self.conn()?;
         let mut by_id: HashMap<i64, GameListItem> = HashMap::with_capacity(ids.len());
         for chunk in ids.chunks(CHUNK_SIZE) {
             let row_ids: Vec<i64> = chunk.iter().map(|&id| to_row_id(id)).collect();
-            let rows: Vec<(GameRow, Option<ArtworkRow>)> = dsl::games
-                .left_join(
-                    artwork::table.on(artwork::game_id
-                        .eq(dsl::id)
-                        .and(artwork::kind.eq(ArtworkKind::Cover.as_ref()))),
-                )
+            let rows: Vec<(GameRow, Option<ArtworkRow>)> = with_cover()
                 .filter(dsl::id.eq_any(row_ids))
                 .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
                 .load(&mut conn)?;
@@ -131,7 +129,6 @@ impl GameRepository for SqliteStorage {
         after: GameId,
         limit: usize,
     ) -> Result<Vec<(GameId, String)>> {
-        use crate::schema::artwork;
         use crate::schema::games::dsl;
 
         let after = to_row_id(after);
@@ -180,16 +177,27 @@ fn browse(conn: &mut SqliteConnection) -> Result<GameIndex> {
     ))
 }
 
-fn list_item(game: GameRow, cover: Option<ArtworkRow>) -> GameListItem {
+fn list_item(game: GameRow, cover_row: Option<ArtworkRow>) -> GameListItem {
     GameListItem {
         id: from_row_id(game.id),
         name: game.name,
         source_id: game.source_id,
         cover_url: game.cover_url,
-        cover: cover.and_then(|row| {
-            Artwork::try_from(row)
-                .inspect_err(|err| warn!(game_id = game.id, "skipping artwork row: {err}"))
-                .ok()
-        }),
+        cover: cover(game.id, cover_row),
     }
+}
+
+fn cover(game_id: i64, row: Option<ArtworkRow>) -> Option<Artwork> {
+    row.and_then(|row| {
+        Artwork::try_from(row)
+            .inspect_err(|err| warn!(game_id, "skipping artwork row: {err}"))
+            .ok()
+    })
+}
+
+#[diesel::dsl::auto_type]
+fn with_cover() -> _ {
+    let cover: &'static str = ArtworkKind::Cover.as_ref();
+    games::table
+        .left_join(artwork::table.on(artwork::game_id.eq(games::id).and(artwork::kind.eq(cover))))
 }

@@ -1,5 +1,8 @@
-use domain::component::{Image, ImageFormat};
-use gpui::{Image as GpuiImage, ImageFormat as GpuiImageFormat};
+use domain::{
+    artwork::Color,
+    component::{Image, ImageFormat},
+};
+use gpui::{Hsla, Image as GpuiImage, ImageFormat as GpuiImageFormat, Rgba, rgba};
 use std::sync::Arc;
 
 pub trait ImageExt {
@@ -26,5 +29,20 @@ fn image_format_to_gpui(format: ImageFormat) -> GpuiImageFormat {
         ImageFormat::Tiff => GpuiImageFormat::Tiff,
         ImageFormat::Ico => GpuiImageFormat::Ico,
         ImageFormat::Pnm => GpuiImageFormat::Pnm,
+    }
+}
+
+pub trait ColorExt {
+    fn to_gpui_rgba(&self) -> Rgba;
+    fn to_gpui_hsla(&self) -> Hsla;
+}
+
+impl ColorExt for Color {
+    fn to_gpui_rgba(&self) -> Rgba {
+        rgba(self.to_rgba_hex())
+    }
+
+    fn to_gpui_hsla(&self) -> Hsla {
+        self.to_gpui_rgba().into()
     }
 }

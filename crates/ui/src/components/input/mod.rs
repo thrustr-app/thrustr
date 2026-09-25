@@ -199,20 +199,17 @@ impl StatefulInteractiveElement for Input {}
 
 impl RenderOnce for Input {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window
-            .use_keyed_state(self.id.clone(), cx, |window, cx| {
-                let state = cx.new(|cx| InputState::new(window, cx));
-                if self.focus.auto_focus {
-                    state.focus_handle(cx).focus(window, cx);
-                }
-                state
-            })
-            .read(cx)
-            .clone();
+        let state = window.use_keyed_state(self.id.clone(), cx, |window, cx| {
+            let state = InputState::new(window, cx);
+            if self.focus.auto_focus {
+                state.focus_handle(cx).focus(window, cx);
+            }
+            state
+        });
 
         let focus_handle = self.focus.configure(state.focus_handle(cx));
 
-        let placeholder_color = self.placeholder_color.or(Some(cx.theme().colors.tertiary));
+        let placeholder_color = self.placeholder_color.or(Some(cx.theme().colors.secondary));
 
         state.update(cx, |state, _cx| {
             state.set_value(self.value);
@@ -255,7 +252,7 @@ impl RenderOnce for Input {
                     .text_size(theme.text.md)
             })
             .when_some(self.leading_icon, |input, icon| {
-                input.child(icon.size_sm().color(theme.colors.tertiary))
+                input.child(icon.size_sm().color(theme.colors.secondary))
             })
             .when(!self.disabled, |this| {
                 this.key_context(CONTEXT)
@@ -311,7 +308,7 @@ impl RenderOnce for Input {
                         .id((self.id.clone(), "clear"))
                         .flex_none()
                         .cursor_pointer()
-                        .child(Icon::x().size_sm().color(theme.colors.tertiary))
+                        .child(Icon::x().size_sm().color(theme.colors.secondary))
                         .on_click(move |_, window, cx| {
                             state.update(cx, |state, cx| state.clear(window, cx));
                         }),

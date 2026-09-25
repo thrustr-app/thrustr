@@ -1,10 +1,6 @@
-use crate::{
-    globals::ComponentRegistryExt,
-    routes::{self, RouteHandle},
-};
 use domain::game::GameId;
-use gpui::{AnyView, App, AppContext, EmptyView, Global, SharedString, Window};
-use std::{collections::VecDeque, mem::replace};
+use gpui::{App, Global, SharedString};
+use std::{any::Any, collections::VecDeque, mem::replace, rc::Rc};
 use ui::{Icon, Sidebar, SidebarItem};
 
 const MAX_HISTORY: usize = 20;
@@ -36,16 +32,6 @@ impl<T: NavNode + PartialEq + 'static> NavSidebar<T> for Sidebar<T> {
 /// Builds a sidebar item that navigates to `page` and reflects its active state.
 pub fn nav_item<T: NavNode + PartialEq + 'static>(page: T) -> SidebarItem<T> {
     SidebarItem::new(page.label()).icon(page.icon()).value(page)
-}
-
-/// Determines whether two pages reuse the same root view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Section {
-    Home,
-    Library,
-    Collections,
-    Game(GameId),
-    Settings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,29 +76,6 @@ impl NavNode for Page {
 }
 
 impl Page {
-    pub fn build_view(&self, window: &mut Window, cx: &mut App) -> Box<dyn RouteHandle> {
-        match self {
-            Self::Home => Box::new(cx.new(|_| routes::Home)),
-            Self::Library => Box::new(cx.new(|cx| routes::Library::new(window, cx))),
-            Self::Collections => Box::new(cx.new(|_| routes::Collections)),
-            Self::Game(id) => Box::new(cx.new(|cx| routes::Game::new(*id, cx))),
-            Self::Settings(Some(sub)) => {
-                Box::new(cx.new(|cx| routes::Settings::new(sub.clone(), cx)))
-            }
-            _ => Box::new(cx.new(|_| EmptyView)),
-        }
-    }
-
-    pub(crate) fn section(&self) -> Section {
-        match self {
-            Self::Home => Section::Home,
-            Self::Library => Section::Library,
-            Self::Collections => Section::Collections,
-            Self::Game(id) => Section::Game(*id),
-            Self::Settings(_) => Section::Settings,
-        }
-    }
-
     fn resolve(self) -> Self {
         match self {
             Self::Settings(None) => SettingsPage::Storefronts(None).into(),
@@ -166,24 +129,46 @@ impl NavNode for SettingsPage {
     }
 }
 
-impl SettingsPage {
-    pub fn build_view(&self, cx: &mut App) -> AnyView {
-        match self {
-            Self::Storefronts(None) => cx.new(routes::Storefronts::new).into(),
-            Self::Plugins(None) => cx.new(routes::Plugins::new).into(),
-            Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => match cx.component(id) {
-                Some(component) => cx.new(|cx| routes::Config::new(cx, component)).into(),
-                None => cx.new(|_| EmptyView).into(),
-            },
-            Self::Appearance => cx.new(|_| routes::Appearance).into(),
-        }
+#[derive(Clone)]
+pub struct RouteState(Rc<dyn Any>);
+
+impl RouteState {
+    pub(crate) fn new<T: 'static>(state: T) -> Self {
+        Self(Rc::new(state))
+    }
+
+    pub(crate) fn downcast<T: Clone + 'static>(&self) -> Option<T> {
+        self.0.downcast_ref().cloned()
     }
 }
 
-#[derive(Debug)]
+type StateSaver = Box<dyn Fn(&Page, &App) -> Option<RouteState>>;
+
+struct Entry {
+    page: Page,
+    state: Option<RouteState>,
+}
+
+impl Entry {
+    fn new(page: Page) -> Self {
+        Self { page, state: None }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Transition {
+    /// Returns to the previous history entry.
+    Back,
+    /// Replaces the current page, leaving the history untouched.
+    Replace,
+    /// Saves the current page onto the history.
+    Push,
+}
+
 pub struct Navigator {
-    current: Page,
-    history: VecDeque<Page>,
+    current: Entry,
+    history: VecDeque<Entry>,
+    save_state: Option<StateSaver>,
 }
 
 impl Global for Navigator {}
@@ -191,27 +176,53 @@ impl Global for Navigator {}
 impl Navigator {
     fn new(initial: Page) -> Self {
         Self {
-            current: initial,
+            current: Entry::new(initial),
             history: VecDeque::new(),
+            save_state: None,
         }
     }
 
     pub fn current_page(&self) -> Page {
-        self.current.clone()
+        self.current.page.clone()
     }
 
-    fn navigate(&mut self, next: Page) {
-        if self.current.is_parent_of(&next) || next.is_parent_of(&self.current) {
-            self.current = next;
-            return;
-        }
+    pub(crate) fn current_state(&self) -> Option<RouteState> {
+        self.current.state.clone()
+    }
 
-        let previous = replace(&mut self.current, next);
-        self.history.push_back(previous);
+    pub(crate) fn set_state_saver(
+        &mut self,
+        saver: impl Fn(&Page, &App) -> Option<RouteState> + 'static,
+    ) {
+        self.save_state = Some(Box::new(saver));
+    }
+
+    fn transition(&self, next: &Page) -> Option<Transition> {
+        if *next == self.current.page {
+            None
+        } else if !next.is_parent_of(&self.current.page) {
+            Some(Transition::Push)
+        } else if self.history.back().is_some_and(|entry| entry.page == *next) {
+            Some(Transition::Back)
+        } else {
+            Some(Transition::Replace)
+        }
+    }
+
+    fn push(&mut self, next: Page, state: Option<RouteState>) {
+        let previous = replace(&mut self.current, Entry::new(next));
+        self.history.push_back(Entry {
+            page: previous.page,
+            state,
+        });
 
         if self.history.len() > MAX_HISTORY {
             self.history.pop_front();
         }
+    }
+
+    fn replace(&mut self, next: Page) {
+        self.current = Entry::new(next);
     }
 
     fn navigate_back(&mut self) {
@@ -221,13 +232,9 @@ impl Navigator {
     }
 }
 
-/// Extension trait that provides navigation-related methods.
 pub trait NavigatorExt {
-    /// Returns a reference to the navigator.
     fn navigator(&self) -> &Navigator;
-    /// Navigates to the given page, pushing the current page onto the history.
     fn navigate(&mut self, page: impl Into<Page>);
-    /// Navigates back to the previous page, if available.
     fn navigate_back(&mut self);
 }
 
@@ -239,18 +246,125 @@ impl NavigatorExt for App {
     fn navigate(&mut self, page: impl Into<Page>) {
         let next = page.into().resolve();
 
-        if self.global::<Navigator>().current == next {
-            return;
-        }
-
-        self.global_mut::<Navigator>().navigate(next);
+        self.defer(move |cx| {
+            let navigator = cx.navigator();
+            match navigator.transition(&next) {
+                None => {}
+                Some(Transition::Push) => {
+                    let state = navigator
+                        .save_state
+                        .as_ref()
+                        .and_then(|save| save(&next, cx));
+                    cx.global_mut::<Navigator>().push(next, state);
+                }
+                Some(Transition::Replace) => cx.global_mut::<Navigator>().replace(next),
+                Some(Transition::Back) => cx.global_mut::<Navigator>().navigate_back(),
+            }
+        });
     }
 
     fn navigate_back(&mut self) {
-        if self.global::<Navigator>().history.is_empty() {
-            return;
-        }
+        self.defer(|cx| {
+            if cx.navigator().history.is_empty() {
+                return;
+            }
 
-        self.global_mut::<Navigator>().navigate_back();
+            cx.global_mut::<Navigator>().navigate_back();
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn game(id: u64) -> Page {
+        Page::Game(GameId::from(id))
+    }
+
+    fn navigator(pages: &[Page]) -> Navigator {
+        let (first, rest) = pages.split_first().unwrap();
+        let mut navigator = Navigator::new(first.clone());
+        for page in rest {
+            let state = RouteState::new(navigator.current_page());
+            navigator.push(page.clone(), Some(state));
+        }
+        navigator
+    }
+
+    #[track_caller]
+    fn check_transition(pages: &[Page], next: Page, expected: Option<Transition>) {
+        assert_eq!(navigator(pages).transition(&next), expected);
+    }
+
+    #[test]
+    fn navigating_to_the_current_page_does_nothing() {
+        check_transition(&[Page::Home, Page::Library], Page::Library, None);
+    }
+
+    #[test]
+    fn navigating_to_an_unrelated_page_pushes() {
+        check_transition(&[Page::Home], Page::Library, Some(Transition::Push));
+        check_transition(
+            &[Page::Library, game(1)],
+            Page::Home,
+            Some(Transition::Push),
+        );
+    }
+
+    #[test]
+    fn navigating_to_a_child_pushes() {
+        check_transition(&[Page::Library], game(1), Some(Transition::Push));
+    }
+
+    #[test]
+    fn navigating_to_the_previous_parent_goes_back() {
+        check_transition(
+            &[Page::Library, game(1)],
+            Page::Library,
+            Some(Transition::Back),
+        );
+    }
+
+    #[test]
+    fn navigating_to_another_parent_replaces() {
+        check_transition(
+            &[Page::Home, game(1)],
+            Page::Library,
+            Some(Transition::Replace),
+        );
+    }
+
+    #[test]
+    fn going_back_restores_the_saved_state() {
+        let mut navigator = navigator(&[Page::Home, Page::Library, game(1)]);
+
+        navigator.navigate_back();
+
+        assert_eq!(navigator.current_page(), Page::Library);
+        let state = navigator.current_state().and_then(|state| state.downcast());
+        assert_eq!(state, Some(Page::Library));
+    }
+
+    #[test]
+    fn replacing_keeps_the_history() {
+        let mut navigator = navigator(&[Page::Home, game(1)]);
+
+        navigator.replace(Page::Library);
+        navigator.navigate_back();
+
+        assert_eq!(navigator.current_page(), Page::Home);
+    }
+
+    #[test]
+    fn history_is_capped() {
+        let pages: Vec<_> = (0..MAX_HISTORY as u64 + 5).map(game).collect();
+        let navigator = navigator(&pages);
+
+        assert_eq!(navigator.history.len(), MAX_HISTORY);
+        assert_eq!(
+            navigator.history.front().map(|entry| &entry.page),
+            Some(&game(4))
+        );
     }
 }

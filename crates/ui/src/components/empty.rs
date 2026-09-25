@@ -41,7 +41,7 @@ impl RenderOnce for Empty {
             .border_1()
             .border_dashed()
             .border_color(theme.colors.tertiary.opacity(0.4))
-            .text_color(theme.colors.tertiary)
+            .text_color(theme.colors.secondary)
             .text_size(theme.text.md)
             .child(self.text);
 

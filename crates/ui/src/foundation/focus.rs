@@ -1,15 +1,15 @@
 use gpui::{
-    App, Bounds, Context, ElementId, FocusHandle, IsZero, ParentElement, Pixels, ScrollHandle,
-    Styled, Subscription, Window, canvas, point, px,
+    App, Bounds, Context, ElementId, FocusHandle, ParentElement, Pixels, ScrollHandle, Styled,
+    Subscription, Window, canvas, point, px,
 };
-use std::{cell::Cell, ops::Range, rc::Rc};
+use std::ops::Range;
 
 /// Keyboard-focus behavior shared by focusable components.
 pub struct FocusProps {
     pub(crate) auto_focus: bool,
-    pub(crate) tab_index: isize,
-    pub(crate) tab_stop: bool,
-    reveal: Option<Reveal>,
+    tab_index: isize,
+    tab_stop: bool,
+    reveal_in: Option<ScrollHandle>,
 }
 
 impl Default for FocusProps {
@@ -18,21 +18,15 @@ impl Default for FocusProps {
             auto_focus: false,
             tab_index: 0,
             tab_stop: true,
-            reveal: None,
+            reveal_in: None,
         }
     }
 }
 
 impl FocusProps {
     /// Apply the configured tab order to `handle`.
-    pub(crate) fn configure(&self, mut handle: FocusHandle) -> FocusHandle {
-        if handle.tab_stop != self.tab_stop {
-            handle = handle.tab_stop(self.tab_stop);
-        }
-        if handle.tab_index != self.tab_index {
-            handle = handle.tab_index(self.tab_index);
-        }
-        handle
+    pub(crate) fn configure(&self, handle: FocusHandle) -> FocusHandle {
+        handle.tab_stop(self.tab_stop).tab_index(self.tab_index)
     }
 
     /// Wire reveal-on-focus onto a rendered component.
@@ -47,30 +41,26 @@ impl FocusProps {
     where
         E: ParentElement,
     {
-        let Some(reveal) = &self.reveal else {
+        let Some(scroll_handle) = self.reveal_in.clone() else {
             return element;
         };
 
-        let listener = window.use_keyed_state(key.into(), cx, {
-            let focus_handle = focus_handle.clone();
-            move |window, cx| RevealListener::new(&focus_handle, window, cx)
+        let reveal = window.use_keyed_state(key.into(), cx, |window, cx| {
+            Reveal::new(focus_handle, scroll_handle.clone(), window, cx)
         });
 
-        listener.update(cx, {
-            let reveal = reveal.clone();
-            move |listener, _| listener.reveal = Some(reveal)
-        });
-
-        let bounds = reveal.bounds.clone();
         element.child(
             canvas(
-                move |element_bounds, _, _| bounds.set(element_bounds),
+                move |bounds, _, cx| {
+                    reveal.update(cx, |reveal, _| {
+                        reveal.scroll_handle = scroll_handle;
+                        reveal.bounds = Some(bounds);
+                    })
+                },
                 |_, _, _, _| {},
             )
             .absolute()
-            .top_0()
-            .left_0()
-            .size_full(),
+            .inset_0(),
         )
     }
 }
@@ -81,8 +71,8 @@ pub trait WithFocus: Sized {
     fn focus_props(&mut self) -> &mut FocusProps;
 
     /// Focus this element when it is first created.
-    fn auto_focus(mut self, auto_focus: bool) -> Self {
-        self.focus_props().auto_focus = auto_focus;
+    fn auto_focus(mut self) -> Self {
+        self.focus_props().auto_focus = true;
         self
     }
 
@@ -101,36 +91,48 @@ pub trait WithFocus: Sized {
     /// Scroll this element into view inside the container tracked by `handle`
     /// when it gains keyboard focus.
     fn reveal_on_focus(mut self, handle: &ScrollHandle) -> Self {
-        self.focus_props().reveal = Some(Reveal::new(handle));
+        self.focus_props().reveal_in = Some(handle.clone());
         self
     }
 }
 
 /// Scrolls an element into view when it gains keyboard focus.
-#[derive(Clone)]
 struct Reveal {
-    handle: ScrollHandle,
-    bounds: Rc<Cell<Bounds<Pixels>>>,
+    scroll_handle: ScrollHandle,
+    bounds: Option<Bounds<Pixels>>,
+    _subscription: Subscription,
 }
 
 impl Reveal {
-    fn new(handle: &ScrollHandle) -> Self {
+    fn new(
+        focus_handle: &FocusHandle,
+        scroll_handle: ScrollHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let _subscription = cx.on_focus_in(focus_handle, window, |_, window, cx| {
+            cx.defer_in(window, |this, window, _| {
+                if window.last_input_was_keyboard() {
+                    this.scroll_into_view(window);
+                }
+            });
+        });
+
         Self {
-            handle: handle.clone(),
-            bounds: Rc::default(),
+            scroll_handle,
+            bounds: None,
+            _subscription,
         }
     }
 
     fn scroll_into_view(&self, window: &mut Window) {
-        let bounds = self.bounds.get();
-        if bounds.size.width.is_zero() && bounds.size.height.is_zero() {
-            // Not painted yet, so there is nothing to reveal.
+        let Some(bounds) = self.bounds else {
             return;
-        }
+        };
 
-        let viewport = self.handle.bounds();
-        let max_offset = self.handle.max_offset();
-        let offset = self.handle.offset();
+        let viewport = self.scroll_handle.bounds();
+        let max_offset = self.scroll_handle.max_offset();
+        let offset = self.scroll_handle.offset();
 
         let revealed = point(
             reveal_axis(
@@ -148,7 +150,7 @@ impl Reveal {
         );
 
         if revealed != offset {
-            self.handle.set_offset(revealed);
+            self.scroll_handle.set_offset(revealed);
             window.refresh();
         }
     }
@@ -173,26 +175,4 @@ fn reveal_axis(
     };
 
     (offset + delta).clamp(-max_offset, px(0.))
-}
-
-struct RevealListener {
-    reveal: Option<Reveal>,
-    _subscription: Subscription,
-}
-
-impl RevealListener {
-    fn new(focus_handle: &FocusHandle, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let _subscription = cx.on_focus_in(focus_handle, window, |this, window, _| {
-            if window.last_input_was_keyboard()
-                && let Some(reveal) = &this.reveal
-            {
-                reveal.scroll_into_view(window);
-            }
-        });
-
-        Self {
-            reveal: None,
-            _subscription,
-        }
-    }
 }

@@ -25,7 +25,6 @@ ui = { path = "crates/ui" }
 
 # External
 anyhow = "1"
-async-broadcast = "0.7"
 async-trait = "0.1"
 base64 = "0.23"
 blake3 = "1"
@@ -35,7 +34,6 @@ dashmap = "6"
 directories = "6"
 futures = "0.3"
 gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_macros = { git = "https://github.com/zed-industries/zed" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
 http = "1"
 http-body = "1"

@@ -1,39 +1,33 @@
-use super::Route;
+use super::{ROUTE_PADDING, Route, cover_path};
 use crate::{
-    adapters::ImageExt,
+    adapters::ColorExt,
     context::{EventListenerExt, SpawnTaskExt},
-    globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
+    globals::{ArtworkServiceExt, GameServiceExt},
     navigation::{NavigatorExt, Page},
 };
 use artwork::ArtworkReady;
 use cache::{LruImageCache, lru_image_cache};
-use card::{GameCard, GameEntry, accent_hsla, cover_path};
+use card::{GameCard, GameEntry};
 use domain::{game::GameId, section_index::SectionIndex};
 use event::Topic;
 use gpui::{
-    AnyElement, AppContext, Context, Div, Entity, FocusHandle, Image, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Point, Rems, Render, Resource, ScrollStrategy,
-    SharedString, Styled, Subscription, Task, UniformListScrollHandle, Window, container_query,
-    div, px, rems, uniform_list,
+    AnyElement, App, AppContext, Context, Div, Entity, FocusHandle, InteractiveElement,
+    IntoElement, ParentElement, Pixels, Point, Rems, Render, Resource, ScrollHandle,
+    ScrollStrategy, SharedString, Styled, Subscription, Task, UniformListScrollHandle, Window,
+    container_query, div, px, rems, uniform_list,
 };
 use grid::{GridDims, GridMetrics};
 use lru::LruCache;
 use std::{
-    cell::Cell,
-    collections::{HashMap, HashSet},
-    num::NonZeroUsize,
-    ops::Range,
-    rc::Rc,
-    sync::Arc,
-    time::Duration,
+    cell::Cell, collections::HashMap, num::NonZeroUsize, ops::Range, rc::Rc, time::Duration,
 };
 use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
-    Activate, GRID_CONTEXT, GridDir, Icon, IndexRail, ListScrollbar, SCROLLBAR_WIDTH,
-    ScrollbarState, SelectDown, SelectLeft, SelectRight, SelectUp, WithRadius, WithSize, grid_step,
-    index_rail_position, input, list_scrollbar_state,
+    Activate, GRID_CONTEXT, GridDir, Icon, ListScrollbar, SCROLLBAR_WIDTH, ScrollbarState,
+    Scrubber, SelectDown, SelectLeft, SelectRight, SelectUp, WithRadius, WithSize, grid_step,
+    input, scrubber_position,
 };
 
 mod cache;
@@ -49,10 +43,10 @@ const CARD_TITLE_SIZE: Rems = rems(0.875);
 const CARD_ICON_SIZE: Rems = rems(1.25);
 const CARD_ROW_GAP: Rems = rems(1.25);
 
-const GRID_PADDING: Rems = rems(3. - CARD_PADDING.0);
+const GRID_PADDING: Rems = rems(ROUTE_PADDING.0 - CARD_PADDING.0);
 // FIXME: this should be 4px but because gpui does not have built-in support for outlines,
 // the game card has to set a 1px border. An extra px here makes it visually more centered.
-const INDEX_RAIL_GAP: Pixels = px(5.);
+const SCRUBBER_GAP: Pixels = px(5.);
 
 const CACHE_OVERSCAN_ROWS: usize = 3;
 
@@ -69,56 +63,70 @@ type ChunkCache = LruCache<usize, Vec<GameEntry>>;
 
 fn available_letters(sections: &SectionIndex) -> u32 {
     sections.sections().iter().fold(0, |mask, section| {
-        index_rail_position(&section.label).map_or(mask, |i| mask | (1 << i))
+        scrubber_position(&section.label).map_or(mask, |i| mask | (1 << i))
     })
+}
+
+#[derive(Clone, Default)]
+pub struct LibraryState {
+    search_query: SharedString,
+    anchor: Option<ViewAnchor>,
+    selected: Option<GameId>,
+}
+
+#[derive(Clone, Copy)]
+struct ViewAnchor {
+    game: GameId,
+    rows_from_top: f32,
 }
 
 pub struct Library {
     ids: Rc<Vec<GameId>>,
     sections: Rc<SectionIndex>,
     available_letters: u32,
-
     pinned_letter: Option<usize>,
     pinned_offset: Option<Point<Pixels>>,
     scroll_handle: UniformListScrollHandle,
+    pending_anchor: Option<ViewAnchor>,
     selected: Option<usize>,
+    pending_selection: Option<GameId>,
     num_cols: Rc<Cell<usize>>,
-    scrollbar: Option<Entity<ScrollbarState>>,
-
+    scrollbar: Entity<ScrollbarState>,
     chunks: Rc<ChunkCache>,
-    loading_chunks: HashSet<usize>,
-    /// Bumped whenever `ids` is replaced so in-flight hydrations from a previous
-    /// generation are discarded.
-    generation: u64,
-
+    loading_chunks: HashMap<usize, Task<()>>,
     search_query: SharedString,
     _search_debounce: Option<Task<()>>,
-
-    component_icons: HashMap<String, Arc<Image>>,
     image_cache: Entity<LruImageCache>,
-
     focus_handle: FocusHandle,
     _focus_subscription: Subscription,
-    /// Bumped on every refresh so an earlier query cannot overwrite the
-    /// results of a later one when they resolve out of order.
-    refresh_seq: u64,
+    _refresh_task: Option<Task<()>>,
     _tasks: Vec<Task<()>>,
 }
 
-impl Library {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+impl Route for Library {
+    const PADDING: Rems = rems(0.);
+
+    type Args = ();
+    type State = LibraryState;
+
+    fn build(_: (), state: LibraryState, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle().tab_stop(false);
         let focus_subscription = cx.on_focus(&focus_handle, window, |this, window, cx| {
             if window.last_input_was_keyboard() {
-                this.selected = this.top_visible_item();
-                if let Some(idx) = this.selected {
-                    let cols = this.cols();
-                    this.scroll_handle
-                        .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
+                if !this.is_restoring() {
+                    this.selected = this.scroll_anchor();
+                    if let Some(idx) = this.selected {
+                        let cols = this.cols();
+                        this.scroll_handle
+                            .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
+                    }
                 }
-                cx.notify();
+                cx.defer_in(window, |_, _, cx| cx.notify());
             }
         });
+
+        let scroll_handle = UniformListScrollHandle::new();
+        let scrollbar = cx.new(|_| ScrollbarState::for_uniform_list(&scroll_handle));
 
         let mut page = Self {
             ids: Rc::new(Vec::new()),
@@ -126,27 +134,27 @@ impl Library {
             available_letters: 0,
             pinned_letter: None,
             pinned_offset: None,
-            scroll_handle: UniformListScrollHandle::new(),
+            scroll_handle,
+            pending_anchor: state.anchor,
             selected: None,
+            pending_selection: state.selected,
             num_cols: Rc::new(Cell::new(1)),
-            scrollbar: None,
+            scrollbar,
             chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
-            loading_chunks: HashSet::new(),
-            generation: 0,
-            search_query: SharedString::default(),
+            loading_chunks: HashMap::new(),
+            search_query: state.search_query,
             _search_debounce: None,
-            component_icons: HashMap::new(),
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             focus_handle,
             _focus_subscription: focus_subscription,
-            refresh_seq: 0,
+            _refresh_task: None,
             _tasks: Vec::new(),
         };
 
-        let task = cx.listen(Topic::Games, |page, cx| {
-            page.refresh_icons(cx);
-            page.refresh_games(cx);
-        });
+        let task = cx.listen(Topic::Games, Self::refresh_games);
+        page._tasks.push(task);
+
+        let task = cx.listen(Topic::Component, |_, cx| cx.notify());
         page._tasks.push(task);
 
         let mut artwork_rx = cx.artwork_service().subscribe();
@@ -165,13 +173,74 @@ impl Library {
         });
         page._tasks.push(artwork_task);
 
-        page.refresh_icons(cx);
         page.refresh_games(cx);
+
+        if page.is_restoring() {
+            page.focus_handle.focus(window, cx);
+        }
         page
     }
 
+    fn header(&self, this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
+        let library = this.downgrade();
+        Some(
+            input("library-search")
+                .placeholder("Search library")
+                .value(self.search_query.clone())
+                .leading_icon(Icon::search())
+                .radius_pill()
+                .size_lg()
+                .clear_button()
+                .w(rems(28.))
+                .on_input(move |event, _, cx| {
+                    let query = event.value.clone();
+                    library
+                        .update(cx, |library, cx| library.set_query(query, cx))
+                        .ok();
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn save_state(&self, next: &Page, _cx: &App) -> Option<LibraryState> {
+        let opened = match next {
+            Page::Game(id) => Some(*id),
+            _ => None,
+        };
+
+        Some(LibraryState {
+            search_query: self.search_query.clone(),
+            anchor: self.pending_anchor.or_else(|| self.view_anchor(opened)),
+            selected: opened
+                .or_else(|| self.selected_id())
+                .or(self.pending_selection),
+        })
+    }
+}
+
+impl Library {
     fn cols(&self) -> usize {
         self.num_cols.get().max(1)
+    }
+
+    /// The list's inner scroll handle.
+    fn base_scroll(&self) -> ScrollHandle {
+        self.scroll_handle.0.borrow().base_handle.clone()
+    }
+
+    fn set_scroll_y(&self, y: Pixels) {
+        let base = self.base_scroll();
+        let mut offset = base.offset();
+        offset.y = y;
+        base.set_offset(offset);
+    }
+
+    fn is_restoring(&self) -> bool {
+        self.pending_anchor.is_some() || self.pending_selection.is_some()
+    }
+
+    fn selected_id(&self) -> Option<GameId> {
+        self.selected.and_then(|idx| self.ids.get(idx)).copied()
     }
 
     fn chunks_mut(&mut self) -> &mut ChunkCache {
@@ -197,7 +266,7 @@ impl Library {
             let entry = &mut self.chunks_mut().peek_mut(&chunk_idx).unwrap()[offset];
             let path = cover_path(&update.hash);
             entry.cover_path = path.clone();
-            entry.accent = update.accent.map(accent_hsla);
+            entry.accent = update.accent.map(|c| c.to_gpui_hsla());
 
             if let Some(path) = path {
                 let resource = Resource::Path(path);
@@ -211,67 +280,48 @@ impl Library {
         }
     }
 
-    fn refresh_icons(&mut self, cx: &mut Context<Self>) {
-        self.component_icons = cx
-            .storefronts()
-            .iter()
-            .filter_map(|s| {
-                let meta = s.component().metadata();
-                meta.icon.map(|icon| (meta.id.to_string(), icon.to_gpui()))
-            })
-            .collect();
-    }
-
     fn refresh_games(&mut self, cx: &mut Context<Self>) {
         let game_service = cx.game_service();
 
-        self.refresh_seq += 1;
-        let seq = self.refresh_seq;
         let query = self.search_query.clone();
-        cx.spawn_and_update(
+        self._refresh_task = Some(cx.spawn_and_update(
             async move { game_service.list_index(Some(&query)) },
-            move |library, result, _| {
-                if library.refresh_seq != seq {
-                    return;
+            |library, result, _| match result {
+                Ok(index) => {
+                    let selected_id = library.selected_id().or(library.pending_selection.take());
+                    let anchor = library.scroll_anchor();
+                    let old_ids = library.ids.clone();
+
+                    let positions: HashMap<GameId, usize> = index
+                        .ids
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, &id)| (id, idx))
+                        .collect();
+
+                    library.focus_handle =
+                        library.focus_handle.clone().tab_stop(!index.ids.is_empty());
+
+                    library.ids = Rc::new(index.ids);
+                    library.available_letters = available_letters(&index.sections);
+                    library.sections = Rc::new(index.sections);
+                    library.pinned_letter = None;
+                    library.pinned_offset = None;
+                    library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
+                    library.loading_chunks.clear();
+
+                    library.selected = selected_id.and_then(|id| positions.get(&id).copied());
+                    library.restore_scroll(&old_ids, anchor, &positions);
+                    // Lets `save_state` fall back to the current view if the game is gone.
+                    library.pending_anchor = library
+                        .pending_anchor
+                        .filter(|anchor| positions.contains_key(&anchor.game));
                 }
-
-                match result {
-                    Ok(index) => {
-                        let selected_id = library
-                            .selected
-                            .and_then(|idx| library.ids.get(idx))
-                            .copied();
-                        let anchor = library.scroll_anchor();
-                        let old_ids = library.ids.clone();
-
-                        let positions: HashMap<GameId, usize> = index
-                            .ids
-                            .iter()
-                            .enumerate()
-                            .map(|(idx, &id)| (id, idx))
-                            .collect();
-
-                        library.focus_handle =
-                            library.focus_handle.clone().tab_stop(!index.ids.is_empty());
-
-                        library.ids = Rc::new(index.ids);
-                        library.available_letters = available_letters(&index.sections);
-                        library.sections = Rc::new(index.sections);
-                        library.pinned_letter = None;
-                        library.pinned_offset = None;
-                        library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
-                        library.loading_chunks.clear();
-                        library.generation += 1;
-
-                        library.selected = selected_id.and_then(|id| positions.get(&id).copied());
-                        library.restore_scroll(&old_ids, anchor, &positions);
-                    }
-                    Err(e) => {
-                        error!("failed to list game index: {e:#}");
-                    }
-                };
+                Err(e) => {
+                    error!("failed to list game index: {e:#}");
+                }
             },
-        );
+        ));
     }
 
     fn set_query(&mut self, query: SharedString, cx: &mut Context<Self>) {
@@ -299,9 +349,8 @@ impl Library {
             self.selected = Some(next);
             self.scroll_handle
                 .scroll_to_item(next / cols, ScrollStrategy::Nearest);
-            if let Some(scrollbar) = &self.scrollbar {
-                scrollbar.update(cx, |scrollbar, cx| scrollbar.flash(cx));
-            }
+            self.scrollbar
+                .update(cx, |scrollbar, cx| scrollbar.flash(cx));
             cx.notify();
         }
     }
@@ -313,11 +362,10 @@ impl Library {
         let cols = self.cols();
         self.scroll_handle
             .scroll_to_item(start / cols, ScrollStrategy::Top);
-        self.pinned_letter = index_rail_position(label);
+        self.pinned_letter = scrubber_position(label);
         self.pinned_offset = None;
-        if let Some(scrollbar) = &self.scrollbar {
-            scrollbar.update(cx, |scrollbar, cx| scrollbar.flash(cx));
-        }
+        self.scrollbar
+            .update(cx, |scrollbar, cx| scrollbar.flash(cx));
         cx.notify();
     }
 
@@ -378,14 +426,49 @@ impl Library {
         let Some(metrics) = self.metrics(old_ids.len()) else {
             return;
         };
-        let mut offset = self.scroll_handle.0.borrow().base_handle.offset();
+        let y = self.base_scroll().offset().y;
+        self.set_scroll_y(y - metrics.scroll_delta(old_row, new_row));
+    }
 
-        offset.y -= metrics.scroll_delta(old_row, new_row);
-        self.scroll_handle.0.borrow().base_handle.set_offset(offset);
+    /// Anchors the viewport on the game being opened, or on the top visible one otherwise.
+    fn view_anchor(&self, opened: Option<GameId>) -> Option<ViewAnchor> {
+        let metrics = self.metrics(self.ids.len())?;
+        let idx = opened
+            .and_then(|opened| self.ids.iter().position(|&id| id == opened))
+            .or_else(|| self.top_visible_item())?;
+
+        Some(ViewAnchor {
+            game: self.ids[idx],
+            rows_from_top: metrics.rows_from_top(idx / self.cols()),
+        })
+    }
+
+    fn apply_pending_anchor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(anchor) = self.pending_anchor else {
+            return;
+        };
+        let count = self.ids.len();
+        let Some(metrics) = self.metrics(count) else {
+            if count > 0 {
+                cx.on_next_frame(window, |_, _, cx| cx.notify());
+            }
+            return;
+        };
+        self.pending_anchor = None;
+
+        let Some(idx) = self.ids.iter().position(|&id| id == anchor.game) else {
+            return;
+        };
+        let cols = self.cols();
+        self.set_scroll_y(-metrics.offset_for_row(
+            idx / cols,
+            anchor.rows_from_top,
+            count.div_ceil(cols),
+        ));
     }
 
     fn activate_selected(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected.and_then(|idx| self.ids.get(idx)).copied() {
+        if let Some(id) = self.selected_id() {
             cx.navigate(Page::Game(id));
         }
     }
@@ -404,7 +487,7 @@ impl Library {
         for chunk_idx in needed {
             if self.chunks.contains(&chunk_idx) {
                 self.chunks_mut().promote(&chunk_idx);
-            } else if !self.loading_chunks.contains(&chunk_idx) {
+            } else if !self.loading_chunks.contains_key(&chunk_idx) {
                 self.hydrate_chunk(chunk_idx, cx);
             }
         }
@@ -414,34 +497,24 @@ impl Library {
         let start = chunk_idx * CHUNK_SIZE;
         let end = (start + CHUNK_SIZE).min(self.ids.len());
         let ids: Vec<GameId> = self.ids[start..end].to_vec();
-        let generation = self.generation;
         let game_service = cx.game_service();
 
-        self.loading_chunks.insert(chunk_idx);
-        cx.spawn_and_update(
+        let task = cx.spawn_and_update(
             async move { game_service.list_by_ids(&ids) },
-            move |library, result, _| {
-                if library.generation != generation {
-                    return;
+            move |library, result, _| match result {
+                Ok(items) => {
+                    library.loading_chunks.remove(&chunk_idx);
+                    let entries = items.into_iter().map(GameEntry::from_list_item).collect();
+                    library.chunks_mut().push(chunk_idx, entries);
                 }
-                match result {
-                    Ok(items) => {
-                        library.loading_chunks.remove(&chunk_idx);
-                        let entries = items
-                            .into_iter()
-                            .map(|item| GameEntry::from_list_item(item, &library.component_icons))
-                            .collect();
-                        library.chunks_mut().push(chunk_idx, entries);
-                    }
-                    Err(e) => {
-                        // Deliberately keep the in-flight marker, since dropping it
-                        // would retry at frame rate against a database that is
-                        // already failing. The next games refresh clears it.
-                        error!(chunk_idx, "failed to hydrate games chunk: {e:#}");
-                    }
-                };
+                Err(e) => {
+                    // Keep the in-flight marker since dropping it would retry at frame rate
+                    // against a database that is failing. The next games refresh clears it.
+                    error!(chunk_idx, "failed to hydrate games chunk: {e:#}");
+                }
             },
         );
+        self.loading_chunks.insert(chunk_idx, task);
     }
 
     fn track_pinned_letter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -453,14 +526,14 @@ impl Library {
         };
         if let Some(offset) = pending_scroll {
             cx.on_next_frame(window, move |library, _, cx| {
-                if library.scroll_handle.0.borrow().base_handle.offset() != offset {
+                if library.base_scroll().offset() != offset {
                     cx.notify();
                 }
             });
         }
 
         if self.pinned_letter.is_some() && pending_scroll.is_none() {
-            let live_offset = self.scroll_handle.0.borrow().base_handle.offset();
+            let live_offset = self.base_scroll().offset();
             match self.pinned_offset {
                 None => self.pinned_offset = Some(live_offset),
                 Some(offset) if offset != live_offset => {
@@ -502,29 +575,6 @@ fn render_row(
         .children((0..dims.num_cols - (end - start)).map(|_| GameCard::spacer(dims.card_width)))
 }
 
-impl Route for Library {
-    fn header(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let library = cx.weak_entity();
-        Some(
-            input("library-search")
-                .placeholder("Search library")
-                .value(self.search_query.clone())
-                .leading_icon(Icon::search())
-                .radius_pill()
-                .size_lg()
-                .clear_button()
-                .w(rems(28.))
-                .on_input(move |event, _, cx| {
-                    let query = event.value.clone();
-                    library
-                        .update(cx, |library, cx| library.set_query(query, cx))
-                        .ok();
-                })
-                .into_any_element(),
-        )
-    }
-}
-
 impl Render for Library {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -533,12 +583,13 @@ impl Render for Library {
         let image_cache = self.image_cache.clone();
         let library = cx.weak_entity();
 
-        let scrollbar = list_scrollbar_state("library-scrollbar", &self.scroll_handle, window, cx);
-        self.scrollbar = Some(scrollbar.clone());
+        let scrollbar = self.scrollbar.clone();
         let scroll_handle = self.scroll_handle.clone();
+        let base_scroll = self.base_scroll();
         let sections = self.sections.clone();
 
         let is_focused = self.focus_handle.is_focused(window);
+        self.apply_pending_anchor(window, cx);
         self.track_pinned_letter(window, cx);
 
         let focused = is_focused && window.last_input_was_keyboard();
@@ -567,12 +618,9 @@ impl Render for Library {
             .text_color(theme.colors.accent)
             .child(container_query(move |size, window, _cx| {
                 let padding = px(GRID_PADDING.0 * window.rem_size().as_f32());
-                let content_height = {
-                    let list = scroll_handle.0.borrow();
-                    let viewport = list.base_handle.bounds().size.height;
-                    let max_offset = list.base_handle.max_offset().y;
-                    (viewport > Pixels::ZERO).then_some(max_offset + viewport)
-                };
+                let viewport = base_scroll.bounds().size.height;
+                let content_height =
+                    (viewport > Pixels::ZERO).then(|| base_scroll.max_offset().y + viewport);
                 let dims = GridDims::compute(
                     size.width - padding * 2.,
                     size.height,
@@ -586,12 +634,12 @@ impl Render for Library {
                         .and_then(|metrics| {
                             sections.label_for(metrics.first_touching_row() * dims.num_cols)
                         })
-                        .and_then(index_rail_position)
+                        .and_then(scrubber_position)
                 });
 
-                let index_rail = (!sections.is_empty()).then(|| {
+                let scrubber = (!sections.is_empty()).then(|| {
                     let library = library.clone();
-                    IndexRail::new()
+                    Scrubber::new()
                         .available(available_letters)
                         .current(current_letter)
                         .on_select(move |label, _, cx| {
@@ -602,7 +650,7 @@ impl Render for Library {
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .right(SCROLLBAR_WIDTH + INDEX_RAIL_GAP)
+                        .right(SCROLLBAR_WIDTH + SCRUBBER_GAP)
                 });
 
                 div()
@@ -639,7 +687,7 @@ impl Render for Library {
                         .with_decoration(ListScrollbar::new(scrollbar.clone()))
                         .size_full(),
                     )
-                    .children(index_rail)
+                    .children(scrubber)
             }))
     }
 }
