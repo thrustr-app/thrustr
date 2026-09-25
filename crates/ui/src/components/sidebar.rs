@@ -1,11 +1,11 @@
-use crate::{Icon, Size, WithSize};
+use crate::{Icon, Side, Size, Tooltip, WithSize};
 use core::panic;
 use gpui::{
     App, ElementId, FocusHandle, FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding,
     ParentElement, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
     StyleRefinement, Styled, Window, actions, div, prelude::FluentBuilder, relative, rems,
 };
-use std::rc::Rc;
+use std::{rc::Rc, time::Duration};
 use theme::ThemeExt;
 
 const CONTEXT: &str = "sidebar";
@@ -58,6 +58,7 @@ pub struct SidebarItem<T: SidebarValue> {
     id: ElementId,
     icon: Option<Icon>,
     label: Option<SharedString>,
+    tooltip: Option<SharedString>,
     value: Option<T>,
     context: Option<ItemContext<T>>,
 }
@@ -68,6 +69,7 @@ impl<T: SidebarValue> SidebarItem<T> {
             id: id.into(),
             icon: None,
             label: None,
+            tooltip: None,
             value: None,
             context: None,
         }
@@ -83,6 +85,11 @@ impl<T: SidebarValue> SidebarItem<T> {
         self
     }
 
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(tooltip.into());
+        self
+    }
+
     pub fn value(mut self, value: T) -> Self {
         self.value = Some(value);
         self
@@ -95,7 +102,7 @@ impl<T: SidebarValue> SidebarItem<T> {
 }
 
 impl<T: SidebarValue> RenderOnce for SidebarItem<T> {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let ItemContext {
             palette,
             focused,
@@ -116,7 +123,7 @@ impl<T: SidebarValue> RenderOnce for SidebarItem<T> {
         };
 
         let item = div()
-            .id(self.id)
+            .id(self.id.clone())
             .cursor_pointer()
             .flex()
             .items_center()
@@ -145,13 +152,20 @@ impl<T: SidebarValue> RenderOnce for SidebarItem<T> {
             })
             .when_some(self.label, |el, label| el.child(div().child(label)));
 
-        match (self.value, on_change) {
+        let item = match (self.value, on_change) {
             (Some(value), Some(on_change)) => item.on_click(move |_, window, cx| {
                 on_change(&value, window, cx);
                 refocus(&focus_handle, window, cx);
             }),
             _ => item,
-        }
+        };
+
+        item.when_some(self.tooltip, |item, tooltip| {
+            Tooltip::new(self.id, tooltip)
+                .side(Side::Right)
+                .delay(Duration::ZERO)
+                .attach(item, window, cx)
+        })
     }
 }
 

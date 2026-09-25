@@ -11,6 +11,7 @@ mod scrollbar;
 mod scrubber;
 mod sidebar;
 mod title_bar;
+mod tooltip;
 
 pub use alert::*;
 pub use button::*;
@@ -23,6 +24,7 @@ pub use scrollbar::*;
 pub use scrubber::*;
 pub use sidebar::{Sidebar, SidebarItem};
 pub use title_bar::*;
+pub use tooltip::*;
 
 pub fn init(cx: &mut App) {
     button::init(cx);

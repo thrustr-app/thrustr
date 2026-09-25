@@ -7,7 +7,15 @@ use gpui::{
 };
 use std::time::Duration;
 use theme::ThemeExt;
-use ui::{ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, TitleBar, client_side_decorations};
+use ui::{
+    ALL_CORNERS, ClientDecorations, CloseWindow, Sidebar, SidebarItem, TitleBar,
+    client_side_decorations,
+};
+
+fn sidebar_item(page: Page) -> SidebarItem<Page> {
+    let label = page.label();
+    nav_item(page).tooltip(label)
+}
 
 fn sidebar(window: &Window, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
@@ -41,10 +49,10 @@ fn sidebar(window: &Window, cx: &App) -> impl IntoElement {
                 .nav(cx.navigator().current_page())
                 .flex_grow_1()
                 .mb(rems(1.25))
-                .item(nav_item(Page::Home))
-                .item(nav_item(Page::Library))
-                .item(nav_item(Page::Collections))
-                .bottom_item(nav_item(Page::Settings(None))),
+                .item(sidebar_item(Page::Home))
+                .item(sidebar_item(Page::Library))
+                .item(sidebar_item(Page::Collections))
+                .bottom_item(sidebar_item(Page::Settings(None))),
         )
 }
 
