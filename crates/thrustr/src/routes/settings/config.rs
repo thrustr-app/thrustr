@@ -7,7 +7,7 @@ use crate::{
 };
 use component::{ComponentHandle, Operation, Permit};
 use domain::component::{
-    AuthFlow, ConfigSection, Element as ConfigElement, LoginForm, LoginMethod, LoginRequest, Status,
+    AuthFlow, ConfigSection, FormElement, LoginForm, LoginMethod, LoginRequest, Status, TextField,
 };
 use event::Topic;
 use gpui::{
@@ -560,10 +560,7 @@ struct LoginFormState {
 
 impl LoginFormState {
     pub fn new(login_form: LoginForm) -> Self {
-        let fields = flatten_fields(login_form.fields)
-            .into_iter()
-            .map(text_to_field)
-            .collect();
+        let fields = login_form.text_fields().map(Into::into).collect();
 
         Self {
             fields,
@@ -613,53 +610,34 @@ impl From<ConfigSection> for Section {
     fn from(section: ConfigSection) -> Self {
         Section {
             name: section.name.to_uppercase().into(),
-            elements: section.elements.into_iter().map(Into::into).collect(),
+            elements: section.elements.iter().map(Into::into).collect(),
         }
     }
 }
 
-impl From<ConfigElement> for Element {
-    fn from(element: ConfigElement) -> Self {
+impl From<&FormElement> for Element {
+    fn from(element: &FormElement) -> Self {
         match element {
-            text @ ConfigElement::Text { .. } => Element::Field(text_to_field(text)),
-            ConfigElement::Hbox { elements } => Element::Hbox(
-                flatten_fields(elements)
-                    .into_iter()
-                    .map(text_to_field)
-                    .collect(),
-            ),
+            FormElement::Text(field) => Element::Field(field.into()),
+            FormElement::Hbox { .. } => {
+                Element::Hbox(element.text_fields().map(Into::into).collect())
+            }
         }
     }
 }
 
-fn flatten_fields(elements: Vec<ConfigElement>) -> Vec<ConfigElement> {
-    elements
-        .into_iter()
-        .flat_map(|element| match element {
-            ConfigElement::Hbox { elements } => flatten_fields(elements),
-            text => vec![text],
-        })
-        .collect()
-}
-
-fn text_to_field(element: ConfigElement) -> Field {
-    match element {
-        ConfigElement::Text {
-            id,
-            label,
-            placeholder,
-            required,
-        } => Field {
-            id: id.into(),
-            label: if required {
-                format!("{label} *").into()
+impl From<&TextField> for Field {
+    fn from(field: &TextField) -> Self {
+        Field {
+            id: field.id.clone().into(),
+            label: if field.required {
+                format!("{} *", field.label).into()
             } else {
-                label.into()
+                field.label.clone().into()
             },
-            placeholder: placeholder.map(Into::into),
-            required,
-        },
-        ConfigElement::Hbox { .. } => unreachable!("flatten_fields removes Hbox"),
+            placeholder: field.placeholder.clone().map(Into::into),
+            required: field.required,
+        }
     }
 }
 

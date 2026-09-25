@@ -1,4 +1,4 @@
-use crate::component::Element;
+use crate::component::{FormElement, TextField, text_fields};
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -17,7 +17,13 @@ pub enum LoginMethod {
 #[derive(Deserialize, Debug, Clone)]
 pub struct LoginForm {
     #[serde(rename = "field")]
-    pub fields: Vec<Element>,
+    pub elements: Vec<FormElement>,
+}
+
+impl LoginForm {
+    pub fn text_fields(&self) -> impl Iterator<Item = &TextField> {
+        text_fields(&self.elements)
+    }
 }
 
 #[derive(Debug, Clone)]
