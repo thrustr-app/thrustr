@@ -1,6 +1,23 @@
 use crate::component::Error;
 use strum::Display;
 
+/*
+* flowchart TD
+    A["Inactive (disabled)"] -->|enable| B{Needs auth?}
+    B --> |yes| C["Inactive (unauthenticated)"]
+    B --> |no| D["Initializing"]
+    C --> |login| D
+    D --> E{Success?}
+    E --> |yes| F["Active (idle)"]
+    E --> |no| G["Inactive (error)"]
+    G --> |fix error| D
+
+    F --> |operation triggered| H["Active (operation)"]
+    H --> I{Unrecoverable error?}
+    I --> |yes| G
+    I --> |"no (report transient error if any)"| F
+*/
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum Status {
