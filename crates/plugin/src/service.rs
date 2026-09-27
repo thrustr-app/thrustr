@@ -70,12 +70,12 @@ impl PluginService {
         let plugin = self.manager.load_plugin(path.to_path_buf()).await?;
         event::emit(Topic::Plugin);
 
-        let component = self.component_registry.register(Arc::new(plugin))?;
+        let component = self.component_registry.register(Arc::new(plugin)).await?;
 
         component
-            .init()
+            .enable()
             .await
-            .map_err(|e| anyhow!("component {} cannot be initialized: {e}", component.id()))?;
+            .map_err(|e| anyhow!("component {}: {e}", component.id()))?;
 
         Ok(())
     }

@@ -68,7 +68,7 @@ impl Storefronts {
             .collect();
 
         storefronts.sort_by(|a, b| a.name.cmp(&b.name));
-        self.has_errors = storefronts.iter().any(|s| s.status.is_any_error());
+        self.has_errors = storefronts.iter().any(|s| s.status.error().is_some());
         self.storefronts = storefronts;
         cx.notify();
     }

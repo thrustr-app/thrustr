@@ -8,7 +8,7 @@ mod error;
 mod form;
 mod image;
 mod metadata;
-mod status;
+mod state;
 mod storage;
 
 pub use auth::*;
@@ -18,7 +18,7 @@ pub use error::*;
 pub use form::*;
 pub use image::*;
 pub use metadata::*;
-pub use status::*;
+pub use state::*;
 pub use storage::*;
 
 /// A component is a unit of functionality provided by the core application or by a plugin.

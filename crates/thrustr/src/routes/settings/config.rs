@@ -5,9 +5,10 @@ use crate::{
     globals::ComponentRegistryExt,
     navigation::NavigatorExt,
 };
-use component::{ComponentHandle, Operation, Permit};
+use component::{ComponentHandle, LoginPermit};
 use domain::component::{
-    AuthFlow, ConfigSection, FormElement, LoginForm, LoginMethod, LoginRequest, Status, TextField,
+    AuthFlow, ConfigSection, FormElement, LoginForm, LoginMethod, LoginRequest, Operation, Status,
+    TextField,
 };
 use event::Topic;
 use gpui::{
@@ -91,7 +92,7 @@ impl Config {
         let mut page = Self {
             name: metadata.name.into(),
             icon,
-            status_error: status.error_message().map(Into::into),
+            status_error: status_error(&status),
             status,
             component,
             sections,
@@ -108,7 +109,7 @@ impl Config {
 
     fn refresh_status(&mut self, cx: &mut Context<Self>) {
         let status = self.component.status();
-        self.status_error = status.error_message().map(Into::into);
+        self.status_error = status_error(&status);
         self.status = status;
         cx.notify();
     }
@@ -308,7 +309,6 @@ impl Config {
 
     fn render_header(&mut self, autofocus_back: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let has_login = self.login_method.is_some();
 
         div()
             .flex()
@@ -351,11 +351,11 @@ impl Config {
                         div.child(
                             Button::new("save")
                                 .when(
-                                    !self.component.can(Operation::Configure) || !self.is_valid(),
+                                    !self.component.can(Operation::Config) || !self.is_valid(),
                                     |btn| btn.disabled(),
                                 )
                                 .when(
-                                    self.component.is_running(Operation::Configure),
+                                    self.component.is_running(Operation::Config),
                                     Button::loading,
                                 )
                                 .size_md()
@@ -365,7 +365,7 @@ impl Config {
                                 .on_click(cx.listener(Self::on_save)),
                         )
                     })
-                    .when(has_login && self.status.can_login(), |div| {
+                    .when(self.component.allows(Operation::Login), |div| {
                         div.child(
                             Button::new("login")
                                 .when(!self.component.can(Operation::Login), |btn| btn.disabled())
@@ -377,8 +377,7 @@ impl Config {
                                 .on_click(cx.listener(Self::on_login)),
                         )
                     })
-                    // There must be a login method for a logout flow to exist, but a logout flow might not be required.
-                    .when(has_login && self.status.can_logout(), |div| {
+                    .when(self.component.allows(Operation::Logout), |div| {
                         div.child(
                             Button::new("logout")
                                 .when(!self.component.can(Operation::Logout), |btn| btn.disabled())
@@ -402,7 +401,7 @@ impl Config {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme();
-        let can_configure = self.component.can(Operation::Configure);
+        let can_configure = self.component.can(Operation::Config);
 
         let sections = self.sections.iter().map(|s| {
             let elements = s.elements.iter().map(|element| match element {
@@ -468,7 +467,7 @@ impl Config {
 
 fn submit_login_form(
     component: ComponentHandle,
-    permit: Permit,
+    permit: LoginPermit,
     fields: HashMap<String, String>,
     form_entity: Entity<LoginFormState>,
     window: &mut Window,
@@ -495,6 +494,10 @@ fn submit_login_form(
         });
     })
     .detach();
+}
+
+fn status_error(status: &Status) -> Option<SharedString> {
+    status.error().map(|error| error.to_string().into())
 }
 
 fn render_field(
@@ -529,7 +532,7 @@ impl Render for Config {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let autofocus_field = self
             .component
-            .can(Operation::Configure)
+            .can(Operation::Config)
             .then(|| {
                 self.sections.iter().find_map(|s| {
                     s.elements.iter().find_map(|e| match e {

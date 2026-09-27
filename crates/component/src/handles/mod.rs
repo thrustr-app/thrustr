@@ -1,7 +1,8 @@
 use self::error::Result;
-use crate::{RegistryContext, handles::permit::InFlight};
+use crate::RegistryContext;
 use domain::component::{
-    AuthFlow, Component, ComponentConfig, LoginMethod, LoginRequest, Metadata, Status, StatusEvent,
+    AuthFlow, Capabilities, Component, ComponentConfig, Error, Initialization, LoginMethod,
+    LoginRequest, Metadata, Operation, Outcome, Running, State, Status,
 };
 use event::Topic;
 use std::{
@@ -15,14 +16,9 @@ mod permit;
 mod storefront;
 
 pub use error::OperationError;
-pub use permit::{Operation, Permit};
-pub use storefront::{StorefrontHandle, StorefrontOperation};
-
-#[derive(Default)]
-struct State {
-    status: Status,
-    in_flight: InFlight,
-}
+use permit::Permit;
+pub use permit::{LoginPermit, LogoutPermit};
+pub use storefront::StorefrontHandle;
 
 #[derive(Clone)]
 pub struct ComponentHandle {
@@ -32,11 +28,15 @@ pub struct ComponentHandle {
 }
 
 impl ComponentHandle {
-    pub fn new(component: Arc<dyn Component>, context: RegistryContext) -> Self {
+    pub fn new(
+        component: Arc<dyn Component>,
+        context: RegistryContext,
+        capabilities: Capabilities,
+    ) -> Self {
         Self {
             component,
             context,
-            state: Arc::new(RwLock::new(State::default())),
+            state: Arc::new(RwLock::new(State::new(capabilities))),
         }
     }
 
@@ -49,7 +49,7 @@ impl ComponentHandle {
     }
 
     pub fn status(&self) -> Status {
-        self.state_read().status.clone()
+        self.state_read().status().clone()
     }
 
     pub fn config(&self) -> Option<ComponentConfig> {
@@ -70,10 +70,6 @@ impl ComponentHandle {
         Ok(self.component.logout_flow().await?)
     }
 
-    pub async fn validate_config(&self, fields: HashMap<String, String>) -> Result<()> {
-        Ok(self.component.validate_config(fields).await?)
-    }
-
     pub fn config_values(&self) -> Result<HashMap<String, String>> {
         Ok(self
             .context
@@ -81,29 +77,51 @@ impl ComponentHandle {
             .get_config_values(self.id())?)
     }
 
-    pub fn running(&self) -> Vec<Operation> {
-        self.state_read().in_flight.running()
-    }
-
-    pub fn is_running(&self, operation: Operation) -> bool {
-        self.state_read().in_flight.is_running(operation)
+    /// Whether the component supports `operation` and its status permits it,
+    /// ignoring what is already running.
+    pub fn allows(&self, operation: Operation) -> bool {
+        self.state_read().allows(operation)
     }
 
     /// Whether `operation` could be started right now.
     pub fn can(&self, operation: Operation) -> bool {
-        let state = self.state_read();
-        operation.allowed_by(&state.status) && state.in_flight.accepts(operation)
+        self.state_read().can(operation)
     }
 
-    pub async fn init(&self) -> Result<()> {
-        let mut permit = self.reserve(Operation::Init)?;
-        self.run_init(&mut permit).await
+    /// Whether a failed component could be reinitialized right now.
+    pub fn can_reinitialize(&self) -> bool {
+        self.state_read().can_reinitialize()
+    }
+
+    pub fn is_running(&self, operation: Operation) -> bool {
+        self.state_read().is_running(operation)
+    }
+
+    pub async fn enable(&self) -> Result<()> {
+        let outcome = self
+            .state_write()
+            .enable()
+            .map_err(OperationError::NotInitializable)?;
+        self.report(&outcome);
+        self.initialize(outcome.initialization).await
+    }
+
+    pub async fn reinitialize(&self) -> Result<()> {
+        let outcome = self
+            .state_write()
+            .reinitialize()
+            .map_err(OperationError::NotInitializable)?;
+        self.report(&outcome);
+        self.initialize(outcome.initialization).await
     }
 
     pub async fn save_config(&self, fields: HashMap<String, String>) -> Result<()> {
-        let mut permit = self.reserve(Operation::Configure)?;
+        let permit = Permit::begin(self, Operation::Config)?;
 
-        self.validate_config(fields.clone()).await?;
+        if let Err(error) = self.component.validate_config(fields.clone()).await {
+            permit.finish(Err(error.clone())).await?;
+            return Err(error.into());
+        }
         self.context
             .component_storage
             .set_config_values(self.id(), &fields)
@@ -113,163 +131,118 @@ impl ComponentHandle {
             })?;
 
         info!(component = self.id(), "configuration saved");
-
-        let status =
-            self.transition(StatusEvent::ConfigSaved)
-                .ok_or(OperationError::StatusChanged {
-                    operation: Operation::Configure,
-                })?;
-
-        self.init_if_ready(&mut permit, status).await
+        permit.finish(Ok(())).await
     }
 
     /// Reserves the component for an interactive login.
-    pub fn begin_login(&self) -> Result<Permit> {
-        self.reserve(Operation::Login)
+    pub fn begin_login(&self) -> Result<LoginPermit> {
+        Permit::begin(self, Operation::Login).map(LoginPermit)
     }
 
     /// Completes an interactive login and initializes the component if needed.
-    pub async fn login(&self, mut permit: Permit, request: LoginRequest) -> Result<()> {
-        permit.enter(Operation::Login)?;
-
-        Arc::clone(&self.component).login(request).await?;
-
-        let status =
-            self.transition(StatusEvent::LoggedIn)
-                .ok_or(OperationError::StatusChanged {
-                    operation: Operation::Login,
-                })?;
-
-        self.init_if_ready(&mut permit, status).await
+    pub async fn login(
+        &self,
+        LoginPermit(permit): LoginPermit,
+        request: LoginRequest,
+    ) -> Result<()> {
+        let result = Arc::clone(&self.component).login(request).await;
+        permit.finish(result.clone()).await?;
+        Ok(result?)
     }
 
     /// Reserves the component for an interactive logout.
-    pub fn begin_logout(&self) -> Result<Permit> {
-        self.reserve(Operation::Logout)
+    pub fn begin_logout(&self) -> Result<LogoutPermit> {
+        Permit::begin(self, Operation::Logout).map(LogoutPermit)
     }
 
     /// Completes an interactive logout.
-    pub async fn logout(&self, mut permit: Permit) -> Result<()> {
-        permit.enter(Operation::Logout)?;
-
-        Arc::clone(&self.component).logout().await?;
-
-        self.transition(StatusEvent::LoggedOut)
-            .ok_or(OperationError::StatusChanged {
-                operation: Operation::Logout,
-            })?;
-        Ok(())
+    pub async fn logout(&self, LogoutPermit(permit): LogoutPermit) -> Result<()> {
+        let result = Arc::clone(&self.component).logout().await;
+        permit.finish(result.clone()).await?;
+        Ok(result?)
     }
 
-    async fn run_init(&self, permit: &mut Permit) -> Result<()> {
-        permit.enter(Operation::Init)?;
+    async fn initialize(&self, initialization: Option<Initialization>) -> Result<()> {
+        let Some(initialization) = initialization else {
+            return Ok(());
+        };
 
-        self.transition(StatusEvent::InitStarted)
-            .ok_or_else(|| OperationError::NotAllowed {
-                operation: Operation::Init,
-                status: self.status(),
-            })?;
-
-        let result = Arc::clone(&self.component).init().await;
-        self.transition(match &result {
-            Ok(_) => StatusEvent::InitSucceeded,
-            Err(e) => StatusEvent::InitFailed(e.clone()),
-        });
+        let initializing = Initializing {
+            handle: self,
+            initialization: Some(initialization),
+        };
+        let result = self.component.init().await;
+        initializing.finish(result.clone());
         result?;
 
+        // Boxed because syncing finishes through `Permit::finish`, which awaits
+        // `initialize`. A sync never starts an initialization but the compiler
+        // can't know that.
         if let Some(storefront) = self.storefront()
-            && let Err(err) = storefront.sync_games(permit).await
+            && let Err(err) = Box::pin(storefront.sync_games()).await
         {
             warn!(component = self.id(), error = %err, "initial game sync failed");
         }
         Ok(())
     }
 
-    async fn init_if_ready(&self, permit: &mut Permit, status: Status) -> Result<()> {
-        if status.can_init() {
-            self.run_init(permit).await
-        } else {
-            Ok(())
-        }
-    }
-
-    fn reserve(&self, operation: Operation) -> Result<Permit> {
-        let outcome = {
-            let mut state = self.state_write();
-
-            if !operation.allowed_by(&state.status) {
-                Err(OperationError::NotAllowed {
-                    operation,
-                    status: state.status.clone(),
-                })
-            } else {
-                state
-                    .in_flight
-                    .acquire(operation)
-                    .map_err(|blocked_by| OperationError::Busy {
-                        operation,
-                        blocked_by,
-                    })
+    fn start(&self, operation: Operation) -> Result<Running> {
+        let started = self.state_write().start(operation);
+        let running = started.map_err(|rejection| {
+            debug!(component = self.id(), %operation, %rejection, "operation rejected");
+            OperationError::Rejected {
+                operation,
+                rejection,
             }
-        };
+        })?;
 
-        if let Err(err) = outcome {
-            debug!(component = self.id(), %operation, reason = %err, "reserve rejected");
-            return Err(err);
-        }
-
-        debug!(component = self.id(), %operation, "permit acquired");
+        debug!(component = self.id(), %operation, "operation started");
         event::emit(Topic::Component);
-        Ok(Permit::new(self.clone(), operation))
+        Ok(running)
     }
 
-    /// Applies `event` to the status, returning the new status. `None` if the
-    /// transition is not valid.
-    fn transition(&self, event: StatusEvent) -> Option<Status> {
-        let event_debug = format!("{event:?}");
+    fn cancel(&self, running: Running) {
+        let operation = running.operation();
+        self.state_write().cancel(running);
 
-        let (status, previous) = {
-            let mut state = self.state_write();
-            match state.status.apply(event) {
-                Some(next) => {
-                    let previous = std::mem::replace(&mut state.status, next);
-                    (state.status.clone(), Some(previous))
-                }
-                None => (state.status.clone(), None),
-            }
-        };
+        debug!(component = self.id(), %operation, "operation cancelled");
+        event::emit(Topic::Component);
+    }
 
-        let Some(previous) = previous else {
-            warn!(
-                component = self.id(),
-                %status,
-                event = event_debug,
-                "ignoring invalid status transition"
-            );
-            return None;
-        };
+    fn finish_initialization(
+        &self,
+        initialization: Initialization,
+        result: std::result::Result<(), Error>,
+    ) {
+        let outcome = self
+            .state_write()
+            .finish_initialization(initialization, result);
+        self.report(&outcome);
+    }
 
-        if previous != status {
-            if let Some(error) = status.error_message() {
-                warn!(
+    fn report(&self, outcome: &Outcome) {
+        if let Some((from, to)) = &outcome.change {
+            match to.error() {
+                Some(error) => warn!(
                     component = self.id(),
-                    from = %previous,
-                    to = %status,
-                    error,
-                    event = event_debug,
+                    %from,
+                    %to,
+                    %error,
                     "component entered error state"
-                );
-            } else {
-                info!(
+                ),
+                None => info!(
                     component = self.id(),
-                    from = %previous,
-                    to = %status,
+                    %from,
+                    %to,
                     "component status changed"
-                );
+                ),
             }
-            event::emit(Topic::Component);
         }
-        Some(status)
+        if let Some(error) = &outcome.transient_error {
+            warn!(component = self.id(), %error, "operation failed");
+        }
+
+        event::emit(Topic::Component);
     }
 
     fn state_read(&self) -> RwLockReadGuard<'_, State> {
@@ -282,5 +255,32 @@ impl ComponentHandle {
         self.state
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// Reports a running initialization as failed if dropped before it finishes,
+/// so the component is never left initializing.
+struct Initializing<'a> {
+    handle: &'a ComponentHandle,
+    initialization: Option<Initialization>,
+}
+
+impl Initializing<'_> {
+    fn finish(mut self, result: std::result::Result<(), Error>) {
+        let initialization = self
+            .initialization
+            .take()
+            .expect("initialization should be pending until finished");
+        self.handle.finish_initialization(initialization, result);
+    }
+}
+
+impl Drop for Initializing<'_> {
+    fn drop(&mut self) {
+        if let Some(initialization) = self.initialization.take() {
+            let error = Error::Other("initialization cancelled".into());
+            self.handle
+                .finish_initialization(initialization, Err(error));
+        }
     }
 }

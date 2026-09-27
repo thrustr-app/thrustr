@@ -1,34 +1,13 @@
-use super::error::{OperationError, Result};
-use crate::{ComponentHandle, Operation, Permit};
+use super::error::Result;
+use super::permit::Permit;
+use crate::ComponentHandle;
 use domain::{
-    component::{StatusEvent, Storefront},
+    component::{Storefront, StorefrontOperation},
     game::NewGame,
 };
 use event::Topic;
 use std::sync::Arc;
-use strum::Display;
 use tracing::{info, warn};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
-#[strum(serialize_all = "lowercase")]
-pub enum StorefrontOperation {
-    #[strum(to_string = "game sync")]
-    Sync,
-}
-
-impl StorefrontOperation {
-    pub(super) fn is_exclusive(self) -> bool {
-        match self {
-            Self::Sync => false,
-        }
-    }
-}
-
-impl From<StorefrontOperation> for Operation {
-    fn from(operation: StorefrontOperation) -> Self {
-        Self::Storefront(operation)
-    }
-}
 
 #[derive(Clone)]
 pub struct StorefrontHandle {
@@ -48,21 +27,23 @@ impl StorefrontHandle {
         &self.component
     }
 
-    pub(super) async fn sync_games(&self, permit: &mut Permit) -> Result<()> {
-        permit.enter(StorefrontOperation::Sync)?;
+    pub async fn sync_games(&self) -> Result<()> {
+        let permit = Permit::begin(&self.component, StorefrontOperation::Sync.into())?;
 
-        let new_games = self.storefront.list_games().await.map_err(|e| {
-            warn!(component = self.component.id(), error = %e, "listing games failed");
-            self.component
-                .transition(StatusEvent::OperationFailed(e.clone()));
-            OperationError::Component(e)
-        })?;
-
-        let listed = new_games.len();
-        let inserted = match new_games.is_empty() {
-            true => 0,
-            false => self.store_games(new_games).await?,
+        let games = match self.storefront.list_games().await {
+            Ok(games) => games,
+            Err(error) => {
+                permit.finish(Err(error.clone())).await?;
+                return Err(error.into());
+            }
         };
+
+        let listed = games.len();
+        let inserted = match games.is_empty() {
+            true => 0,
+            false => self.store_games(games).await?,
+        };
+        permit.finish(Ok(())).await?;
 
         info!(
             component = self.component.id(),

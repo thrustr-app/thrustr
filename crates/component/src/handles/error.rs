@@ -1,25 +1,18 @@
-use crate::Operation;
-use domain::component::Status;
+use domain::component::{Operation, Rejection};
 use thiserror::Error;
 
 pub(crate) type Result<T> = std::result::Result<T, OperationError>;
 
 #[derive(Debug, Error)]
 pub enum OperationError {
-    #[error("cannot start {operation} while the component is {status}")]
-    NotAllowed {
+    #[error("cannot start {operation}: {rejection}")]
+    Rejected {
         operation: Operation,
-        status: Status,
+        rejection: Rejection,
     },
 
-    #[error("cannot start {operation} while {blocked_by} is running")]
-    Busy {
-        operation: Operation,
-        blocked_by: Operation,
-    },
-
-    #[error("cannot record the result of the {operation}: the component changed state meanwhile")]
-    StatusChanged { operation: Operation },
+    #[error("cannot initialize: {0}")]
+    NotInitializable(Rejection),
 
     #[error(transparent)]
     Component(#[from] domain::component::Error),

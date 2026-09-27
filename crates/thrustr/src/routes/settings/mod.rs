@@ -3,7 +3,7 @@ use crate::{
     globals::ComponentRegistryExt,
     navigation::{NavNode, NavSidebar, Navigator, NavigatorExt, Page, SettingsPage, nav_item},
 };
-use domain::component::Status;
+use domain::component::{InactiveReason, Status};
 use gpui::{
     AnyView, App, AppContext, Context, EmptyView, IntoElement, ParentElement, Render, Styled,
     Window, div, rems,
@@ -42,10 +42,12 @@ fn settings_item(page: SettingsPage) -> SidebarItem<SettingsPage> {
 fn status_label(status: &Status) -> Label {
     match status {
         Status::Initializing => Label::new("INITIALIZING").variant_secondary(),
-        Status::Unauthenticated => Label::new("UNAUTHENTICATED").variant_warning(),
         Status::Active => Label::new("ACTIVE").variant_accent(),
-        Status::Inactive => Label::new("INACTIVE"),
-        Status::Error(_) | Status::InitError(_) => Label::new("ERROR").variant_danger(),
+        Status::Inactive(InactiveReason::Disabled) => Label::new("DISABLED"),
+        Status::Inactive(InactiveReason::Unauthenticated) => {
+            Label::new("UNAUTHENTICATED").variant_warning()
+        }
+        Status::Inactive(InactiveReason::Error(_)) => Label::new("ERROR").variant_danger(),
     }
 }
 

@@ -11,3 +11,9 @@ pub enum Error {
     #[error("error: {0}")]
     Other(String),
 }
+
+impl Error {
+    pub fn is_fatal(&self) -> bool {
+        matches!(self, Error::Auth(_) | Error::Config(_))
+    }
+}
