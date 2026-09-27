@@ -339,3 +339,474 @@ impl Operations {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LOGIN: Operation = Operation::Login;
+    const LOGOUT: Operation = Operation::Logout;
+    const CONFIG: Operation = Operation::Config;
+    const SYNC: Operation = Operation::Storefront(StorefrontOperation::Sync);
+    const OPERATIONS: [Operation; 4] = [LOGIN, LOGOUT, CONFIG, SYNC];
+
+    const ALL: Capabilities = Capabilities {
+        login: true,
+        config: true,
+        storefront: true,
+    };
+
+    fn auth() -> Error {
+        Error::Auth("expired".into())
+    }
+
+    fn config() -> Error {
+        Error::Config("bad path".into())
+    }
+
+    fn other() -> Error {
+        Error::Other("network".into())
+    }
+
+    fn errors() -> [Error; 3] {
+        [auth(), config(), other()]
+    }
+
+    fn disabled() -> Status {
+        Status::Inactive(InactiveReason::Disabled)
+    }
+
+    fn unauthenticated() -> Status {
+        Status::Inactive(InactiveReason::Unauthenticated)
+    }
+
+    fn failed(error: Error) -> Status {
+        Status::Inactive(InactiveReason::Error(error))
+    }
+
+    #[track_caller]
+    fn state_at(capabilities: Capabilities, status: &Status, running: &[Operation]) -> State {
+        let mut state = State::new(capabilities);
+        match status {
+            Status::Inactive(InactiveReason::Disabled) => {}
+            Status::Initializing => {
+                let _ = state
+                    .enable()
+                    .expect("a disabled component should be enabled");
+            }
+            Status::Active => initialize(&mut state, Ok(())),
+            Status::Inactive(InactiveReason::Error(error)) => {
+                initialize(&mut state, Err(error.clone()))
+            }
+            Status::Inactive(InactiveReason::Unauthenticated) => {
+                initialize(&mut state, Ok(()));
+                let logout = state
+                    .start(LOGOUT)
+                    .expect("an active component should log out");
+                let _ = state.finish(logout, Ok(()));
+            }
+        }
+        assert_eq!(state.status(), status, "harness should reach the status");
+
+        for &operation in running {
+            let _ = state
+                .start(operation)
+                .unwrap_or_else(|rejection| panic!("{operation} should start: {rejection}"));
+        }
+        state
+    }
+
+    #[track_caller]
+    fn initialize(state: &mut State, result: Result<(), Error>) {
+        let initialization = state
+            .enable()
+            .expect("a disabled component should be enabled")
+            .initialization
+            .expect("enabling should start an initialization");
+        let _ = state.finish_initialization(initialization, result);
+    }
+
+    #[track_caller]
+    fn check_allows(status: Status, expected: &[Operation]) {
+        let state = state_at(ALL, &status, &[]);
+        for operation in OPERATIONS {
+            let allowed = expected.contains(&operation);
+            assert_eq!(
+                state.allows(operation),
+                allowed,
+                "{operation} while {status}"
+            );
+            assert_eq!(
+                state.can(operation),
+                allowed,
+                "{operation} while idle and {status}"
+            );
+        }
+    }
+
+    #[track_caller]
+    fn check_start(
+        capabilities: Capabilities,
+        status: Status,
+        running: &[Operation],
+        operation: Operation,
+        expected: Result<(), Rejection>,
+    ) {
+        let mut state = state_at(capabilities, &status, running);
+        assert_eq!(state.can(operation), expected.is_ok(), "can {operation}");
+        assert_eq!(state.start(operation).map(|_| ()), expected);
+    }
+
+    #[track_caller]
+    fn check_finish(
+        status: Status,
+        operation: Operation,
+        result: Result<(), Error>,
+        expected: Status,
+    ) {
+        let mut state = state_at(ALL, &status, &[]);
+        let running = state
+            .start(operation)
+            .unwrap_or_else(|rejection| panic!("{operation} should start: {rejection}"));
+        let error = result.clone().err();
+        let outcome = state.finish(running, result);
+
+        assert_eq!(state.status(), &expected);
+        assert!(
+            !state.is_running(operation),
+            "{operation} should have finished"
+        );
+        assert_eq!(
+            outcome.initialization.is_some(),
+            expected.is_initializing(),
+            "whether an initialization started"
+        );
+
+        let changed = status != expected;
+        assert_eq!(outcome.transient_error, if changed { None } else { error });
+        assert_eq!(outcome.change, changed.then_some((status, expected)));
+    }
+
+    #[track_caller]
+    fn check_enable(status: Status, running: &[Operation], expected: Result<(), Rejection>) {
+        let mut state = state_at(ALL, &status, running);
+        let outcome = state.enable();
+        check_initialization_started(&state, status, outcome, expected);
+    }
+
+    #[track_caller]
+    fn check_reinitialize(status: Status, running: &[Operation], expected: Result<(), Rejection>) {
+        let mut state = state_at(ALL, &status, running);
+        assert_eq!(
+            state.can_reinitialize(),
+            expected.is_ok(),
+            "can reinitialize"
+        );
+        let outcome = state.reinitialize();
+        check_initialization_started(&state, status, outcome, expected);
+    }
+
+    #[track_caller]
+    fn check_initialization_started(
+        state: &State,
+        before: Status,
+        outcome: Result<Outcome, Rejection>,
+        expected: Result<(), Rejection>,
+    ) {
+        match (outcome, expected) {
+            (Ok(outcome), Ok(())) => {
+                assert!(
+                    outcome.initialization.is_some(),
+                    "initialization should start"
+                );
+                assert_eq!(outcome.change, Some((before, Status::Initializing)));
+                assert_eq!(state.status(), &Status::Initializing);
+            }
+            (outcome, expected) => {
+                assert_eq!(outcome.map(|_| ()), expected);
+                assert_eq!(state.status(), &before);
+            }
+        }
+    }
+
+    #[test]
+    fn status_determines_allowed_operations() {
+        check_allows(disabled(), &[CONFIG]);
+        check_allows(Status::Initializing, &[]);
+        check_allows(Status::Active, &[LOGOUT, CONFIG, SYNC]);
+        check_allows(unauthenticated(), &[LOGIN, CONFIG]);
+        check_allows(failed(auth()), &[LOGIN, LOGOUT, CONFIG]);
+        check_allows(failed(config()), &[LOGOUT, CONFIG]);
+        check_allows(failed(other()), &[LOGOUT]);
+    }
+
+    #[test]
+    fn unsupported_operations_are_rejected() {
+        let no_login = Capabilities {
+            login: false,
+            ..ALL
+        };
+        let no_config = Capabilities {
+            config: false,
+            ..ALL
+        };
+        let no_storefront = Capabilities {
+            storefront: false,
+            ..ALL
+        };
+
+        check_start(
+            no_login,
+            failed(auth()),
+            &[],
+            LOGIN,
+            Err(Rejection::Unsupported(LOGIN)),
+        );
+        check_start(
+            no_login,
+            Status::Active,
+            &[],
+            LOGOUT,
+            Err(Rejection::Unsupported(LOGOUT)),
+        );
+        check_start(
+            no_config,
+            Status::Active,
+            &[],
+            CONFIG,
+            Err(Rejection::Unsupported(CONFIG)),
+        );
+        check_start(
+            no_storefront,
+            Status::Active,
+            &[],
+            SYNC,
+            Err(Rejection::Unsupported(SYNC)),
+        );
+        check_start(
+            no_storefront,
+            disabled(),
+            &[],
+            SYNC,
+            Err(Rejection::Unsupported(SYNC)),
+        );
+    }
+
+    #[test]
+    fn status_forbids_some_operations() {
+        check_start(
+            ALL,
+            disabled(),
+            &[],
+            SYNC,
+            Err(Rejection::NotAllowed(disabled())),
+        );
+        check_start(
+            ALL,
+            Status::Initializing,
+            &[],
+            CONFIG,
+            Err(Rejection::NotAllowed(Status::Initializing)),
+        );
+    }
+
+    #[test]
+    fn exclusive_operations_run_alone() {
+        check_start(
+            ALL,
+            unauthenticated(),
+            &[LOGIN],
+            CONFIG,
+            Err(Rejection::Busy(LOGIN)),
+        );
+        for operation in [LOGOUT, CONFIG, SYNC] {
+            check_start(
+                ALL,
+                Status::Active,
+                &[LOGOUT],
+                operation,
+                Err(Rejection::Busy(LOGOUT)),
+            );
+        }
+    }
+
+    #[test]
+    fn shared_operations_block_exclusives() {
+        check_start(
+            ALL,
+            unauthenticated(),
+            &[CONFIG],
+            LOGIN,
+            Err(Rejection::Busy(CONFIG)),
+        );
+        check_start(
+            ALL,
+            Status::Active,
+            &[SYNC],
+            LOGOUT,
+            Err(Rejection::Busy(SYNC)),
+        );
+    }
+
+    #[test]
+    fn different_shared_operations_run_concurrently() {
+        check_start(ALL, Status::Active, &[CONFIG], SYNC, Ok(()));
+        check_start(ALL, Status::Active, &[SYNC], CONFIG, Ok(()));
+    }
+
+    #[test]
+    fn a_shared_operation_never_runs_twice() {
+        check_start(
+            ALL,
+            Status::Active,
+            &[SYNC],
+            SYNC,
+            Err(Rejection::Busy(SYNC)),
+        );
+        check_start(
+            ALL,
+            Status::Active,
+            &[CONFIG],
+            CONFIG,
+            Err(Rejection::Busy(CONFIG)),
+        );
+        check_start(
+            ALL,
+            Status::Active,
+            &[CONFIG, SYNC],
+            SYNC,
+            Err(Rejection::Busy(SYNC)),
+        );
+    }
+
+    #[test]
+    fn cancelling_does_not_change_status() {
+        let mut state = state_at(ALL, &Status::Active, &[]);
+        let config = state.start(CONFIG).expect("config should start");
+        let sync = state.start(SYNC).expect("sync should start");
+
+        state.cancel(config);
+        assert_eq!(state.start(LOGOUT).map(|_| ()), Err(Rejection::Busy(SYNC)));
+
+        state.cancel(sync);
+        assert!(!state.is_running(SYNC), "sync should no longer be running");
+        assert!(state.can(LOGOUT), "logout should be possible once idle");
+        assert_eq!(state.status(), &Status::Active);
+    }
+
+    #[test]
+    fn logging_in_starts_init() {
+        for status in [unauthenticated(), failed(auth())] {
+            check_finish(status, LOGIN, Ok(()), Status::Initializing);
+        }
+    }
+
+    #[test]
+    fn a_failed_login_keeps_the_status() {
+        for error in errors() {
+            check_finish(
+                unauthenticated(),
+                LOGIN,
+                Err(error.clone()),
+                unauthenticated(),
+            );
+            check_finish(failed(auth()), LOGIN, Err(error), failed(auth()));
+        }
+    }
+
+    #[test]
+    fn logging_out_leaves_the_component_unauthenticated() {
+        for status in [
+            Status::Active,
+            failed(auth()),
+            failed(config()),
+            failed(other()),
+        ] {
+            check_finish(status, LOGOUT, Ok(()), unauthenticated());
+        }
+    }
+
+    #[test]
+    fn a_failed_logout_keeps_the_status() {
+        for error in errors() {
+            check_finish(Status::Active, LOGOUT, Err(error.clone()), Status::Active);
+            check_finish(failed(other()), LOGOUT, Err(error), failed(other()));
+        }
+    }
+
+    #[test]
+    fn saving_config_reinitializes_a_misconfigured_component() {
+        check_finish(failed(config()), CONFIG, Ok(()), Status::Initializing);
+    }
+
+    #[test]
+    fn saving_config_otherwise_keeps_the_status() {
+        for status in [
+            disabled(),
+            unauthenticated(),
+            failed(auth()),
+            Status::Active,
+        ] {
+            check_finish(status.clone(), CONFIG, Ok(()), status);
+        }
+    }
+
+    #[test]
+    fn a_rejected_config_keeps_the_status() {
+        for status in [Status::Active, failed(config())] {
+            check_finish(status.clone(), CONFIG, Err(config()), status);
+        }
+    }
+
+    #[test]
+    fn auth_or_config_errors_deactivate_the_component() {
+        for error in [auth(), config()] {
+            check_finish(Status::Active, SYNC, Err(error.clone()), failed(error));
+        }
+    }
+
+    #[test]
+    fn other_results_keep_the_component_active() {
+        check_finish(Status::Active, SYNC, Ok(()), Status::Active);
+        check_finish(Status::Active, SYNC, Err(other()), Status::Active);
+    }
+
+    #[test]
+    fn enabling_initializes_a_disabled_component() {
+        check_enable(disabled(), &[], Ok(()));
+    }
+
+    #[test]
+    fn only_an_idle_disabled_component_can_be_enabled() {
+        for status in [
+            Status::Initializing,
+            Status::Active,
+            unauthenticated(),
+            failed(other()),
+        ] {
+            check_enable(status.clone(), &[], Err(Rejection::NotAllowed(status)));
+        }
+        check_enable(disabled(), &[CONFIG], Err(Rejection::Busy(CONFIG)));
+    }
+
+    #[test]
+    fn a_failed_component_can_be_reinitialized() {
+        for error in errors() {
+            check_reinitialize(failed(error), &[], Ok(()));
+        }
+    }
+
+    #[test]
+    fn only_an_idle_failed_component_can_be_reinitialized() {
+        for status in [
+            disabled(),
+            Status::Initializing,
+            Status::Active,
+            unauthenticated(),
+        ] {
+            check_reinitialize(status.clone(), &[], Err(Rejection::NotAllowed(status)));
+        }
+        check_reinitialize(failed(config()), &[CONFIG], Err(Rejection::Busy(CONFIG)));
+        check_reinitialize(failed(auth()), &[LOGIN], Err(Rejection::Busy(LOGIN)));
+    }
+}

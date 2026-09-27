@@ -7,8 +7,8 @@ use crate::{
 };
 use component::{ComponentHandle, LoginPermit};
 use domain::component::{
-    AuthFlow, ConfigSection, FormElement, LoginForm, LoginMethod, LoginRequest, Operation, Status,
-    TextField,
+    AuthFlow, ComponentConfig, ConfigSection, FormElement, LoginForm, LoginMethod, LoginRequest,
+    MissingFieldError, Operation, Status, TextField,
 };
 use event::Topic;
 use gpui::{
@@ -36,15 +36,6 @@ enum Element {
     Hbox(Vec<Field>),
 }
 
-impl Element {
-    fn fields(&self) -> &[Field] {
-        match self {
-            Element::Field(field) => std::slice::from_ref(field),
-            Element::Hbox(fields) => fields,
-        }
-    }
-}
-
 struct Section {
     name: SharedString,
     elements: Vec<Element>,
@@ -54,6 +45,7 @@ pub struct Config {
     name: SharedString,
     icon: Option<Arc<Image>>,
     component: ComponentHandle,
+    config: Option<ComponentConfig>,
     sections: Vec<Section>,
     values: HashMap<SharedString, SharedString>,
     status: Status,
@@ -81,10 +73,12 @@ impl Config {
             }
         };
 
-        let sections = component
-            .config()
-            .map(|c| c.sections.into_iter().map(Into::into).collect())
-            .unwrap_or_default();
+        let config = component.config();
+        let sections = config
+            .iter()
+            .flat_map(|c| &c.sections)
+            .map(Into::into)
+            .collect();
 
         let _tasks = vec![cx.listen(Topic::Component, Self::refresh_status)];
 
@@ -95,6 +89,7 @@ impl Config {
             status_error: status_error(&status),
             status,
             component,
+            config,
             sections,
             values,
             local_error,
@@ -132,11 +127,14 @@ impl Config {
     }
 
     fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let fields = self
-            .values
-            .iter()
-            .map(|(id, value)| (id.to_string(), value.to_string()))
-            .collect();
+        let fields = match self.validated_values() {
+            Ok(fields) => fields,
+            Err(err) => {
+                self.local_error = Some(err.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
 
         let component = self.component.clone();
         cx.spawn_and_update(
@@ -299,12 +297,19 @@ impl Config {
     }
 
     fn is_valid(&self) -> bool {
-        let fields = self
-            .sections
+        self.validated_values().is_ok()
+    }
+
+    fn validated_values(&self) -> Result<HashMap<String, String>, MissingFieldError> {
+        let mut values = self
+            .values
             .iter()
-            .flat_map(|s| &s.elements)
-            .flat_map(Element::fields);
-        fields_valid(fields, &self.values)
+            .map(|(id, value)| (id.to_string(), value.to_string()))
+            .collect();
+        if let Some(config) = &self.config {
+            config.validate(&mut values)?;
+        }
+        Ok(values)
     }
 
     fn render_header(&mut self, autofocus_back: bool, cx: &mut Context<Self>) -> impl IntoElement {
@@ -609,8 +614,8 @@ impl Render for LoginFormState {
     }
 }
 
-impl From<ConfigSection> for Section {
-    fn from(section: ConfigSection) -> Self {
+impl From<&ConfigSection> for Section {
+    fn from(section: &ConfigSection) -> Self {
         Section {
             name: section.name.to_uppercase().into(),
             elements: section.elements.iter().map(Into::into).collect(),
