@@ -1,4 +1,4 @@
-mod config;
+mod config_store;
 mod http;
 mod kv_store;
 

@@ -1,4 +1,4 @@
-use crate::component::{Error, StorefrontOperation};
+use crate::component::{AuthOperation, ConfigOperation, Error, StorefrontOperation};
 use strum::Display;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,9 +80,11 @@ impl State {
 
     pub fn finish(&mut self, running: Running, result: Result<(), Error>) -> Outcome {
         let next = match (self.release(running), result) {
-            (Operation::Login, Ok(())) => Status::Initializing,
-            (Operation::Logout, Ok(())) => Status::Inactive(InactiveReason::Unauthenticated),
-            (Operation::Config, Ok(()))
+            (Operation::Auth(AuthOperation::Login), Ok(())) => Status::Initializing,
+            (Operation::Auth(AuthOperation::Logout), Ok(())) => {
+                Status::Inactive(InactiveReason::Unauthenticated)
+            }
+            (Operation::Config(ConfigOperation::Save), Ok(()))
                 if matches!(
                     self.status,
                     Status::Inactive(InactiveReason::Error(Error::Config(_)))
@@ -160,7 +162,7 @@ impl State {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Capabilities {
-    pub login: bool,
+    pub auth: bool,
     pub config: bool,
     pub storefront: bool,
 }
@@ -168,8 +170,8 @@ pub struct Capabilities {
 impl Capabilities {
     fn supports(self, operation: Operation) -> bool {
         match operation {
-            Operation::Login | Operation::Logout => self.login,
-            Operation::Config => self.config,
+            Operation::Auth(_) => self.auth,
+            Operation::Config(_) => self.config,
             Operation::Storefront(_) => self.storefront,
         }
     }
@@ -253,17 +255,17 @@ impl Status {
 
     fn allows(&self, operation: Operation) -> bool {
         match operation {
-            Operation::Login => matches!(
+            Operation::Auth(AuthOperation::Login) => matches!(
                 self,
                 Self::Inactive(
                     InactiveReason::Unauthenticated | InactiveReason::Error(Error::Auth(_))
                 )
             ),
-            Operation::Logout => matches!(
+            Operation::Auth(AuthOperation::Logout) => matches!(
                 self,
                 Self::Active | Self::Inactive(InactiveReason::Error(_))
             ),
-            Operation::Config => matches!(
+            Operation::Config(ConfigOperation::Save) => matches!(
                 self,
                 Self::Active
                     | Self::Inactive(
@@ -286,9 +288,10 @@ impl Default for Status {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum Operation {
-    Login,
-    Logout,
-    Config,
+    #[strum(to_string = "{0}")]
+    Auth(AuthOperation),
+    #[strum(to_string = "{0}")]
+    Config(ConfigOperation),
     #[strum(to_string = "{0}")]
     Storefront(StorefrontOperation),
 }
@@ -296,8 +299,8 @@ pub enum Operation {
 impl Operation {
     fn is_exclusive(self) -> bool {
         match self {
-            Self::Login | Self::Logout => true,
-            Self::Config | Self::Storefront(_) => false,
+            Self::Auth(_) => true,
+            Self::Config(_) | Self::Storefront(_) => false,
         }
     }
 }
@@ -344,14 +347,14 @@ impl Operations {
 mod tests {
     use super::*;
 
-    const LOGIN: Operation = Operation::Login;
-    const LOGOUT: Operation = Operation::Logout;
-    const CONFIG: Operation = Operation::Config;
+    const LOGIN: Operation = Operation::Auth(AuthOperation::Login);
+    const LOGOUT: Operation = Operation::Auth(AuthOperation::Logout);
+    const CONFIG: Operation = Operation::Config(ConfigOperation::Save);
     const SYNC: Operation = Operation::Storefront(StorefrontOperation::Sync);
     const OPERATIONS: [Operation; 4] = [LOGIN, LOGOUT, CONFIG, SYNC];
 
     const ALL: Capabilities = Capabilities {
-        login: true,
+        auth: true,
         config: true,
         storefront: true,
     };
@@ -542,10 +545,7 @@ mod tests {
 
     #[test]
     fn unsupported_operations_are_rejected() {
-        let no_login = Capabilities {
-            login: false,
-            ..ALL
-        };
+        let no_auth = Capabilities { auth: false, ..ALL };
         let no_config = Capabilities {
             config: false,
             ..ALL
@@ -556,14 +556,14 @@ mod tests {
         };
 
         check_start(
-            no_login,
+            no_auth,
             failed(auth()),
             &[],
             LOGIN,
             Err(Rejection::Unsupported(LOGIN)),
         );
         check_start(
-            no_login,
+            no_auth,
             Status::Active,
             &[],
             LOGOUT,

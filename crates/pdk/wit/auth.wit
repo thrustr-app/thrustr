@@ -1,0 +1,33 @@
+package thrustr:plugin@0.1.0;
+
+interface auth {
+    use types.{error};
+
+    record auth-flow {
+        url: string,
+        target: string,
+    }
+
+    record login-flow {
+        url: string,
+        body: string,
+    }
+
+    record login-form {
+        fields: map<string, string>,
+    }
+
+    variant login-request {
+        flow(login-flow),
+        form(login-form),
+    }
+
+    get-login-flow: async func() -> result<option<auth-flow>, error>;
+    get-logout-flow: async func() -> result<option<auth-flow>, error>;
+    login: async func(request: login-request) -> result<_, error>;
+    logout: async func() -> result<_, error>;
+}
+
+world auth-capability {
+    export auth;
+}

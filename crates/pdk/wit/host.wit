@@ -1,0 +1,8 @@
+package thrustr:plugin@0.1.0;
+
+world plugin-host {
+    include plugin;
+    include auth-capability;
+    include config-capability;
+    include storefront-capability;
+}

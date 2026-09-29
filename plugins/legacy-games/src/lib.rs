@@ -1,8 +1,7 @@
 use crate::api::{fetch_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use pdk::{
-    Error, Game, GameVersion, LoginRequest, Platform, Plugin, Storefront, kv_store::KvStore,
-    register_storefront,
+    Auth, Error, Game, GameVersion, LoginRequest, Platform, Plugin, Storefront, kv_store::KvStore,
 };
 
 mod api;
@@ -11,6 +10,7 @@ mod mapper;
 
 pub struct LegacyGames;
 
+#[pdk::export]
 impl Plugin for LegacyGames {
     async fn init() -> Result<(), Error> {
         let email: String = KvStore::get("email")?.ok_or(Error::auth("not logged in"))?;
@@ -25,7 +25,10 @@ impl Plugin for LegacyGames {
 
         Ok(())
     }
+}
 
+#[pdk::export]
+impl Auth for LegacyGames {
     async fn login(request: LoginRequest) -> Result<(), Error> {
         if let LoginRequest::Form(form) = request {
             let email = form
@@ -60,6 +63,7 @@ impl Plugin for LegacyGames {
     }
 }
 
+#[pdk::export]
 impl Storefront for LegacyGames {
     async fn list_games() -> Result<Vec<Game>, Error> {
         let email: String = KvStore::get("email")?.ok_or(Error::auth("not logged in"))?;
@@ -83,5 +87,3 @@ impl Storefront for LegacyGames {
         }])
     }
 }
-
-register_storefront!(LegacyGames);

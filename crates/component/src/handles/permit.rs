@@ -13,8 +13,8 @@ pub(super) struct Permit {
 }
 
 impl Permit {
-    pub(super) fn begin(handle: &ComponentHandle, operation: Operation) -> Result<Self> {
-        let running = handle.start(operation)?;
+    pub(super) fn begin(handle: &ComponentHandle, operation: impl Into<Operation>) -> Result<Self> {
+        let running = handle.start(operation.into())?;
         Ok(Self {
             handle: handle.clone(),
             running: Some(running),
@@ -41,6 +41,3 @@ impl Drop for Permit {
         }
     }
 }
-
-pub struct LoginPermit(pub(super) Permit);
-pub struct LogoutPermit(pub(super) Permit);

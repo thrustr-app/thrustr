@@ -1,4 +1,4 @@
-use domain::component::{Operation, Rejection};
+use domain::component::{MissingFieldError, Operation, Rejection};
 use thiserror::Error;
 
 pub(crate) type Result<T> = std::result::Result<T, OperationError>;
@@ -13,6 +13,9 @@ pub enum OperationError {
 
     #[error("cannot initialize: {0}")]
     NotInitializable(Rejection),
+
+    #[error(transparent)]
+    InvalidConfig(#[from] MissingFieldError),
 
     #[error(transparent)]
     Component(#[from] domain::component::Error),

@@ -1,5 +1,32 @@
-use crate::wit::thrustr::plugin::kv_store::Error;
+use crate::wit::plugin::thrustr::plugin::kv_store::{Error, delete, get, list, set};
 use std::borrow::Cow;
+
+pub struct KvStore;
+
+impl KvStore {
+    pub fn get<T: KvValue>(key: &str) -> Result<Option<T>, Error> {
+        get(key)?.map(T::from_bytes).transpose()
+    }
+
+    pub fn get_or<T: KvValue>(key: &str, default: T) -> Result<T, Error> {
+        get(key)?
+            .map(T::from_bytes)
+            .transpose()
+            .map(|o| o.unwrap_or(default))
+    }
+
+    pub fn set<T: KvValue>(key: &str, value: &T) -> Result<(), Error> {
+        set(key, &value.as_bytes())
+    }
+
+    pub fn list(prefix: Option<&str>) -> Result<Vec<String>, Error> {
+        list(prefix)
+    }
+
+    pub fn delete(key: &str) -> Result<(), Error> {
+        delete(key)
+    }
+}
 
 pub trait KvValue: Sized {
     fn as_bytes(&self) -> Cow<'_, [u8]>;
@@ -10,6 +37,7 @@ impl KvValue for Vec<u8> {
     fn as_bytes(&self) -> Cow<'_, [u8]> {
         Cow::Borrowed(self)
     }
+
     fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
         Ok(bytes)
     }
@@ -29,6 +57,7 @@ impl KvValue for bool {
     fn as_bytes(&self) -> Cow<'_, [u8]> {
         Cow::Owned(vec![*self as u8])
     }
+
     fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
         match bytes.as_slice() {
             [0] => Ok(false),
@@ -42,7 +71,10 @@ macro_rules! impl_kv_number {
     ($($t:ty),*) => {
         $(
             impl KvValue for $t {
-                fn as_bytes(&self) -> Cow<'_, [u8]> { Cow::Owned(self.to_le_bytes().to_vec()) }
+                fn as_bytes(&self) -> Cow<'_, [u8]> {
+                    Cow::Owned(self.to_le_bytes().to_vec())
+                }
+
                 fn from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
                     bytes.try_into()
                         .map(<$t>::from_le_bytes)

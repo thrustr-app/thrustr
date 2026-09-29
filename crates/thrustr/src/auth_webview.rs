@@ -1,42 +1,34 @@
+use anyhow::{Context, Result};
+use domain::component::AuthFlow;
+use smol::unblock;
 use std::process::{Command, Stdio};
 
-pub enum WebviewError {
-    Internal(String),
-    UserCancelled,
+// TODO: tell apart user cancellation/window close from helper errors.
+pub async fn open_auth_webview(flow: AuthFlow) -> Result<Option<(String, String)>> {
+    unblock(move || run_helper(&flow.url, &flow.target)).await
 }
 
-pub fn open_auth_webview(url: &str, target: &str) -> Result<(String, String), WebviewError> {
-    let helper = std::env::current_exe()
-        .map_err(|e| WebviewError::Internal(e.to_string()))?
+fn run_helper(url: &str, target: &str) -> Result<Option<(String, String)>> {
+    let helper = std::env::current_exe()?
         .parent()
-        .ok_or(WebviewError::Internal(
-            "failed to find parent directory".into(),
-        ))?
+        .context("failed to find parent directory")?
         .join("webview-helper");
 
     let output = Command::new(helper)
         .arg(url)
         .arg(target)
         .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| WebviewError::Internal(e.to_string()))?
-        .wait_with_output()
-        .map_err(|e| WebviewError::Internal(e.to_string()))?;
+        .spawn()?
+        .wait_with_output()?;
 
-    if output.status.success() {
-        let result =
-            String::from_utf8(output.stdout).map_err(|e| WebviewError::Internal(e.to_string()))?;
-        let parsed: serde_json::Value = serde_json::from_str(result.trim())
-            .map_err(|e| WebviewError::Internal(e.to_string()))?;
-        let url = parsed["url"]
-            .as_str()
-            .ok_or(WebviewError::Internal("could not find url".into()))?;
-        let body = parsed["body"]
-            .as_str()
-            .ok_or(WebviewError::Internal("could not find body".into()))?;
-
-        Ok((url.to_string(), body.to_string()))
-    } else {
-        Err(WebviewError::UserCancelled)
+    if !output.status.success() {
+        return Ok(None);
     }
+
+    let result = String::from_utf8(output.stdout)?;
+    let parsed: serde_json::Value = serde_json::from_str(result.trim())?;
+    let url = parsed["url"].as_str().context("could not find url")?;
+    let body = parsed["body"].as_str().context("could not find body")?;
+
+    Ok(Some((url.to_string(), body.to_string())))
 }

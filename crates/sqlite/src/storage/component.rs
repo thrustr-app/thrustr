@@ -95,19 +95,14 @@ impl ComponentStorage for SqliteStorage {
             .collect())
     }
 
-    fn set_config_value(&self, component_id: &str, field_id: &str, value: &str) -> Result<()> {
-        let mut conn = self.conn()?;
-        upsert_config_value(&mut conn, component_id, field_id, value)?;
-
-        Ok(())
-    }
-
     fn set_config_values(
         &self,
         component_id: &str,
         fields: &HashMap<String, String>,
     ) -> Result<()> {
         let mut conn = self.conn()?;
+        // TODO: this should probably delete the whole config first
+        // so old fields are not kept around.
         conn.transaction(|conn| {
             for (field_id, value) in fields {
                 upsert_config_value(conn, component_id, field_id, value)?;

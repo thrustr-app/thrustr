@@ -16,7 +16,7 @@ pub struct StorefrontHandle {
 }
 
 impl StorefrontHandle {
-    pub fn new(storefront: Arc<dyn Storefront>, component: ComponentHandle) -> Self {
+    pub(crate) fn new(storefront: Arc<dyn Storefront>, component: ComponentHandle) -> Self {
         Self {
             storefront,
             component,
@@ -28,7 +28,7 @@ impl StorefrontHandle {
     }
 
     pub async fn sync_games(&self) -> Result<()> {
-        let permit = Permit::begin(&self.component, StorefrontOperation::Sync.into())?;
+        let permit = Permit::begin(&self.component, StorefrontOperation::Sync)?;
 
         let games = match self.storefront.list_games().await {
             Ok(games) => games,
@@ -70,10 +70,9 @@ impl StorefrontHandle {
             .spawn_blocking(move || repository.insert_many(&games))
             .await
             .map_err(anyhow::Error::from)?
-            .map_err(|err| {
-                warn!(component = self.component.id(), error = %err, "storing games failed");
-                err
-            })?;
+            .inspect_err(
+                |e| warn!(component = self.component.id(), error = %e, "storing games failed"),
+            )?;
 
         Ok(inserted)
     }

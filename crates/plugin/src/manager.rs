@@ -1,6 +1,9 @@
 use crate::{
-    plugin::{Plugin, PluginManifest, PluginState, http_client},
-    wit::{StorefrontPlugin, StorefrontPluginPre},
+    plugin::{
+        Plugin, PluginAuth, PluginConfig, PluginManifest, PluginRuntime, PluginState,
+        PluginStorefront, http_client,
+    },
+    wit::{PluginHost, exports::thrustr::plugin::base},
 };
 use anyhow::Result;
 use config::paths::plugins_cache_dir;
@@ -14,7 +17,7 @@ use std::{
     sync::Arc,
 };
 use wasmtime::{
-    Config, Engine,
+    Config as WasmtimeConfig, Engine,
     component::{Component as WasmComponent, Linker},
 };
 use zip::ZipArchive;
@@ -30,24 +33,24 @@ pub struct PluginManager {
 
 impl PluginManager {
     pub fn new(storage: Arc<dyn ComponentStorage>, tokio_handle: TokioHandle) -> Self {
-        let mut config = Config::new();
+        let mut config = WasmtimeConfig::new();
         config.wasm_component_model_async(true);
         config.wasm_component_model_map(true);
         config.consume_fuel(true);
 
-        let engine = Engine::new(&config).expect("Failed to create Wasmtime engine");
+        let engine = Engine::new(&config).expect("failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
 
         wasmtime_wasi::p2::add_to_linker_async(&mut linker)
-            .expect("Failed to add WASIp2 to linker");
+            .expect("failed to add WASIp2 to linker");
 
-        wasmtime_wasi::p3::add_to_linker(&mut linker).expect("Failed to add WASIp3 to linker");
+        wasmtime_wasi::p3::add_to_linker(&mut linker).expect("failed to add WASIp3 to linker");
 
         wasmtime_wasi_http::p3::add_to_linker(&mut linker)
-            .expect("Failed to add WASIp3 HTTP to linker");
+            .expect("failed to add WASIp3 HTTP to linker");
 
-        StorefrontPlugin::add_to_linker::<_, PluginState>(&mut linker, |state| state)
-            .expect("Failed to add Storefront imports to linker");
+        PluginHost::add_to_linker::<_, PluginState>(&mut linker, |state| state)
+            .expect("failed to add plugin imports to linker");
 
         Self {
             engine,
@@ -67,28 +70,46 @@ impl PluginManager {
             .tokio_handle
             .spawn_blocking(move || read_plugin_archive(path))
             .await??;
+        let PluginManifest {
+            plugin: info,
+            auth: login_form,
+            config: config_schema,
+        } = manifest;
 
         let component = self
             .tokio_handle
             .spawn_blocking({
                 let engine = self.engine.clone();
-                let plugin_id = manifest.plugin.id.clone();
+                let plugin_id = info.id.clone();
                 move || load_component(&engine, &plugin_id, &wasm_bytes)
             })
             .await??;
 
-        let instance_pre = self.linker.instantiate_pre(&component)?;
-        let storefront = StorefrontPluginPre::new(instance_pre).ok();
-
-        let plugin = Plugin {
-            allowed_hosts: manifest.plugin.allowed_hosts.as_slice().into(),
-            manifest,
-            icon,
+        let runtime = Arc::new(PluginRuntime {
+            id: info.id.clone(),
+            allowed_hosts: info.allowed_hosts.clone(),
             engine: self.engine.clone(),
+            pre: self.linker.instantiate_pre(&component)?,
             storage: self.storage.clone(),
-            storefront_pre: storefront,
             tokio_handle: self.tokio_handle.clone(),
             http_client: self.http_client.clone(),
+        });
+
+        let base = base::GuestIndices::new(&runtime.pre).map_err(|e| {
+            e.context("plugin does not export thrustr:plugin/base; add #[pdk::export] to its `impl pdk::Plugin`")
+        })?;
+        let auth = PluginAuth::resolve(&runtime, login_form)?;
+        let config = PluginConfig::resolve(&runtime, config_schema)?;
+        let storefront = PluginStorefront::resolve(&runtime)?;
+
+        let plugin = Plugin {
+            info,
+            icon,
+            runtime,
+            base,
+            auth: auth.map(|auth| Arc::new(auth) as _),
+            config: config.map(|config| Arc::new(config) as _),
+            storefront: storefront.map(|storefront| Arc::new(storefront) as _),
         };
 
         Ok(plugin)

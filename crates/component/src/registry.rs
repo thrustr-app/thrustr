@@ -2,7 +2,7 @@ use crate::{ComponentHandle, StorefrontHandle};
 use artwork::ArtworkService;
 use dashmap::{DashMap, Entry};
 use domain::{
-    component::{Capabilities, Component, ComponentStorage, Error as ComponentError},
+    component::{Component, ComponentStorage},
     game::GameRepository,
 };
 use runtime::TokioHandle;
@@ -22,9 +22,6 @@ pub struct RegistryContext {
 pub enum RegisterError {
     #[error("component `{id}` is already registered")]
     Duplicate { id: String },
-
-    #[error(transparent)]
-    Component(#[from] ComponentError),
 }
 
 #[derive(Clone)]
@@ -41,27 +38,17 @@ impl ComponentRegistry {
         }
     }
 
-    pub async fn register(
+    pub fn register(
         &self,
         component: Arc<dyn Component>,
     ) -> Result<ComponentHandle, RegisterError> {
         let id = component.metadata().id.to_owned();
-        if self.components.contains_key(&id) {
-            return Err(RegisterError::Duplicate { id });
-        }
-
-        let capabilities = Capabilities {
-            login: component.login_method().await?.is_some(),
-            config: component.config().is_some(),
-            storefront: Arc::clone(&component).storefront().is_some(),
-        };
-
         match self.components.entry(id) {
             Entry::Occupied(entry) => Err(RegisterError::Duplicate {
                 id: entry.key().clone(),
             }),
             Entry::Vacant(entry) => {
-                let handle = ComponentHandle::new(component, self.context.clone(), capabilities);
+                let handle = ComponentHandle::new(component, self.context.clone());
                 entry.insert(handle.clone());
                 debug!(component = handle.id(), "component registered");
                 Ok(handle)

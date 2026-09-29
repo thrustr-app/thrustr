@@ -1,40 +1,50 @@
 use self::error::Result;
 use crate::RegistryContext;
 use domain::component::{
-    AuthFlow, Capabilities, Component, ComponentConfig, Error, Initialization, LoginMethod,
-    LoginRequest, Metadata, Operation, Outcome, Running, State, Status,
+    Auth, Capabilities, Component, Config, Error, Initialization, Metadata, Operation, Outcome,
+    Running, State, Status, Storefront,
 };
 use event::Topic;
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
-};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{debug, info, warn};
 
+mod auth;
+mod config;
 mod error;
 mod permit;
 mod storefront;
 
+pub use auth::{AuthHandle, LoginPermit, LogoutPermit};
+pub use config::ConfigHandle;
 pub use error::OperationError;
-use permit::Permit;
-pub use permit::{LoginPermit, LogoutPermit};
 pub use storefront::StorefrontHandle;
 
 #[derive(Clone)]
 pub struct ComponentHandle {
     component: Arc<dyn Component>,
+    auth: Option<Arc<dyn Auth>>,
+    config: Option<Arc<dyn Config>>,
+    storefront: Option<Arc<dyn Storefront>>,
     context: RegistryContext,
     state: Arc<RwLock<State>>,
 }
 
 impl ComponentHandle {
-    pub fn new(
-        component: Arc<dyn Component>,
-        context: RegistryContext,
-        capabilities: Capabilities,
-    ) -> Self {
+    pub fn new(component: Arc<dyn Component>, context: RegistryContext) -> Self {
+        let auth = component.auth();
+        let config = component.config();
+        let storefront = component.storefront();
+        let capabilities = Capabilities {
+            auth: auth.is_some(),
+            config: config.is_some(),
+            storefront: storefront.is_some(),
+        };
+
         Self {
             component,
+            auth,
+            config,
+            storefront,
             context,
             state: Arc::new(RwLock::new(State::new(capabilities))),
         }
@@ -52,40 +62,33 @@ impl ComponentHandle {
         self.state_read().status().clone()
     }
 
-    pub fn config(&self) -> Option<ComponentConfig> {
-        self.component.config()
+    pub fn auth(&self) -> Option<AuthHandle> {
+        self.auth
+            .clone()
+            .map(|auth| AuthHandle::new(auth, self.clone()))
+    }
+
+    pub fn config(&self) -> Option<ConfigHandle> {
+        self.config
+            .clone()
+            .map(|config| ConfigHandle::new(config, self.clone()))
     }
 
     pub fn storefront(&self) -> Option<StorefrontHandle> {
-        Arc::clone(&self.component)
-            .storefront()
+        self.storefront
+            .clone()
             .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
-    }
-
-    pub async fn login_method(&self) -> Result<Option<LoginMethod>> {
-        Ok(self.component.login_method().await?)
-    }
-
-    pub async fn logout_flow(&self) -> Result<Option<AuthFlow>> {
-        Ok(self.component.logout_flow().await?)
-    }
-
-    pub fn config_values(&self) -> Result<HashMap<String, String>> {
-        Ok(self
-            .context
-            .component_storage
-            .get_config_values(self.id())?)
     }
 
     /// Whether the component supports `operation` and its status permits it,
     /// ignoring what is already running.
-    pub fn allows(&self, operation: Operation) -> bool {
-        self.state_read().allows(operation)
+    pub fn allows(&self, operation: impl Into<Operation>) -> bool {
+        self.state_read().allows(operation.into())
     }
 
     /// Whether `operation` could be started right now.
-    pub fn can(&self, operation: Operation) -> bool {
-        self.state_read().can(operation)
+    pub fn can(&self, operation: impl Into<Operation>) -> bool {
+        self.state_read().can(operation.into())
     }
 
     /// Whether a failed component could be reinitialized right now.
@@ -93,8 +96,8 @@ impl ComponentHandle {
         self.state_read().can_reinitialize()
     }
 
-    pub fn is_running(&self, operation: Operation) -> bool {
-        self.state_read().is_running(operation)
+    pub fn is_running(&self, operation: impl Into<Operation>) -> bool {
+        self.state_read().is_running(operation.into())
     }
 
     pub async fn enable(&self) -> Result<()> {
@@ -113,53 +116,6 @@ impl ComponentHandle {
             .map_err(OperationError::NotInitializable)?;
         self.report(&outcome);
         self.initialize(outcome.initialization).await
-    }
-
-    pub async fn save_config(&self, fields: HashMap<String, String>) -> Result<()> {
-        let permit = Permit::begin(self, Operation::Config)?;
-
-        if let Err(error) = self.component.validate_config(fields.clone()).await {
-            permit.finish(Err(error.clone())).await?;
-            return Err(error.into());
-        }
-        self.context
-            .component_storage
-            .set_config_values(self.id(), &fields)
-            .map_err(|e| {
-                warn!(component = self.id(), error = %e, "storing configuration failed");
-                e
-            })?;
-
-        info!(component = self.id(), "configuration saved");
-        permit.finish(Ok(())).await
-    }
-
-    /// Reserves the component for an interactive login.
-    pub fn begin_login(&self) -> Result<LoginPermit> {
-        Permit::begin(self, Operation::Login).map(LoginPermit)
-    }
-
-    /// Completes an interactive login and initializes the component if needed.
-    pub async fn login(
-        &self,
-        LoginPermit(permit): LoginPermit,
-        request: LoginRequest,
-    ) -> Result<()> {
-        let result = Arc::clone(&self.component).login(request).await;
-        permit.finish(result.clone()).await?;
-        Ok(result?)
-    }
-
-    /// Reserves the component for an interactive logout.
-    pub fn begin_logout(&self) -> Result<LogoutPermit> {
-        Permit::begin(self, Operation::Logout).map(LogoutPermit)
-    }
-
-    /// Completes an interactive logout.
-    pub async fn logout(&self, LogoutPermit(permit): LogoutPermit) -> Result<()> {
-        let result = Arc::clone(&self.component).logout().await;
-        permit.finish(result.clone()).await?;
-        Ok(result?)
     }
 
     async fn initialize(&self, initialization: Option<Initialization>) -> Result<()> {

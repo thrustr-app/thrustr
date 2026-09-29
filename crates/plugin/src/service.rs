@@ -70,7 +70,7 @@ impl PluginService {
         let plugin = self.manager.load_plugin(path.to_path_buf()).await?;
         event::emit(Topic::Plugin);
 
-        let component = self.component_registry.register(Arc::new(plugin)).await?;
+        let component = self.component_registry.register(Arc::new(plugin))?;
 
         component
             .enable()
