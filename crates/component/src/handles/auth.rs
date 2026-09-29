@@ -1,7 +1,7 @@
-use super::error::Result;
+use super::error::{OperationError, Result};
 use super::permit::Permit;
 use crate::ComponentHandle;
-use domain::component::{Auth, AuthFlow, AuthOperation, LoginMethod, LoginRequest};
+use domain::component::{Auth, AuthFlow, AuthOperation, Form, LoginMethod, LoginRequest};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -20,7 +20,15 @@ impl AuthHandle {
     }
 
     pub async fn login_method(&self) -> Result<LoginMethod> {
-        Ok(self.auth.login_method().await?)
+        if let Some(flow) = self.auth.login_flow().await? {
+            return Ok(LoginMethod::Flow(flow));
+        }
+
+        let form = self
+            .auth
+            .login_form()
+            .ok_or(OperationError::NoLoginMethod)?;
+        Ok(LoginMethod::Form(form.clone()))
     }
 
     pub async fn logout_flow(&self) -> Result<Option<AuthFlow>> {
@@ -52,7 +60,12 @@ pub struct LoginPermit {
 }
 
 impl LoginPermit {
-    pub async fn login(self, request: LoginRequest) -> Result<()> {
+    pub async fn login(self, mut request: LoginRequest) -> Result<()> {
+        if let LoginRequest::Form { fields } = &mut request {
+            let form = self.auth.login_form().ok_or(OperationError::NoLoginForm)?;
+            form.check(fields)?;
+        }
+
         let result = self.auth.login(request).await;
         self.permit.finish(result.clone()).await?;
         Ok(result?)

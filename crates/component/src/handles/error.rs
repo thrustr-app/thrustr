@@ -15,7 +15,13 @@ pub enum OperationError {
     NotInitializable(Rejection),
 
     #[error(transparent)]
-    InvalidConfig(#[from] MissingFieldError),
+    MissingField(#[from] MissingFieldError),
+
+    #[error("component has no login form")]
+    NoLoginForm,
+
+    #[error("component offers neither a login flow nor a login form")]
+    NoLoginMethod,
 
     #[error(transparent)]
     Component(#[from] domain::component::Error),

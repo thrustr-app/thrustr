@@ -1,9 +1,7 @@
-use crate::component::{
-    Error, FormElement, MissingFieldError, Operation, TextField, form, text_fields,
-};
+use crate::component::{Error, Form, FormElement, Operation};
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::{borrow::Borrow, collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 use strum::Display;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
@@ -27,41 +25,20 @@ pub trait Config: Send + Sync {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ConfigSchema {
-    #[serde(rename = "section")]
     pub sections: Vec<ConfigSection>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ConfigSection {
     pub name: String,
-    #[serde(rename = "field")]
     pub elements: Vec<FormElement>,
 }
 
-impl ConfigSchema {
-    pub fn text_fields(&self) -> impl Iterator<Item = &TextField> {
-        self.sections.iter().flat_map(ConfigSection::text_fields)
-    }
-
-    /// Checks every required field has a value and drops values for
-    /// undeclared fields.
-    pub fn check(&self, values: &mut HashMap<String, String>) -> Result<(), MissingFieldError> {
-        form::check(|| self.text_fields(), values)
-    }
-
-    /// Returns the first required field without a value.
-    pub fn missing_field<K, V>(&self, values: &HashMap<K, V>) -> Option<&TextField>
-    where
-        K: Borrow<str> + Hash + Eq,
-        V: AsRef<str>,
-    {
-        form::missing_field(self.text_fields(), values)
-    }
-}
-
-impl ConfigSection {
-    pub fn text_fields(&self) -> impl Iterator<Item = &TextField> {
-        text_fields(&self.elements)
+impl Form for ConfigSchema {
+    fn elements(&self) -> impl Iterator<Item = &FormElement> {
+        self.sections
+            .iter()
+            .flat_map(|section| section.elements.iter())
     }
 }
 

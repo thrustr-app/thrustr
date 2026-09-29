@@ -1,16 +1,17 @@
 use crate::plugin::{PluginRuntime, guest_call};
 use crate::wit::exports::thrustr::plugin::auth::{
-    self, AuthFlow as PluginAuthFlow, LoginFlow, LoginForm, LoginRequest as PluginLoginRequest,
+    self, AuthFlow as PluginAuthFlow, LoginFlow, LoginForm as PluginLoginForm,
+    LoginRequest as PluginLoginRequest,
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use domain::component::{Auth, AuthFlow, Error, LoginMethod, LoginRequest};
+use domain::component::{Auth, AuthFlow, Error, LoginForm, LoginRequest};
 use std::sync::Arc;
 
 pub struct PluginAuth {
     runtime: Arc<PluginRuntime>,
     indices: auth::GuestIndices,
-    form: Option<domain::component::LoginForm>,
+    form: Option<LoginForm>,
 }
 
 impl PluginAuth {
@@ -37,18 +38,16 @@ fn pair<I, F>(indices: Option<I>, form: Option<F>) -> anyhow::Result<Option<(I, 
 
 #[async_trait]
 impl Auth for PluginAuth {
-    async fn login_method(&self) -> Result<LoginMethod, Error> {
+    fn login_form(&self) -> Option<&LoginForm> {
+        self.form.as_ref()
+    }
+
+    async fn login_flow(&self) -> Result<Option<AuthFlow>, Error> {
         let flow = guest_call!(self.runtime, self.indices, |auth, accessor| {
             auth.call_get_login_flow(accessor)
         })?;
 
-        match (flow, &self.form) {
-            (Some(flow), _) => Ok(LoginMethod::Flow(flow.into())),
-            (None, Some(form)) => Ok(LoginMethod::Form(form.clone())),
-            (None, None) => Err(Error::Other(
-                "plugin returned no login flow and its manifest has no [auth] form".into(),
-            )),
-        }
+        Ok(flow.map(Into::into))
     }
 
     async fn logout_flow(&self) -> Result<Option<AuthFlow>, Error> {
@@ -85,7 +84,7 @@ impl From<LoginRequest> for PluginLoginRequest {
     fn from(value: LoginRequest) -> Self {
         match value {
             LoginRequest::Flow { url, body } => PluginLoginRequest::Flow(LoginFlow { url, body }),
-            LoginRequest::Form { fields } => PluginLoginRequest::Form(LoginForm { fields }),
+            LoginRequest::Form { fields } => PluginLoginRequest::Form(PluginLoginForm { fields }),
         }
     }
 }

@@ -5,10 +5,7 @@ use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum FormElement {
     Text(TextField),
-    Hbox {
-        #[serde(rename = "field")]
-        elements: Vec<FormElement>,
-    },
+    Hbox { elements: Vec<FormElement> },
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -24,7 +21,19 @@ impl FormElement {
     pub fn text_fields(&self) -> Box<dyn Iterator<Item = &TextField> + '_> {
         match self {
             Self::Text(field) => Box::new(std::iter::once(field)),
-            Self::Hbox { elements } => Box::new(text_fields(elements)),
+            Self::Hbox { elements } => Box::new(elements.text_fields()),
+        }
+    }
+
+    fn find_field<'a>(
+        &'a self,
+        predicate: &mut impl FnMut(&TextField) -> bool,
+    ) -> Option<&'a TextField> {
+        match self {
+            Self::Text(field) => predicate(field).then_some(field),
+            Self::Hbox { elements } => elements
+                .iter()
+                .find_map(|element| element.find_field(predicate)),
         }
     }
 }
@@ -36,47 +45,53 @@ pub struct MissingFieldError {
     pub label: String,
 }
 
-pub(crate) fn text_fields(elements: &[FormElement]) -> impl Iterator<Item = &TextField> {
-    elements.iter().flat_map(FormElement::text_fields)
-}
+pub trait Form {
+    /// Top level elements.
+    fn elements(&self) -> impl Iterator<Item = &FormElement>;
 
-/// Returns the first required field without a value.
-pub(crate) fn missing_field<'a, K, V>(
-    fields: impl IntoIterator<Item = &'a TextField>,
-    values: &HashMap<K, V>,
-) -> Option<&'a TextField>
-where
-    K: Borrow<str> + Hash + Eq,
-    V: AsRef<str>,
-{
-    fields
-        .into_iter()
-        .filter(|field| field.required)
-        .find(|field| {
-            values
-                .get(field.id.as_str())
-                .is_none_or(|value| value.as_ref().is_empty())
-        })
-}
-
-/// Checks every required field has a value and drops values for
-/// undeclared fields.
-pub(crate) fn check<'a, I>(
-    fields: impl Fn() -> I,
-    values: &mut HashMap<String, String>,
-) -> Result<(), MissingFieldError>
-where
-    I: Iterator<Item = &'a TextField>,
-{
-    values.retain(|id, _| fields().any(|field| field.id == *id));
-
-    match missing_field(fields(), values) {
-        Some(field) => Err(MissingFieldError {
-            id: field.id.clone(),
-            label: field.label.clone(),
-        }),
-        None => Ok(()),
+    fn text_fields(&self) -> impl Iterator<Item = &TextField> {
+        self.elements().flat_map(FormElement::text_fields)
     }
+
+    /// Returns the first required field without a value.
+    fn missing_field<K, V>(&self, values: &HashMap<K, V>) -> Option<&TextField>
+    where
+        K: Borrow<str> + Hash + Eq,
+        V: AsRef<str>,
+    {
+        find_field(self.elements(), |field| {
+            field.required
+                && values
+                    .get(field.id.as_str())
+                    .is_none_or(|value| value.as_ref().is_empty())
+        })
+    }
+
+    /// Checks required fields have a value and drops values for undeclared fields.
+    fn check(&self, values: &mut HashMap<String, String>) -> Result<(), MissingFieldError> {
+        values.retain(|id, _| find_field(self.elements(), |field| field.id == *id).is_some());
+
+        match self.missing_field(values) {
+            Some(field) => Err(MissingFieldError {
+                id: field.id.clone(),
+                label: field.label.clone(),
+            }),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Form for [FormElement] {
+    fn elements(&self) -> impl Iterator<Item = &FormElement> {
+        self.iter()
+    }
+}
+
+fn find_field<'a>(
+    mut elements: impl Iterator<Item = &'a FormElement>,
+    mut predicate: impl FnMut(&TextField) -> bool,
+) -> Option<&'a TextField> {
+    elements.find_map(|element| element.find_field(&mut predicate))
 }
 
 #[cfg(test)]
@@ -120,10 +135,7 @@ pub(crate) mod tests {
         };
 
         let mut actual = owned(values);
-        match (
-            super::check(|| text_fields(elements), &mut actual),
-            expected,
-        ) {
+        match (elements.check(&mut actual), expected) {
             (Ok(()), Ok(kept)) => assert_eq!(actual, owned(kept)),
             (Err(error), Err(id)) => assert_eq!(error.id, id),
             (actual, expected) => panic!("expected {expected:?}, got {actual:?}"),

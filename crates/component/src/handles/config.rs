@@ -1,7 +1,7 @@
 use super::error::Result;
 use super::permit::Permit;
 use crate::ComponentHandle;
-use domain::component::{Config, ConfigOperation, ConfigSchema};
+use domain::component::{Config, ConfigOperation, ConfigSchema, Form};
 use std::{collections::HashMap, sync::Arc};
 use tracing::{info, warn};
 

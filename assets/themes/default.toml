@@ -1,7 +1,7 @@
 [manifest]
 id = "thrustr.dark"
 name = "Thrustr Dark"
-authors = ["Jorge Pardo"]
+authors = ["Thrustr"]
 version = "1.0.0"
 description = "The default dark theme for Thrustr."
 
@@ -18,7 +18,7 @@ border = "#26292D"
 accent = "#8BF0FE"
 accent_background = "#152830"
 accent_foreground = "#041216"
-warning = "#E99b2A"
+warning = "#E99B2A"
 warning_background = "#2D2315"
 warning_foreground = "#231607"
 danger = "#ED5350"
@@ -27,21 +27,21 @@ danger_foreground = "#E5D3D1"
 hover = "#1A1A1A"
 overlay = "#000000A6"
 
-    [colors.sidebar]
-    background = "#05080A"
-    primary = "#F0F2F4"
-    secondary = "#7A7F84"
-    border = "#1F222599"
-    surface = "#2B2E32"
-    hover = "#1A1A1A"
-    logo = "#6D7277"
+[colors.sidebar]
+background = "#05080A"
+primary = "#F0F2F4"
+secondary = "#7A7F84"
+border = "#1F222599"
+surface = "#2B2E32"
+hover = "#1A1A1A"
+logo = "#6D7277"
 
-    [colors.titlebar]
-    background = "#0B0E11"
-    primary = "#FFFFFF"
-    secondary = "#767B80"
-    border = "#1F222599"
-    hover = "#1A1A1A"
+[colors.titlebar]
+background = "#0B0E11"
+primary = "#FFFFFF"
+secondary = "#767B80"
+border = "#1F222599"
+hover = "#1A1A1A"
 
 [radius]
 sm = "0.625rem"

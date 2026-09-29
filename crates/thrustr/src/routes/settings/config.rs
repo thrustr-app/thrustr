@@ -5,10 +5,10 @@ use crate::{
     globals::ComponentRegistryExt,
     navigation::NavigatorExt,
 };
-use component::{AuthHandle, ComponentHandle, ConfigHandle, LoginPermit};
+use component::{AuthHandle, ComponentHandle, ConfigHandle};
 use domain::component::{
-    AuthFlow, AuthOperation, ConfigOperation, ConfigSection, FormElement, LoginForm, LoginMethod,
-    LoginRequest, Operation, Status, TextField,
+    AuthFlow, AuthOperation, ConfigOperation, ConfigSection, Form, FormElement, LoginForm,
+    LoginMethod, LoginRequest, Operation, Status, TextField,
 };
 use event::Topic;
 use gpui::{
@@ -557,23 +557,20 @@ impl LoginDialog {
         self.form.missing_field(&self.values).is_none()
     }
 
-    fn prepare_login(&self) -> anyhow::Result<(LoginPermit, HashMap<String, String>)> {
-        let mut fields = to_owned_values(&self.values);
-        self.form.check(&mut fields)?;
-        Ok((self.auth.begin_login()?, fields))
-    }
-
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (permit, fields) = match self.prepare_login() {
-            Ok(prepared) => prepared,
+        let permit = match self.auth.begin_login() {
+            Ok(permit) => permit,
             Err(err) => {
                 self.submit_error = Some(err.to_string().into());
                 cx.notify();
                 return;
             }
         };
+
+        let fields = to_owned_values(&self.values);
         self.submitting = true;
         self.submit_error = None;
+
         cx.notify();
 
         let login =

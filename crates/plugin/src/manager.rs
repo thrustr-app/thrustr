@@ -5,7 +5,7 @@ use crate::{
     },
     wit::{PluginHost, exports::thrustr::plugin::base},
 };
-use anyhow::Result;
+use anyhow::{Result, bail};
 use config::paths::plugins_cache_dir;
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use reqwest::Client;
@@ -160,11 +160,22 @@ fn read_plugin_archive(path: PathBuf) -> Result<(PluginManifest, Vec<u8>, Option
     Ok((manifest, wasm_bytes, icon))
 }
 
+const MANIFEST_NAMES: [&str; 2] = ["manifest.yaml", "manifest.yml"];
+
 fn read_manifest<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<PluginManifest> {
-    let mut file = archive.by_name("manifest.toml")?;
+    let mut names = MANIFEST_NAMES
+        .into_iter()
+        .filter(|name| archive.index_for_name(name).is_some());
+    let name = match (names.next(), names.next()) {
+        (Some(name), None) => name,
+        (None, _) => bail!("plugin archive has no manifest.yaml or manifest.yml"),
+        (Some(_), Some(_)) => bail!("plugin archive has both manifest.yaml and manifest.yml"),
+    };
+
+    let mut file = archive.by_name(name)?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
-    Ok(toml::from_str(&content)?)
+    Ok(serde_saphyr::from_str(&content)?)
 }
 
 fn read_wasm<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<u8>> {

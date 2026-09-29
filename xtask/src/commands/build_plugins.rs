@@ -4,7 +4,7 @@ use std::{
     env,
     fs::{self, File},
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 use zip::{ZipWriter, write::SimpleFileOptions};
@@ -17,12 +17,12 @@ pub fn build_plugins() -> Result<()> {
     // Create target/plugins directory
     fs::create_dir_all(&target_plugins_dir).context("Failed to create target/plugins directory")?;
 
-    // Find all plugin directories (directories containing manifest.toml)
+    // Find all plugin directories (directories containing a manifest)
     let mut plugins = Vec::new();
     for entry in fs::read_dir(&plugins_dir).context("Failed to read plugins directory")? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() && path.join("manifest.toml").exists() {
+        if path.is_dir() && find_manifest(&path)?.is_some() {
             plugins.push(path);
         }
     }
@@ -73,6 +73,21 @@ pub fn build_plugins() -> Result<()> {
     Ok(())
 }
 
+fn find_manifest(plugin_path: &Path) -> Result<Option<PathBuf>> {
+    let mut manifests = ["manifest.yaml", "manifest.yml"]
+        .into_iter()
+        .map(|name| plugin_path.join(name))
+        .filter(|path| path.exists());
+
+    match (manifests.next(), manifests.next()) {
+        (Some(_), Some(_)) => bail!(
+            "{} has both manifest.yaml and manifest.yml",
+            plugin_path.display()
+        ),
+        (manifest, _) => Ok(manifest),
+    }
+}
+
 fn bundle_plugin(plugin_path: &Path, workspace_root: &Path, output_dir: &Path) -> Result<()> {
     let plugin_name = plugin_path
         .file_name()
@@ -88,8 +103,6 @@ fn bundle_plugin(plugin_path: &Path, workspace_root: &Path, output_dir: &Path) -
         .join("release")
         .join(&wasm_name);
 
-    let manifest_path = plugin_path.join("manifest.toml");
-
     // Check that required files exist
     if !wasm_path.exists() {
         bail!(
@@ -97,9 +110,12 @@ fn bundle_plugin(plugin_path: &Path, workspace_root: &Path, output_dir: &Path) -
             wasm_path.display()
         );
     }
-    if !manifest_path.exists() {
-        bail!("Plugin manifest not found: {}", manifest_path.display());
-    }
+    let manifest_path = find_manifest(plugin_path)?
+        .with_context(|| format!("Plugin manifest not found in {}", plugin_path.display()))?;
+    let manifest_name = manifest_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("Invalid manifest name")?;
 
     // Create .tp file (zip archive)
     let tp_path = output_dir.join(format!("{}.tp", plugin_name));
@@ -118,8 +134,8 @@ fn bundle_plugin(plugin_path: &Path, workspace_root: &Path, output_dir: &Path) -
     wasm_file.read_to_end(&mut wasm_content)?;
     zip.write_all(&wasm_content)?;
 
-    // Add manifest.toml
-    zip.start_file("manifest.toml", options)?;
+    // Add the manifest under its original name
+    zip.start_file(manifest_name, options)?;
     let mut manifest_file = File::open(&manifest_path)?;
     let mut manifest_content = Vec::new();
     manifest_file.read_to_end(&mut manifest_content)?;

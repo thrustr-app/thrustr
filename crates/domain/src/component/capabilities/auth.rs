@@ -1,9 +1,7 @@
-use crate::component::{
-    Error, FormElement, MissingFieldError, Operation, TextField, form, text_fields,
-};
+use crate::component::{Error, Form, FormElement, Operation};
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::{borrow::Borrow, collections::HashMap, hash::Hash};
+use std::collections::HashMap;
 use strum::Display;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
@@ -21,7 +19,8 @@ impl From<AuthOperation> for Operation {
 
 #[async_trait]
 pub trait Auth: Send + Sync {
-    async fn login_method(&self) -> Result<LoginMethod, Error>;
+    fn login_form(&self) -> Option<&LoginForm>;
+    async fn login_flow(&self) -> Result<Option<AuthFlow>, Error>;
     async fn logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
     async fn login(&self, request: LoginRequest) -> Result<(), Error>;
     async fn logout(&self) -> Result<(), Error>;
@@ -41,28 +40,12 @@ pub enum LoginMethod {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct LoginForm {
-    #[serde(rename = "field")]
     pub elements: Vec<FormElement>,
 }
 
-impl LoginForm {
-    pub fn text_fields(&self) -> impl Iterator<Item = &TextField> {
-        text_fields(&self.elements)
-    }
-
-    /// Checks every required field has a value and drops values for
-    /// undeclared fields.
-    pub fn check(&self, values: &mut HashMap<String, String>) -> Result<(), MissingFieldError> {
-        form::check(|| self.text_fields(), values)
-    }
-
-    /// Returns the first required field without a value.
-    pub fn missing_field<K, V>(&self, values: &HashMap<K, V>) -> Option<&TextField>
-    where
-        K: Borrow<str> + Hash + Eq,
-        V: AsRef<str>,
-    {
-        form::missing_field(self.text_fields(), values)
+impl Form for LoginForm {
+    fn elements(&self) -> impl Iterator<Item = &FormElement> {
+        self.elements.iter()
     }
 }
 
