@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use semver::Version;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 use thiserror::Error;
 
 mod capabilities;
@@ -117,7 +117,13 @@ impl Error {
 pub trait ComponentStorage: Send + Sync {
     fn get_data(&self, component_id: &str, key: &str) -> Result<Option<Vec<u8>>>;
 
-    fn set_data(&self, component_id: &str, key: &str, value: &[u8]) -> Result<()>;
+    fn set_data(
+        &self,
+        component_id: &str,
+        key: &str,
+        value: &[u8],
+        expires_at: Option<SystemTime>,
+    ) -> Result<()>;
 
     fn delete_data(&self, component_id: &str, key: &str) -> Result<()>;
 

@@ -6,6 +6,7 @@ use diesel::{
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use std::{ffi::c_char, fs, os::raw::c_int, path::Path, sync::Once, time::Duration};
+use tracing::warn;
 
 mod id;
 mod models;
@@ -84,6 +85,10 @@ impl SqliteStorage {
         connection
             .run_pending_migrations(MIGRATIONS)
             .map_err(|e| anyhow!("failed to run migrations: {e}"))?;
+
+        if let Err(e) = storage::delete_expired_data(&mut connection) {
+            warn!("failed to delete expired component data: {e}");
+        }
 
         Ok(Self { pool })
     }

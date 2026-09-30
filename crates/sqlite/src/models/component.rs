@@ -7,6 +7,7 @@ pub struct NewComponentDataRow<'a> {
     pub component_id: &'a str,
     pub key: &'a str,
     pub value: &'a [u8],
+    pub expires_at: Option<i64>,
 }
 
 #[derive(Insertable)]

@@ -41,6 +41,7 @@ diesel::table! {
         component_id -> Text,
         key -> Text,
         value -> Binary,
+        expires_at -> Nullable<BigInt>,
     }
 }
 

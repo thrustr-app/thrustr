@@ -7,6 +7,7 @@ interface base {
 }
 
 world plugin {
+    import cache;
     import kv-store;
 
     export base;

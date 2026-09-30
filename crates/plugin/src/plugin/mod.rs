@@ -14,7 +14,7 @@ mod runtime;
 mod state;
 
 pub use capabilities::{PluginAuth, PluginConfig, PluginScheduler, PluginStorefront};
-pub use host::http_client;
+pub use host::{PluginCache, http_client};
 pub use manifest::*;
 pub use runtime::PluginRuntime;
 pub(crate) use runtime::guest_call;

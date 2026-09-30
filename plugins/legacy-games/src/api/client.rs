@@ -5,9 +5,13 @@ use crate::api::{
         EntitlementsResponse, IsExistsByEmailResponse, LoginResponse, Product, ProductsResponse,
     },
 };
+use pdk::kv_store::KvStore;
 use serde::de::DeserializeOwned;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use wasi_fetch::{Client, RequestBuilder};
+
+const CATALOG_KEY: &str = "catalog";
+const CATALOG_TTL: Duration = Duration::from_secs(60 * 60);
 
 pub async fn giveaway_login(email: &str) -> Result<IsExistsByEmailResponse, Error> {
     send(base_request(&endpoints::is_exists_by_email(email))).await
@@ -66,7 +70,13 @@ pub async fn fetch_products(
 }
 
 async fn fetch_catalog() -> Result<Vec<Product>, Error> {
-    send(base_request(&endpoints::catalog())).await
+    if let Ok(Some(catalog)) = KvStore::get(CATALOG_KEY) {
+        return Ok(catalog);
+    }
+
+    let catalog = send(base_request(&endpoints::catalog())).await?;
+    let _ = KvStore::set_with_ttl(CATALOG_KEY, &catalog, CATALOG_TTL);
+    Ok(catalog)
 }
 
 async fn fetch_entitlements(token: &str, user_id: u64) -> Result<EntitlementsResponse, Error> {

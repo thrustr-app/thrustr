@@ -4,7 +4,7 @@ interface kv-store {
     use types.{error};
 
     get: func(key: string) -> result<option<list<u8>>, error>;
-    set: func(key: string, value: list<u8>) -> result<_, error>;
+    set: func(key: string, value: list<u8>, ttl-ms: option<u64>) -> result<_, error>;
     delete: func(key: string) -> result<_, error>;
     %list: func(prefix: option<string>) -> result<list<string>, error>;
 }
