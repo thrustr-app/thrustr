@@ -1,28 +1,15 @@
-use crate::{ComponentHandle, StorefrontHandle};
+use crate::{ComponentHandle, ComponentLink, StorefrontHandle};
 use artwork::ArtworkService;
 use dashmap::{DashMap, Entry};
 use domain::{
     component::{Component, ComponentStorage},
     game::GameRepository,
 };
+use event::Topic;
 use runtime::TokioHandle;
 use std::sync::Arc;
 use thiserror::Error;
 use tracing::debug;
-
-#[derive(Clone)]
-pub struct RegistryContext {
-    pub tokio_handle: TokioHandle,
-    pub component_storage: Arc<dyn ComponentStorage>,
-    pub game_repository: Arc<dyn GameRepository>,
-    pub artwork_service: ArtworkService,
-}
-
-#[derive(Debug, Error)]
-#[error("component `{id}` is already registered")]
-pub struct DuplicateComponentError {
-    pub id: String,
-}
 
 #[derive(Clone)]
 pub struct ComponentRegistry {
@@ -33,24 +20,34 @@ pub struct ComponentRegistry {
 impl ComponentRegistry {
     pub fn new(context: RegistryContext) -> Self {
         Self {
-            components: Arc::new(DashMap::new()),
+            components: Arc::default(),
             context,
         }
     }
 
-    pub fn register(
+    pub async fn register<C, E>(
         &self,
-        component: Arc<dyn Component>,
-    ) -> Result<ComponentHandle, DuplicateComponentError> {
+        build: impl AsyncFnOnce(ComponentLink) -> Result<C, E>,
+    ) -> Result<ComponentHandle, E>
+    where
+        C: Component + 'static,
+        E: From<RegisterError>,
+    {
+        let link = ComponentLink::new();
+        let component: Arc<dyn Component> = Arc::new(build(link.clone()).await?);
+
         let id = component.metadata().id.to_owned();
         match self.components.entry(id) {
-            Entry::Occupied(entry) => Err(DuplicateComponentError {
+            Entry::Occupied(entry) => Err(RegisterError::Duplicate {
                 id: entry.key().clone(),
-            }),
+            }
+            .into()),
             Entry::Vacant(entry) => {
                 let handle = ComponentHandle::new(component, self.context.clone());
+                link.bind(&handle);
                 entry.insert(handle.clone());
                 debug!(component = handle.id(), "component registered");
+                event::emit(Topic::ComponentRegistered);
                 Ok(handle)
             }
         }
@@ -74,4 +71,18 @@ impl ComponentRegistry {
             .filter_map(|c| c.value().storefront())
             .collect()
     }
+}
+
+#[derive(Clone)]
+pub struct RegistryContext {
+    pub tokio_handle: TokioHandle,
+    pub component_storage: Arc<dyn ComponentStorage>,
+    pub game_repository: Arc<dyn GameRepository>,
+    pub artwork_service: ArtworkService,
+}
+
+#[derive(Debug, Error)]
+pub enum RegisterError {
+    #[error("component `{id}` is already registered")]
+    Duplicate { id: String },
 }

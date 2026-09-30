@@ -1,0 +1,20 @@
+plugin:
+  id: legacy-games
+  name: Legacy Games
+  version: "0.0.1"
+  authors:
+    - Thrustr
+  description: Plugin to interact with Legacy Games.
+  allowed-hosts:
+    - api.legacygames.com
+
+auth:
+  elements:
+    - type: text
+      id: email
+      label: Email
+      placeholder: yourmail@example.com
+      required: true
+    - type: text
+      id: password
+      label: Password

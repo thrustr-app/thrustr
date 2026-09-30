@@ -154,7 +154,8 @@ impl Route for Library {
         let task = cx.listen(Topic::Games, Self::refresh_games);
         page._tasks.push(task);
 
-        let task = cx.listen(Topic::Component, |_, cx| cx.notify());
+        // To refresh the component icons used by game cards.
+        let task = cx.listen(Topic::ComponentRegistered, |_, cx| cx.notify());
         page._tasks.push(task);
 
         let mut artwork_rx = cx.artwork_service().subscribe();

@@ -5,6 +5,9 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+pdk-macros = { path = "../pdk-macros" }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+serde.workspace = true
 wit-bindgen = "0.62"
 
 [lib]

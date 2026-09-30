@@ -1,33 +1,53 @@
 use super::status_label;
 use crate::{
-    auth_webview::{WebviewError, open_auth_webview},
+    auth_webview::open_auth_webview,
     context::{EventListenerExt, SpawnTaskExt},
     globals::ComponentRegistryExt,
     navigation::NavigatorExt,
 };
-use component::{ComponentHandle, Operation, Permit};
+use component::{AuthHandle, ComponentHandle, ConfigHandle};
 use domain::component::{
-    AuthFlow, ConfigSection, Element as ConfigElement, LoginForm, LoginMethod, LoginRequest, Status,
+    AuthFlow, AuthOperation, ConfigOperation, ConfigSection, Form, FormElement, LoginForm,
+    LoginMethod, LoginRequest, Operation, Status, TextField,
 };
 use event::Topic;
 use gpui::{
-    AnyElement, App, AppContext, ClickEvent, Context, Entity, FontWeight, Image, ImageSource,
+    AnyElement, App, AppContext, ClickEvent, Context, Div, Entity, FontWeight, Image, ImageSource,
     InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled,
     Task, Window, div, img, prelude::FluentBuilder, relative, rems,
 };
-use smol::unblock;
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Dialog, Empty, Icon, InputEvent, PortalContext, WithFocus, WithScrollbar,
+    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithFocus, WithScrollbar,
     WithSize, WithVariant, input,
 };
+
+type Values = HashMap<SharedString, SharedString>;
 
 struct Field {
     id: SharedString,
     label: SharedString,
     placeholder: Option<SharedString>,
-    required: bool,
+}
+
+impl Field {
+    fn input<T: 'static>(
+        &self,
+        values: &Values,
+        values_mut: fn(&mut T) -> &mut Values,
+        cx: &mut Context<T>,
+    ) -> Input {
+        let id = self.id.clone();
+        input(self.id.clone())
+            .label(self.label.clone())
+            .when_some(self.placeholder.clone(), Input::placeholder)
+            .value(values.get(&self.id).cloned().unwrap_or_default())
+            .on_input(cx.listener(move |this, event: &InputEvent, _, cx| {
+                values_mut(this).insert(id.clone(), event.value.clone());
+                cx.notify();
+            }))
+    }
 }
 
 enum Element {
@@ -49,55 +69,73 @@ struct Section {
     elements: Vec<Element>,
 }
 
+struct AuthState {
+    handle: AuthHandle,
+    method: Option<LoginMethod>,
+}
+
 pub struct Config {
     name: SharedString,
     icon: Option<Arc<Image>>,
     component: ComponentHandle,
+    auth: Option<AuthState>,
+    config: Option<ConfigHandle>,
     sections: Vec<Section>,
-    values: HashMap<SharedString, SharedString>,
+    values: Values,
+    values_loaded: bool,
     status: Status,
     local_error: Option<SharedString>,
     status_error: Option<SharedString>,
-    login_method: Option<LoginMethod>,
     scroll_handle: ScrollHandle,
     _tasks: Vec<Task<()>>,
 }
 
 impl Config {
     pub fn new(component: ComponentHandle, cx: &mut Context<Self>) -> Self {
-        let metadata = component.metadata();
         let icon = cx.component_icon(component.id());
 
-        let mut local_error = None;
-        let values: HashMap<SharedString, SharedString> = match component.config_values() {
-            Ok(values) => values
-                .into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect(),
-            Err(err) => {
-                local_error = Some(err.to_string().into());
-                HashMap::new()
-            }
+        let auth = component.auth().map(|handle| AuthState {
+            handle,
+            method: None,
+        });
+        let config = component.config();
+
+        let (values, local_error) = match config
+            .as_ref()
+            .map_or(Ok(HashMap::new()), ConfigHandle::values)
+        {
+            Ok(values) => (
+                values
+                    .into_iter()
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect(),
+                None,
+            ),
+            Err(err) => (HashMap::new(), Some(err.to_string().into())),
         };
+        let values_loaded = local_error.is_none();
 
-        let sections = component
-            .config()
-            .map(|c| c.sections.into_iter().map(Into::into).collect())
-            .unwrap_or_default();
+        let sections = config
+            .iter()
+            .flat_map(|c| &c.schema().sections)
+            .map(Into::into)
+            .collect();
 
-        let _tasks = vec![cx.listen(Topic::Component, Self::refresh_status)];
+        let _tasks = vec![cx.listen(Topic::ComponentState, Self::refresh_status)];
 
         let status = component.status();
         let mut page = Self {
-            name: metadata.name.into(),
+            name: component.metadata().name.into(),
             icon,
-            status_error: status.error_message().map(Into::into),
+            status_error: status_error(&status),
             status,
             component,
+            auth,
+            config,
             sections,
             values,
+            values_loaded,
             local_error,
-            login_method: None,
             scroll_handle: ScrollHandle::new(),
             _tasks,
         };
@@ -108,55 +146,60 @@ impl Config {
 
     fn refresh_status(&mut self, cx: &mut Context<Self>) {
         let status = self.component.status();
-        self.status_error = status.error_message().map(Into::into);
+        self.status_error = status_error(&status);
         self.status = status;
         cx.notify();
     }
 
     fn load_login_method(&mut self, cx: &mut Context<Self>) {
-        let component = self.component.clone();
+        let Some(auth) = self.auth.as_ref().map(|a| a.handle.clone()) else {
+            return;
+        };
         let task = cx.spawn_and_update(
-            async move { component.login_method().await },
-            |config, result, _| {
-                config.login_method = match result {
-                    Ok(method) => method,
-                    Err(err) => {
-                        config.local_error = Some(err.to_string().into());
-                        None
+            async move { auth.login_method().await },
+            |this, result, _| match result {
+                Ok(method) => {
+                    if let Some(auth) = &mut this.auth {
+                        auth.method = Some(method);
                     }
-                };
+                }
+                Err(err) => this.local_error = Some(err.to_string().into()),
             },
         );
         self._tasks.push(task);
     }
 
     fn on_save(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let fields = self
-            .values
-            .iter()
-            .map(|(id, value)| (id.to_string(), value.to_string()))
-            .collect();
-
-        let component = self.component.clone();
+        let Some(config) = self.config.clone() else {
+            return;
+        };
+        let fields = to_owned_values(&self.values);
         cx.spawn_and_update(
-            async move { component.save_config(fields).await },
-            |config, result, _| {
-                config.local_error = result.err().map(|e| e.to_string().into());
+            async move { config.save(fields).await },
+            |this, result, _| {
+                this.local_error = result.err().map(|e| e.to_string().into());
             },
         )
         .detach();
     }
 
     fn on_login(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
-        match self.login_method.clone() {
-            Some(LoginMethod::Flow(login_flow)) => self.handle_login_flow(login_flow, cx),
-            Some(LoginMethod::Form(login_form)) => self.handle_login_form(login_form, window, cx),
-            None => {}
+        let Some(AuthState {
+            handle,
+            method: Some(method),
+        }) = &self.auth
+        else {
+            return;
+        };
+        let (auth, method) = (handle.clone(), method.clone());
+        match method {
+            LoginMethod::Flow(login_flow) => self.login_with_flow(auth, login_flow, cx),
+            LoginMethod::Form(login_form) => self.open_login_dialog(auth, login_form, window, cx),
         }
     }
 
-    fn handle_login_flow(&mut self, login_flow: AuthFlow, cx: &mut Context<Self>) {
-        let permit = match self.component.begin_login() {
+    fn login_with_flow(&mut self, auth: AuthHandle, login_flow: AuthFlow, cx: &mut Context<Self>) {
+        let permit = match auth.begin_login() {
             Ok(permit) => permit,
             Err(err) => {
                 self.local_error = Some(err.to_string().into());
@@ -165,110 +208,40 @@ impl Config {
             }
         };
 
-        let component = self.component.clone();
         cx.spawn_and_update(
             async move {
-                let result =
-                    unblock(move || open_auth_webview(&login_flow.url, &login_flow.target)).await;
-                match result {
-                    Ok((url, body)) => component
-                        .login(permit, LoginRequest::Flow { url, body })
-                        .await
-                        .map_err(|e| e.to_string()),
-                    Err(WebviewError::UserCancelled) => Ok(()),
-                    Err(WebviewError::Internal(e)) => Err(e),
-                }
+                let Some((url, body)) = open_auth_webview(login_flow).await? else {
+                    return Ok(());
+                };
+                permit.login(LoginRequest::Flow { url, body }).await?;
+                anyhow::Ok(())
             },
-            |config, result, _| {
-                config.local_error = result.err().map(Into::into);
+            |this, result, _| {
+                this.local_error = result.err().map(|e| e.to_string().into());
             },
         )
         .detach();
-        cx.notify();
     }
 
-    fn handle_login_form(
+    fn open_login_dialog(
         &mut self,
+        auth: AuthHandle,
         login_form: LoginForm,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let component = self.component.clone();
-        let icon = self.icon.clone();
-        let title = SharedString::new(format!("Log in to {}", self.name));
-
-        let form_entity = cx.new(|_| LoginFormState::new(login_form));
-
+        let login_dialog =
+            cx.new(|_| LoginDialog::new(auth, login_form, &self.name, self.icon.clone()));
         window.open_dialog(cx, move |dialog, _, cx| {
-            let form_entity = form_entity.clone();
-            let form_entity_child = form_entity.clone();
-            let component = component.clone();
-            let title = title.clone();
-
-            let form = form_entity.read(cx);
-            let is_valid = form.is_valid();
-            let submitting = form.submitting;
-            let submit_error = form.submit_error.clone();
-            dialog
-                .w(rems(24.))
-                .header(
-                    div()
-                        .w_full()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap(rems(1.))
-                        .when_some(icon.clone(), |header, icon| {
-                            header.child(img(ImageSource::Image(icon)).size(rems(2.75)))
-                        })
-                        .child(
-                            div()
-                                .w_full()
-                                .text_center()
-                                .text_size(cx.theme().text.lg)
-                                .line_height(relative(1.))
-                                .font_weight(FontWeight::BOLD)
-                                .child(title),
-                        ),
-                )
-                .ok_text("Log In")
-                .when(!is_valid, Dialog::disabled)
-                .when(submitting, Dialog::loading)
-                .when_some(submit_error, Dialog::error)
-                .on_ok(move |_, window, cx| {
-                    let permit = match component.begin_login() {
-                        Ok(permit) => permit,
-                        Err(err) => {
-                            form_entity.update(cx, |form, cx| {
-                                form.submit_error = Some(err.to_string().into());
-                                cx.notify();
-                            });
-                            return;
-                        }
-                    };
-
-                    let fields = form_entity.read(cx).login_fields();
-                    form_entity.update(cx, |form, cx| {
-                        form.submitting = true;
-                        form.submit_error = None;
-                        cx.notify();
-                    });
-
-                    submit_login_form(
-                        component.clone(),
-                        permit,
-                        fields,
-                        form_entity.clone(),
-                        window,
-                        cx,
-                    );
-                })
-                .child(form_entity_child)
+            LoginDialog::build(&login_dialog, dialog, cx)
         });
     }
 
     fn on_logout(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let permit = match self.component.begin_logout() {
+        let Some(auth) = self.auth.as_ref().map(|a| a.handle.clone()) else {
+            return;
+        };
+        let permit = match auth.begin_logout() {
             Ok(permit) => permit,
             Err(err) => {
                 self.local_error = Some(err.to_string().into());
@@ -277,38 +250,52 @@ impl Config {
             }
         };
 
-        let component = self.component.clone();
         cx.spawn_and_update(
             async move {
-                if let Some(flow) = component.logout_flow().await.map_err(|e| e.to_string())? {
-                    match unblock(move || open_auth_webview(&flow.url, &flow.target)).await {
-                        Ok(_) => {}
-                        Err(WebviewError::UserCancelled) => return Ok(()),
-                        Err(WebviewError::Internal(e)) => return Err(e),
-                    }
+                if let Some(flow) = auth.logout_flow().await?
+                    && open_auth_webview(flow).await?.is_none()
+                {
+                    return Ok(());
                 }
-                component.logout(permit).await.map_err(|e| e.to_string())
+                permit.logout().await?;
+                anyhow::Ok(())
             },
             |this, result, _| {
-                this.local_error = result.err().map(Into::into);
+                this.local_error = result.err().map(|e| e.to_string().into());
             },
         )
         .detach();
-        cx.notify();
     }
 
     fn is_valid(&self) -> bool {
-        let fields = self
-            .sections
-            .iter()
-            .flat_map(|s| &s.elements)
-            .flat_map(Element::fields);
-        fields_valid(fields, &self.values)
+        self.config
+            .as_ref()
+            .is_none_or(|config| config.schema().missing_field(&self.values).is_none())
     }
 
-    fn render_header(&mut self, autofocus_back: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn operation_button(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        operation: impl Into<Operation>,
+        enabled: bool,
+    ) -> Button {
+        Button::new(id)
+            .when(!enabled, Button::disabled)
+            .when(self.component.is_running(operation), Button::loading)
+            .size_md()
+            .w(rems(10.))
+            .child(label)
+    }
+
+    fn render_header(
+        &self,
+        can_configure: bool,
+        autofocus_back: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = cx.theme();
-        let has_login = self.login_method.is_some();
+        let login_ready = self.auth.as_ref().is_some_and(|auth| auth.method.is_some());
 
         div()
             .flex()
@@ -324,7 +311,7 @@ impl Config {
                         Button::icon("back-button", Icon::arrow())
                             .variant_outline()
                             .size_sm()
-                            .when(autofocus_back, |field| field.auto_focus())
+                            .when(autofocus_back, |this| this.auto_focus())
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
                     .child(
@@ -349,98 +336,51 @@ impl Config {
                     .gap(rems(1.))
                     .when(!self.sections.is_empty(), |div| {
                         div.child(
-                            Button::new("save")
-                                .when(
-                                    !self.component.can(Operation::Configure) || !self.is_valid(),
-                                    |btn| btn.disabled(),
-                                )
-                                .when(
-                                    self.component.is_running(Operation::Configure),
-                                    Button::loading,
-                                )
-                                .size_md()
-                                .variant_outline()
-                                .child("Save")
-                                .w(rems(10.))
-                                .on_click(cx.listener(Self::on_save)),
+                            self.operation_button(
+                                "save",
+                                "Save",
+                                ConfigOperation::Save,
+                                can_configure && self.is_valid(),
+                            )
+                            .variant_outline()
+                            .on_click(cx.listener(Self::on_save)),
                         )
                     })
-                    .when(has_login && self.status.can_login(), |div| {
+                    .when(self.component.allows(AuthOperation::Login), |div| {
                         div.child(
-                            Button::new("login")
-                                .when(!self.component.can(Operation::Login), |btn| btn.disabled())
-                                .when(self.component.is_running(Operation::Login), Button::loading)
-                                .variant_accent()
-                                .size_md()
-                                .child("Log In")
-                                .w(rems(10.))
-                                .on_click(cx.listener(Self::on_login)),
+                            self.operation_button(
+                                "login",
+                                "Log In",
+                                AuthOperation::Login,
+                                login_ready && self.component.can(AuthOperation::Login),
+                            )
+                            .variant_accent()
+                            .on_click(cx.listener(Self::on_login)),
                         )
                     })
-                    // There must be a login method for a logout flow to exist, but a logout flow might not be required.
-                    .when(has_login && self.status.can_logout(), |div| {
+                    .when(self.component.allows(AuthOperation::Logout), |div| {
                         div.child(
-                            Button::new("logout")
-                                .when(!self.component.can(Operation::Logout), |btn| btn.disabled())
-                                .when(
-                                    self.component.is_running(Operation::Logout),
-                                    Button::loading,
-                                )
-                                .variant_outline()
-                                .size_md()
-                                .child("Log Out")
-                                .w(rems(10.))
-                                .on_click(cx.listener(Self::on_logout)),
+                            self.operation_button(
+                                "logout",
+                                "Log Out",
+                                AuthOperation::Logout,
+                                self.component.can(AuthOperation::Logout),
+                            )
+                            .variant_outline()
+                            .on_click(cx.listener(Self::on_logout)),
                         )
                     }),
             )
     }
 
     fn render_body(
-        &mut self,
+        &self,
+        can_configure: bool,
         autofocus_field: Option<SharedString>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = cx.theme();
-        let can_configure = self.component.can(Operation::Configure);
-
-        let sections = self.sections.iter().map(|s| {
-            let elements = s.elements.iter().map(|element| match element {
-                Element::Field(f) => render_field(
-                    f,
-                    &self.values,
-                    can_configure,
-                    autofocus_field.as_ref(),
-                    &self.scroll_handle,
-                    cx,
-                ),
-                Element::Hbox(fields) => div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(rems(1.))
-                    .children(fields.iter().map(|f| {
-                        render_field(
-                            f,
-                            &self.values,
-                            can_configure,
-                            autofocus_field.as_ref(),
-                            &self.scroll_handle,
-                            cx,
-                        )
-                    }))
-                    .into_any_element(),
-            });
-
-            div()
-                .flex()
-                .flex_col()
-                .text_size(rems(0.875))
-                .line_height(relative(1.))
-                .font_weight(FontWeight::BOLD)
-                .text_color(theme.colors.secondary)
-                .gap(rems(0.875))
-                .child(s.name.clone())
-                .child(div().flex().flex_col().gap(rems(1.5)).children(elements))
+        let sections = self.sections.iter().map(|section| {
+            self.render_section(section, can_configure, autofocus_field.as_ref(), cx)
         });
 
         div()
@@ -464,81 +404,68 @@ impl Config {
             })
             .children(sections)
     }
-}
 
-fn submit_login_form(
-    component: ComponentHandle,
-    permit: Permit,
-    fields: HashMap<String, String>,
-    form_entity: Entity<LoginFormState>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let window_handle = window.window_handle();
-    let task =
-        cx.background_spawn(
-            async move { component.login(permit, LoginRequest::Form { fields }).await },
-        );
-
-    cx.spawn(async move |cx| {
-        let result = task.await;
-
-        let _ = cx.update_window(window_handle, move |_, window, cx| match result {
-            Ok(()) => window.close_dialog(cx),
-            Err(err) => {
-                form_entity.update(cx, |form, cx| {
-                    form.submitting = false;
-                    form.submit_error = Some(err.to_string().into());
-                    cx.notify();
-                });
-            }
+    fn render_section(
+        &self,
+        section: &Section,
+        can_configure: bool,
+        autofocus_field: Option<&SharedString>,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let text_color = cx.theme().colors.secondary;
+        let elements = section.elements.iter().map(|element| match element {
+            Element::Field(f) => self.render_field(f, can_configure, autofocus_field, cx),
+            Element::Hbox(fields) => div()
+                .flex()
+                .flex_wrap()
+                .gap(rems(1.))
+                .children(
+                    fields
+                        .iter()
+                        .map(|f| self.render_field(f, can_configure, autofocus_field, cx)),
+                )
+                .into_any_element(),
         });
-    })
-    .detach();
-}
 
-fn render_field(
-    field: &Field,
-    values: &HashMap<SharedString, SharedString>,
-    can_configure: bool,
-    autofocus_field: Option<&SharedString>,
-    scroll_handle: &ScrollHandle,
-    cx: &mut Context<Config>,
-) -> AnyElement {
-    let field_id = field.id.clone();
-    input(field.id.clone())
-        .when(!can_configure, |this| this.disabled())
-        .when(autofocus_field == Some(&field.id), |field| {
-            field.auto_focus()
-        })
-        .reveal_on_focus(scroll_handle)
-        .label(field.label.clone())
-        .w(rems(20.))
-        .when_some(field.placeholder.clone(), |input, placeholder| {
-            input.placeholder(placeholder)
-        })
-        .value(values.get(field.id.as_str()).cloned().unwrap_or_default())
-        .on_input(cx.listener(move |config, event: &InputEvent, _, cx| {
-            config.values.insert(field_id.clone(), event.value.clone());
-            cx.notify();
-        }))
-        .into_any_element()
+        div()
+            .flex()
+            .flex_col()
+            .text_size(rems(0.875))
+            .line_height(relative(1.))
+            .font_weight(FontWeight::BOLD)
+            .text_color(text_color)
+            .gap(rems(0.875))
+            .child(section.name.clone())
+            .child(div().flex().flex_col().gap(rems(1.5)).children(elements))
+    }
+
+    fn render_field(
+        &self,
+        field: &Field,
+        can_configure: bool,
+        autofocus_field: Option<&SharedString>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        field
+            .input(&self.values, |this| &mut this.values, cx)
+            .w(rems(20.))
+            .when(!can_configure, Input::disabled)
+            .when(autofocus_field == Some(&field.id), |this| this.auto_focus())
+            .reveal_on_focus(&self.scroll_handle)
+            .into_any_element()
+    }
 }
 
 impl Render for Config {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let can_configure = self.values_loaded && self.component.can(ConfigOperation::Save);
         let autofocus_field = self
-            .component
-            .can(Operation::Configure)
-            .then(|| {
-                self.sections.iter().find_map(|s| {
-                    s.elements.iter().find_map(|e| match e {
-                        Element::Field(f) => Some(f),
-                        Element::Hbox(fields) => fields.first(),
-                    })
-                })
-            })
-            .flatten()
+            .sections
+            .iter()
+            .flat_map(|s| &s.elements)
+            .flat_map(Element::fields)
+            .next()
+            .filter(|_| can_configure)
             .map(|f| f.id.clone());
 
         div()
@@ -546,26 +473,42 @@ impl Render for Config {
             .flex()
             .flex_col()
             .gap(rems(2.))
-            .child(self.render_header(autofocus_field.is_none(), cx))
-            .child(self.render_body(autofocus_field, cx))
+            .child(self.render_header(can_configure, autofocus_field.is_none(), cx))
+            .child(self.render_body(can_configure, autofocus_field, cx))
     }
 }
 
-struct LoginFormState {
+fn status_error(status: &Status) -> Option<SharedString> {
+    status.error().map(|error| error.to_string().into())
+}
+
+fn to_owned_values(values: &Values) -> HashMap<String, String> {
+    values
+        .iter()
+        .map(|(id, value)| (id.to_string(), value.to_string()))
+        .collect()
+}
+
+struct LoginDialog {
+    auth: AuthHandle,
+    form: LoginForm,
+    title: SharedString,
+    icon: Option<Arc<Image>>,
     fields: Vec<Field>,
-    values: HashMap<SharedString, SharedString>,
+    values: Values,
     submitting: bool,
     submit_error: Option<SharedString>,
 }
 
-impl LoginFormState {
-    pub fn new(login_form: LoginForm) -> Self {
-        let fields = flatten_fields(login_form.fields)
-            .into_iter()
-            .map(text_to_field)
-            .collect();
+impl LoginDialog {
+    fn new(auth: AuthHandle, form: LoginForm, name: &str, icon: Option<Arc<Image>>) -> Self {
+        let fields = form.text_fields().map(Into::into).collect();
 
         Self {
+            auth,
+            form,
+            title: format!("Log in to {name}").into(),
+            icon,
             fields,
             values: HashMap::new(),
             submitting: false,
@@ -573,102 +516,124 @@ impl LoginFormState {
         }
     }
 
-    pub fn is_valid(&self) -> bool {
-        fields_valid(&self.fields, &self.values)
+    fn build(this: &Entity<Self>, dialog: Dialog, cx: &App) -> Dialog {
+        let state = this.read(cx);
+        let entity = this.clone();
+        dialog
+            .w(rems(24.))
+            .header(state.render_header(cx))
+            .ok_text("Log In")
+            .when(!state.is_valid(), Dialog::disabled)
+            .when(state.submitting, Dialog::loading)
+            .when_some(state.submit_error.clone(), Dialog::error)
+            .on_ok(move |_, window, cx| {
+                entity.update(cx, |this, cx| this.submit(window, cx));
+            })
+            .child(this.clone())
     }
 
-    pub fn login_fields(&self) -> HashMap<String, String> {
-        self.values
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect()
+    fn render_header(&self, cx: &App) -> impl IntoElement {
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(rems(1.))
+            .when_some(self.icon.clone(), |header, icon| {
+                header.child(img(ImageSource::Image(icon)).size(rems(2.75)))
+            })
+            .child(
+                div()
+                    .w_full()
+                    .text_center()
+                    .text_size(cx.theme().text.lg)
+                    .line_height(relative(1.))
+                    .font_weight(FontWeight::BOLD)
+                    .child(self.title.clone()),
+            )
+    }
+
+    fn is_valid(&self) -> bool {
+        self.form.missing_field(&self.values).is_none()
+    }
+
+    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let permit = match self.auth.begin_login() {
+            Ok(permit) => permit,
+            Err(err) => {
+                self.submit_error = Some(err.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+
+        let fields = to_owned_values(&self.values);
+        self.submitting = true;
+        self.submit_error = None;
+
+        cx.notify();
+
+        let login =
+            cx.background_spawn(async move { permit.login(LoginRequest::Form { fields }).await });
+        cx.spawn_in(window, async move |this, cx| {
+            let result = login.await;
+            let _ = this.update_in(cx, |this, window, cx| match result {
+                Ok(()) => window.close_dialog(cx),
+                Err(err) => {
+                    this.submitting = false;
+                    this.submit_error = Some(err.to_string().into());
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 }
 
-impl Render for LoginFormState {
+impl Render for LoginDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let fields = self.fields.iter().enumerate().map(|(i, f)| {
-            let field_id = f.id.clone();
-            input(f.id.clone())
+            f.input(&self.values, |this| &mut this.values, cx)
                 .size_lg()
-                .label(f.label.clone())
                 .w_full()
-                .when(i == 0, |field| field.auto_focus())
-                .when(self.submitting, |field| field.disabled())
-                .when_some(f.placeholder.clone(), |input, placeholder| {
-                    input.placeholder(placeholder)
-                })
-                .value(self.values.get(f.id.as_str()).cloned().unwrap_or_default())
-                .on_input(cx.listener(move |this, event: &InputEvent, _, cx| {
-                    this.values.insert(field_id.clone(), event.value.clone());
-                    cx.notify();
-                }))
+                .when(i == 0, |this| this.auto_focus())
+                .when(self.submitting, Input::disabled)
         });
 
         div().flex().flex_col().gap(rems(1.)).children(fields)
     }
 }
 
-impl From<ConfigSection> for Section {
-    fn from(section: ConfigSection) -> Self {
+impl From<&ConfigSection> for Section {
+    fn from(section: &ConfigSection) -> Self {
         Section {
             name: section.name.to_uppercase().into(),
-            elements: section.elements.into_iter().map(Into::into).collect(),
+            elements: section.elements.iter().map(Into::into).collect(),
         }
     }
 }
 
-impl From<ConfigElement> for Element {
-    fn from(element: ConfigElement) -> Self {
+impl From<&FormElement> for Element {
+    fn from(element: &FormElement) -> Self {
         match element {
-            text @ ConfigElement::Text { .. } => Element::Field(text_to_field(text)),
-            ConfigElement::Hbox { elements } => Element::Hbox(
-                flatten_fields(elements)
-                    .into_iter()
-                    .map(text_to_field)
-                    .collect(),
-            ),
+            FormElement::Text(field) => Element::Field(field.into()),
+            FormElement::Hbox { .. } => {
+                Element::Hbox(element.text_fields().map(Into::into).collect())
+            }
         }
     }
 }
 
-fn flatten_fields(elements: Vec<ConfigElement>) -> Vec<ConfigElement> {
-    elements
-        .into_iter()
-        .flat_map(|element| match element {
-            ConfigElement::Hbox { elements } => flatten_fields(elements),
-            text => vec![text],
-        })
-        .collect()
-}
-
-fn text_to_field(element: ConfigElement) -> Field {
-    match element {
-        ConfigElement::Text {
-            id,
-            label,
-            placeholder,
-            required,
-        } => Field {
-            id: id.into(),
-            label: if required {
-                format!("{label} *").into()
+impl From<&TextField> for Field {
+    fn from(field: &TextField) -> Self {
+        Field {
+            id: field.id.clone().into(),
+            label: if field.required {
+                format!("{} *", field.label).into()
             } else {
-                label.into()
+                field.label.clone().into()
             },
-            placeholder: placeholder.map(Into::into),
-            required,
-        },
-        ConfigElement::Hbox { .. } => unreachable!("flatten_fields removes Hbox"),
+            placeholder: field.placeholder.clone().map(Into::into),
+        }
     }
-}
-
-fn fields_valid<'a>(
-    fields: impl IntoIterator<Item = &'a Field>,
-    values: &HashMap<SharedString, SharedString>,
-) -> bool {
-    fields
-        .into_iter()
-        .filter(|field| field.required)
-        .all(|field| values.get(&field.id).is_some_and(|value| !value.is_empty()))
 }

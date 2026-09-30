@@ -38,10 +38,12 @@ impl Storefronts {
             _tasks: Vec::new(),
         };
 
-        let task = cx.listen(Topic::Component, |page, cx| {
-            page.refresh_storefronts(cx);
-        });
-        page._tasks.push(task);
+        for topic in [Topic::ComponentRegistered, Topic::ComponentState] {
+            let task = cx.listen(topic, |page, cx| {
+                page.refresh_storefronts(cx);
+            });
+            page._tasks.push(task);
+        }
 
         page.refresh_storefronts(cx);
         page
@@ -68,7 +70,7 @@ impl Storefronts {
             .collect();
 
         storefronts.sort_by(|a, b| a.name.cmp(&b.name));
-        self.has_errors = storefronts.iter().any(|s| s.status.is_any_error());
+        self.has_errors = storefronts.iter().any(|s| s.status.error().is_some());
         self.storefronts = storefronts;
         cx.notify();
     }

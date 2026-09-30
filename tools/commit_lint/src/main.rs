@@ -1,8 +1,8 @@
 use std::{env, fs, process};
 
 fn main() {
-    let path = env::args().nth(1).expect("No commit-msg file provided");
-    let msg = fs::read_to_string(&path).expect("Could not read file");
+    let path = env::args().nth(1).expect("a commit-msg file is required");
+    let msg = fs::read_to_string(&path).expect("could not read file");
     let first_line = msg.lines().next().unwrap_or("").trim();
 
     let valid_types = [

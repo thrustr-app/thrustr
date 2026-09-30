@@ -1,5 +1,5 @@
-use crate::wit::thrustr::plugin::config::Error;
-use crate::wit::thrustr::plugin::config::get;
+use crate::Error;
+use crate::wit::config::thrustr::plugin::config_store::get;
 
 pub struct Config;
 

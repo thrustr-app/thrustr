@@ -1,7 +1,19 @@
 package thrustr:plugin@0.1.0;
 
-interface config {
+interface config-store {
     use types.{error};
 
     get: func(field-id: string) -> result<string, error>;
+}
+
+interface config {
+    use types.{error};
+
+    validate: async func(fields: map<string, string>) -> result<_, error>;
+}
+
+world config-capability {
+    import config-store;
+
+    export config;
 }

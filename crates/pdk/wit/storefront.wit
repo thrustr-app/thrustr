@@ -7,8 +7,6 @@ interface storefront {
     get-game-versions: async func(game: game) -> result<list<game-version>, error>;
 }
 
-world storefront-plugin {
-    include base-plugin;
-
+world storefront-capability {
     export storefront;
 }
