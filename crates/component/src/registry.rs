@@ -11,25 +11,9 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::debug;
 
-pub(crate) type Components = DashMap<String, ComponentHandle>;
-
-#[derive(Clone)]
-pub struct RegistryContext {
-    pub tokio_handle: TokioHandle,
-    pub component_storage: Arc<dyn ComponentStorage>,
-    pub game_repository: Arc<dyn GameRepository>,
-    pub artwork_service: ArtworkService,
-}
-
-#[derive(Debug, Error)]
-pub enum RegisterError {
-    #[error("component `{id}` is already registered")]
-    Duplicate { id: String },
-}
-
 #[derive(Clone)]
 pub struct ComponentRegistry {
-    components: Arc<Components>,
+    components: Arc<DashMap<String, ComponentHandle>>,
     context: RegistryContext,
 }
 
@@ -87,4 +71,18 @@ impl ComponentRegistry {
             .filter_map(|c| c.value().storefront())
             .collect()
     }
+}
+
+#[derive(Clone)]
+pub struct RegistryContext {
+    pub tokio_handle: TokioHandle,
+    pub component_storage: Arc<dyn ComponentStorage>,
+    pub game_repository: Arc<dyn GameRepository>,
+    pub artwork_service: ArtworkService,
+}
+
+#[derive(Debug, Error)]
+pub enum RegisterError {
+    #[error("component `{id}` is already registered")]
+    Duplicate { id: String },
 }

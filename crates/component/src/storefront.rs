@@ -1,6 +1,7 @@
-use super::error::Result;
-use super::permit::Permit;
-use crate::ComponentHandle;
+use crate::{
+    ComponentHandle,
+    handle::{Permit, Result},
+};
 use domain::{
     component::{Storefront, StorefrontOperation},
     game::NewGame,

@@ -1,6 +1,7 @@
-use super::error::{OperationError, Result};
-use super::permit::Permit;
-use crate::ComponentHandle;
+use crate::{
+    ComponentHandle,
+    handle::{OperationError, Permit, Result},
+};
 use domain::component::{Auth, AuthFlow, AuthOperation, Form, LoginMethod, LoginRequest};
 use std::sync::Arc;
 

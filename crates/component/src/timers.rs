@@ -1,6 +1,6 @@
 use crate::{
     ComponentHandle, ComponentLink,
-    handles::{Permit, WeakComponentHandle},
+    handle::{Permit, WeakComponentHandle},
 };
 use domain::component::{
     Activation, PeriodicTask, Schedule, ScheduleError, Scheduler, SchedulerOperation,
@@ -25,15 +25,6 @@ const MAX_ARGS_SIZE: usize = 64 * 1024;
 const MIN_DELAY: Duration = Duration::from_secs(1);
 
 pub struct Timers<'a>(&'a ComponentLink);
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum TimersError {
-    #[error("the component is not registered")]
-    NotRegistered,
-
-    #[error(transparent)]
-    Schedule(#[from] ScheduleError),
-}
 
 impl<'a> Timers<'a> {
     pub(crate) fn new(link: &'a ComponentLink) -> Self {
@@ -60,57 +51,13 @@ impl<'a> Timers<'a> {
     }
 }
 
-/// A task to run on a schedule within an activation.
-struct Job {
-    task: String,
-    args: Vec<u8>,
-    schedule: Schedule,
-    activation: Activation,
-}
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TimersError {
+    #[error("the component is not registered")]
+    NotRegistered,
 
-impl Job {
-    fn new(task: String, args: Vec<u8>, schedule: Schedule, activation: Activation) -> Self {
-        let schedule = Schedule {
-            delay: schedule.delay.max(MIN_DELAY),
-            interval: schedule.interval.map(|interval| interval.max(MIN_DELAY)),
-        };
-        Self {
-            task,
-            args,
-            schedule,
-            activation,
-        }
-    }
-
-    fn periodic(PeriodicTask { task, interval }: &PeriodicTask, activation: Activation) -> Self {
-        let schedule = Schedule {
-            delay: *interval,
-            interval: Some(*interval),
-        };
-        Self::new(task.clone(), Vec::new(), schedule, activation)
-    }
-}
-
-type Pending = HashMap<String, Entry>;
-
-enum Entry {
-    /// Scheduled while initializing. Its timer starts once the component is
-    /// active.
-    Waiting(Job),
-    /// Its timer is running until the entry is dropped.
-    Started {
-        activation: Activation,
-        _cancel: oneshot::Sender<()>,
-    },
-}
-
-impl Entry {
-    fn activation(&self) -> Activation {
-        match self {
-            Self::Waiting(job) => job.activation,
-            Self::Started { activation, .. } => *activation,
-        }
-    }
+    #[error(transparent)]
+    Schedule(#[from] ScheduleError),
 }
 
 pub(crate) struct ComponentTimers {
@@ -294,5 +241,58 @@ async fn timer(handle: WeakComponentHandle, job: Job, mut cancelled: oneshot::Re
         };
         timers.run(&handle, &job).await;
         delay = interval;
+    }
+}
+
+type Pending = HashMap<String, Entry>;
+
+enum Entry {
+    /// Scheduled while initializing. Its timer starts once the component is
+    /// active.
+    Waiting(Job),
+    /// Its timer is running until the entry is dropped.
+    Started {
+        activation: Activation,
+        _cancel: oneshot::Sender<()>,
+    },
+}
+
+impl Entry {
+    fn activation(&self) -> Activation {
+        match self {
+            Self::Waiting(job) => job.activation,
+            Self::Started { activation, .. } => *activation,
+        }
+    }
+}
+
+/// A task to run on a schedule within an activation.
+struct Job {
+    task: String,
+    args: Vec<u8>,
+    schedule: Schedule,
+    activation: Activation,
+}
+
+impl Job {
+    fn new(task: String, args: Vec<u8>, schedule: Schedule, activation: Activation) -> Self {
+        let schedule = Schedule {
+            delay: schedule.delay.max(MIN_DELAY),
+            interval: schedule.interval.map(|interval| interval.max(MIN_DELAY)),
+        };
+        Self {
+            task,
+            args,
+            schedule,
+            activation,
+        }
+    }
+
+    fn periodic(PeriodicTask { task, interval }: &PeriodicTask, activation: Activation) -> Self {
+        let schedule = Schedule {
+            delay: *interval,
+            interval: Some(*interval),
+        };
+        Self::new(task.clone(), Vec::new(), schedule, activation)
     }
 }

@@ -1,31 +1,16 @@
-use self::error::Result;
-use crate::{RegistryContext, timers::ComponentTimers};
+use crate::{
+    AuthHandle, ConfigHandle, RegistryContext, StorefrontHandle, Timers, timers::ComponentTimers,
+};
 use domain::component::{
-    Activation, Auth, Capabilities, Component, Config, Error, Initialization, Metadata, Operation,
-    Outcome, Running, State, Status, Storefront,
+    Activation, Auth, Capabilities, Component, Config, Error, Initialization, Metadata,
+    MissingFieldError, Operation, Outcome, Rejection, Running, State, Status, Storefront,
 };
 use event::Topic;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use tracing::{debug, info, warn};
-
-mod auth;
-mod config;
-mod error;
-mod permit;
-mod storefront;
-
-pub use auth::{AuthHandle, LoginPermit, LogoutPermit};
-pub use config::ConfigHandle;
-pub use error::OperationError;
-pub(crate) use permit::Permit;
-pub use storefront::StorefrontHandle;
 
 #[derive(Clone)]
 pub struct ComponentHandle(Arc<Inner>);
-
-/// A [`ComponentHandle`] that does not keep the component alive.
-#[derive(Debug, Clone)]
-pub(crate) struct WeakComponentHandle(Weak<Inner>);
 
 struct Inner {
     component: Arc<dyn Component>,
@@ -114,7 +99,7 @@ impl ComponentHandle {
         self.0.timers.as_ref()
     }
 
-    fn context(&self) -> &RegistryContext {
+    pub(crate) fn context(&self) -> &RegistryContext {
         &self.0.context
     }
 
@@ -264,9 +249,94 @@ impl ComponentHandle {
     }
 }
 
+/// A [`ComponentHandle`] that does not keep the component alive.
+#[derive(Debug, Clone)]
+pub(crate) struct WeakComponentHandle(Weak<Inner>);
+
 impl WeakComponentHandle {
     pub(crate) fn upgrade(&self) -> Option<ComponentHandle> {
         self.0.upgrade().map(ComponentHandle)
+    }
+}
+
+/// A weak reference to a component's handle.
+///
+/// Lets a component act on itself through the host (e.g. schedule timers
+/// tied to its current activation and status).
+#[derive(Clone)]
+pub struct ComponentLink(Arc<OnceLock<WeakComponentHandle>>);
+
+impl ComponentLink {
+    pub(crate) fn new() -> Self {
+        Self(Arc::default())
+    }
+
+    pub fn timers(&self) -> Timers<'_> {
+        Timers::new(self)
+    }
+
+    pub(crate) fn bind(&self, handle: &ComponentHandle) {
+        self.0
+            .set(handle.downgrade())
+            .expect("link should be bound by a single registration");
+    }
+
+    pub(crate) fn handle(&self) -> Option<ComponentHandle> {
+        self.0.get()?.upgrade()
+    }
+}
+
+/// Holds a component while an operation is running.
+///
+/// Component errors are reported through [`Permit::finish`], as they can
+/// change the status. Any other failure drops the permit, which cancels the
+/// operation.
+pub(crate) struct Permit {
+    handle: ComponentHandle,
+    running: Option<Running>,
+}
+
+impl Permit {
+    pub(crate) fn begin(handle: &ComponentHandle, operation: impl Into<Operation>) -> Result<Self> {
+        let running = handle.start(operation.into(), None)?;
+        Ok(Self::new(handle, running))
+    }
+
+    /// Like [`Permit::begin`], but only while `activation` is still current.
+    pub(crate) fn begin_in(
+        handle: &ComponentHandle,
+        activation: Activation,
+        operation: impl Into<Operation>,
+    ) -> Result<Self> {
+        let running = handle.start(operation.into(), Some(activation))?;
+        Ok(Self::new(handle, running))
+    }
+
+    fn new(handle: &ComponentHandle, running: Running) -> Self {
+        Self {
+            handle: handle.clone(),
+            running: Some(running),
+        }
+    }
+
+    /// Reports the result of the operation, running any initialization it
+    /// starts.
+    pub(crate) async fn finish(mut self, result: std::result::Result<(), Error>) -> Result<()> {
+        let running = self
+            .running
+            .take()
+            .expect("permit should hold its operation until finished");
+        let outcome = self.handle.state_write().finish(running, result);
+        self.handle.report(&outcome);
+        self.handle.initialize(outcome.initialization).await
+    }
+}
+
+impl Drop for Permit {
+    fn drop(&mut self) {
+        if let Some(running) = self.running.take() {
+            self.handle.cancel(running);
+        }
     }
 }
 
@@ -295,4 +365,33 @@ impl Drop for Initializing<'_> {
                 .finish_initialization(initialization, Err(error));
         }
     }
+}
+
+pub(crate) type Result<T> = std::result::Result<T, OperationError>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum OperationError {
+    #[error("cannot start {operation}: {rejection}")]
+    Rejected {
+        operation: Operation,
+        rejection: Rejection,
+    },
+
+    #[error("cannot initialize: {0}")]
+    NotInitializable(Rejection),
+
+    #[error(transparent)]
+    MissingField(#[from] MissingFieldError),
+
+    #[error("component has no login form")]
+    NoLoginForm,
+
+    #[error("component offers neither a login flow nor a login form")]
+    NoLoginMethod,
+
+    #[error(transparent)]
+    Component(#[from] Error),
+
+    #[error(transparent)]
+    Storage(#[from] anyhow::Error),
 }
