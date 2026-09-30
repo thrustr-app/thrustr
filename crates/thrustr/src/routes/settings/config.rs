@@ -121,7 +121,7 @@ impl Config {
             .map(Into::into)
             .collect();
 
-        let _tasks = vec![cx.listen(Topic::Component, Self::refresh_status)];
+        let _tasks = vec![cx.listen(Topic::ComponentState, Self::refresh_status)];
 
         let status = component.status();
         let mut page = Self {

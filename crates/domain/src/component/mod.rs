@@ -31,6 +31,10 @@ pub trait Component: Send + Sync {
     fn storefront(&self) -> Option<Arc<dyn Storefront>> {
         None
     }
+
+    fn scheduler(&self) -> Option<Arc<dyn Scheduler>> {
+        None
+    }
 }
 
 #[derive(Debug)]

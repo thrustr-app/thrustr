@@ -1,4 +1,6 @@
-use crate::component::{AuthOperation, ConfigOperation, Error, StorefrontOperation};
+use crate::component::{
+    AuthOperation, ConfigOperation, Error, SchedulerOperation, StorefrontOperation,
+};
 use strum::Display;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6,6 +8,8 @@ pub struct State {
     capabilities: Capabilities,
     status: Status,
     in_flight: Operations,
+    /// How many times the component started initializing.
+    activations: u64,
 }
 
 impl State {
@@ -14,11 +18,17 @@ impl State {
             capabilities,
             status: Status::default(),
             in_flight: Operations::default(),
+            activations: 0,
         }
     }
 
     pub fn status(&self) -> &Status {
         &self.status
+    }
+
+    pub fn activation(&self) -> Option<Activation> {
+        (self.status.is_initializing() || self.status.is_active())
+            .then_some(Activation(self.activations))
     }
 
     pub fn is_running(&self, operation: Operation) -> bool {
@@ -78,6 +88,18 @@ impl State {
         Ok(Running(operation))
     }
 
+    /// Starts `operation` on behalf of `activation`, which must be the current one.
+    pub fn start_in(
+        &mut self,
+        activation: Activation,
+        operation: Operation,
+    ) -> Result<Running, Rejection> {
+        if self.activation() != Some(activation) {
+            return Err(Rejection::Expired);
+        }
+        self.start(operation)
+    }
+
     pub fn finish(&mut self, running: Running, result: Result<(), Error>) -> Outcome {
         let next = match (self.release(running), result) {
             (Operation::Auth(AuthOperation::Login), Ok(())) => Status::Initializing,
@@ -92,7 +114,7 @@ impl State {
             {
                 Status::Initializing
             }
-            (Operation::Storefront(_), Err(error))
+            (Operation::Storefront(_) | Operation::Scheduler(_), Err(error))
                 if self.status.is_active() && error.is_fatal() =>
             {
                 Status::Inactive(InactiveReason::Error(error))
@@ -152,6 +174,9 @@ impl State {
             return Outcome::default();
         }
         let previous = std::mem::replace(&mut self.status, status);
+        if self.status.is_initializing() {
+            self.activations += 1;
+        }
         Outcome {
             initialization: self.status.is_initializing().then_some(Initialization(())),
             change: Some((previous, self.status.clone())),
@@ -165,6 +190,7 @@ pub struct Capabilities {
     pub auth: bool,
     pub config: bool,
     pub storefront: bool,
+    pub scheduler: bool,
 }
 
 impl Capabilities {
@@ -173,6 +199,7 @@ impl Capabilities {
             Operation::Auth(_) => self.auth,
             Operation::Config(_) => self.config,
             Operation::Storefront(_) => self.storefront,
+            Operation::Scheduler(_) => self.scheduler,
         }
     }
 }
@@ -192,6 +219,11 @@ pub struct Outcome {
 #[must_use]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Initialization(());
+
+/// One run of the component, from initialization to inactive.
+/// Scheduled tasks end with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Activation(u64);
 
 /// An operation started with [`State::start`], to be reported back with
 /// [`State::finish`] or [`State::cancel`].
@@ -215,6 +247,9 @@ pub enum Rejection {
 
     #[error("{0} is running")]
     Busy(Operation),
+
+    #[error("it belongs to an activation that has ended")]
+    Expired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
@@ -274,7 +309,7 @@ impl Status {
                             | InactiveReason::Error(Error::Auth(_) | Error::Config(_))
                     )
             ),
-            Operation::Storefront(_) => self.is_active(),
+            Operation::Storefront(_) | Operation::Scheduler(_) => self.is_active(),
         }
     }
 }
@@ -294,14 +329,21 @@ pub enum Operation {
     Config(ConfigOperation),
     #[strum(to_string = "{0}")]
     Storefront(StorefrontOperation),
+    #[strum(to_string = "{0}")]
+    Scheduler(SchedulerOperation),
 }
 
 impl Operation {
     fn is_exclusive(self) -> bool {
         match self {
             Self::Auth(_) => true,
-            Self::Config(_) | Self::Storefront(_) => false,
+            Self::Config(_) | Self::Storefront(_) | Self::Scheduler(_) => false,
         }
+    }
+
+    /// Whether the operation may run alongside itself.
+    fn is_reentrant(self) -> bool {
+        matches!(self, Self::Scheduler(_))
     }
 }
 
@@ -318,14 +360,11 @@ impl Operations {
     }
 
     fn blocker(&self, operation: Operation) -> Option<Operation> {
-        if operation.is_exclusive() {
-            self.first()
-        } else {
-            self.0
-                .iter()
-                .copied()
-                .find(|running| *running == operation || running.is_exclusive())
-        }
+        self.0.iter().copied().find(|&running| {
+            operation.is_exclusive()
+                || running.is_exclusive()
+                || (running == operation && !operation.is_reentrant())
+        })
     }
 
     fn insert(&mut self, operation: Operation) {
@@ -346,17 +385,20 @@ impl Operations {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Step::{Enable, Initialize, Reinitialize, Run};
 
     const LOGIN: Operation = Operation::Auth(AuthOperation::Login);
     const LOGOUT: Operation = Operation::Auth(AuthOperation::Logout);
     const CONFIG: Operation = Operation::Config(ConfigOperation::Save);
     const SYNC: Operation = Operation::Storefront(StorefrontOperation::Sync);
-    const OPERATIONS: [Operation; 4] = [LOGIN, LOGOUT, CONFIG, SYNC];
+    const TASK: Operation = Operation::Scheduler(SchedulerOperation::Run);
+    const OPERATIONS: [Operation; 5] = [LOGIN, LOGOUT, CONFIG, SYNC, TASK];
 
     const ALL: Capabilities = Capabilities {
         auth: true,
         config: true,
         storefront: true,
+        scheduler: true,
     };
 
     fn auth() -> Error {
@@ -532,11 +574,62 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn check_activated(status: Status, expected: bool) {
+        let state = state_at(ALL, &status, &[]);
+        assert_eq!(state.activation().is_some(), expected, "while {status}");
+    }
+
+    enum Step {
+        Enable,
+        Reinitialize,
+        Initialize(Result<(), Error>),
+        Run(Operation, Result<(), Error>),
+    }
+
+    #[track_caller]
+    fn check_start_in(before: &[Step], after: &[Step], expected: Result<(), Rejection>) {
+        let mut state = State::new(ALL);
+        let mut pending = None;
+        take_steps(&mut state, &mut pending, before);
+        let activation = state
+            .activation()
+            .unwrap_or_else(|| panic!("{} should be activated", state.status()));
+        take_steps(&mut state, &mut pending, after);
+        assert_eq!(state.start_in(activation, TASK).map(|_| ()), expected);
+    }
+
+    #[track_caller]
+    fn take_steps(state: &mut State, pending: &mut Option<Initialization>, steps: &[Step]) {
+        for step in steps {
+            let outcome = match step {
+                Enable => state.enable().expect("the component should be enabled"),
+                Reinitialize => state
+                    .reinitialize()
+                    .expect("the component should reinitialize"),
+                Initialize(result) => {
+                    let initialization =
+                        pending.take().expect("an initialization should be pending");
+                    state.finish_initialization(initialization, result.clone())
+                }
+                Run(operation, result) => {
+                    let running = state.start(*operation).unwrap_or_else(|rejection| {
+                        panic!("{operation} should start: {rejection}")
+                    });
+                    state.finish(running, result.clone())
+                }
+            };
+            if let Some(initialization) = outcome.initialization {
+                *pending = Some(initialization);
+            }
+        }
+    }
+
     #[test]
     fn status_determines_allowed_operations() {
         check_allows(disabled(), &[CONFIG]);
         check_allows(Status::Initializing, &[]);
-        check_allows(Status::Active, &[LOGOUT, CONFIG, SYNC]);
+        check_allows(Status::Active, &[LOGOUT, CONFIG, SYNC, TASK]);
         check_allows(unauthenticated(), &[LOGIN, CONFIG]);
         check_allows(failed(auth()), &[LOGIN, LOGOUT, CONFIG]);
         check_allows(failed(config()), &[LOGOUT, CONFIG]);
@@ -590,6 +683,16 @@ mod tests {
             SYNC,
             Err(Rejection::Unsupported(SYNC)),
         );
+        check_start(
+            Capabilities {
+                scheduler: false,
+                ..ALL
+            },
+            Status::Active,
+            &[],
+            TASK,
+            Err(Rejection::Unsupported(TASK)),
+        );
     }
 
     #[test]
@@ -619,7 +722,7 @@ mod tests {
             CONFIG,
             Err(Rejection::Busy(LOGIN)),
         );
-        for operation in [LOGOUT, CONFIG, SYNC] {
+        for operation in [LOGOUT, CONFIG, SYNC, TASK] {
             check_start(
                 ALL,
                 Status::Active,
@@ -646,12 +749,81 @@ mod tests {
             LOGOUT,
             Err(Rejection::Busy(SYNC)),
         );
+        check_start(
+            ALL,
+            Status::Active,
+            &[TASK],
+            LOGOUT,
+            Err(Rejection::Busy(TASK)),
+        );
     }
 
     #[test]
     fn different_shared_operations_run_concurrently() {
         check_start(ALL, Status::Active, &[CONFIG], SYNC, Ok(()));
         check_start(ALL, Status::Active, &[SYNC], CONFIG, Ok(()));
+        check_start(ALL, Status::Active, &[CONFIG, SYNC], TASK, Ok(()));
+        check_start(ALL, Status::Active, &[TASK], SYNC, Ok(()));
+    }
+
+    #[test]
+    fn reentrant_operations_run_alongside_others() {
+        check_start(ALL, Status::Active, &[TASK, TASK], TASK, Ok(()));
+    }
+
+    #[test]
+    fn only_initializing_and_active_components_are_activated() {
+        check_activated(disabled(), false);
+        check_activated(Status::Initializing, true);
+        check_activated(Status::Active, true);
+        check_activated(unauthenticated(), false);
+        for error in errors() {
+            check_activated(failed(error), false);
+        }
+    }
+
+    #[test]
+    fn an_activation_spans_initialization_and_active() {
+        let active = [Enable, Initialize(Ok(()))];
+        check_start_in(&[Enable], &[Initialize(Ok(()))], Ok(()));
+        check_start_in(&active, &[], Ok(()));
+        check_start_in(
+            &active,
+            &[Run(SYNC, Err(other())), Run(CONFIG, Ok(()))],
+            Ok(()),
+        );
+    }
+
+    #[test]
+    fn operations_expire_with_their_activation() {
+        let active = [Enable, Initialize(Ok(()))];
+        check_start_in(
+            &[Enable],
+            &[Initialize(Err(other()))],
+            Err(Rejection::Expired),
+        );
+        check_start_in(&active, &[Run(SYNC, Err(auth()))], Err(Rejection::Expired));
+        check_start_in(&active, &[Run(LOGOUT, Ok(()))], Err(Rejection::Expired));
+    }
+
+    #[test]
+    fn new_activations_do_not_revive_expired_operations() {
+        let active = [Enable, Initialize(Ok(()))];
+        check_start_in(
+            &[Enable],
+            &[Initialize(Err(other())), Reinitialize, Initialize(Ok(()))],
+            Err(Rejection::Expired),
+        );
+        check_start_in(
+            &active,
+            &[Run(SYNC, Err(auth())), Reinitialize, Initialize(Ok(()))],
+            Err(Rejection::Expired),
+        );
+        check_start_in(
+            &active,
+            &[Run(LOGOUT, Ok(())), Run(LOGIN, Ok(())), Initialize(Ok(()))],
+            Err(Rejection::Expired),
+        );
     }
 
     #[test]
@@ -760,15 +932,19 @@ mod tests {
 
     #[test]
     fn auth_or_config_errors_deactivate_the_component() {
-        for error in [auth(), config()] {
-            check_finish(Status::Active, SYNC, Err(error.clone()), failed(error));
+        for operation in [SYNC, TASK] {
+            for error in [auth(), config()] {
+                check_finish(Status::Active, operation, Err(error.clone()), failed(error));
+            }
         }
     }
 
     #[test]
     fn other_results_keep_the_component_active() {
-        check_finish(Status::Active, SYNC, Ok(()), Status::Active);
-        check_finish(Status::Active, SYNC, Err(other()), Status::Active);
+        for operation in [SYNC, TASK] {
+            check_finish(Status::Active, operation, Ok(()), Status::Active);
+            check_finish(Status::Active, operation, Err(other()), Status::Active);
+        }
     }
 
     #[test]

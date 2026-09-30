@@ -1,0 +1,26 @@
+package thrustr:plugin@0.1.0;
+
+interface timers {
+    use types.{error};
+
+    schedule: func(task: string, args: list<u8>, delay-ms: u64, interval-ms: option<u64>) -> result<_, error>;
+    cancel: func(task: string);
+}
+
+interface scheduler {
+    use types.{error};
+
+    record periodic-task {
+        task: string,
+        interval-ms: u64,
+    }
+
+    periodic: async func() -> list<periodic-task>;
+    run: async func(task: string, args: list<u8>) -> result<_, error>;
+}
+
+world scheduler-capability {
+    import timers;
+
+    export scheduler;
+}

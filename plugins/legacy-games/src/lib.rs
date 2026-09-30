@@ -10,9 +10,11 @@ mod mapper;
 
 pub struct LegacyGames;
 
+type Result<T> = std::result::Result<T, Error>;
+
 #[pdk::export]
 impl Plugin for LegacyGames {
-    async fn init() -> Result<(), Error> {
+    async fn init() -> Result<()> {
         let email: String = KvStore::get("email")?.ok_or(Error::auth("not logged in"))?;
         let token = KvStore::get::<String>("token")?;
 
@@ -29,7 +31,7 @@ impl Plugin for LegacyGames {
 
 #[pdk::export]
 impl Auth for LegacyGames {
-    async fn login(request: LoginRequest) -> Result<(), Error> {
+    async fn login(request: LoginRequest) -> Result<()> {
         if let LoginRequest::Form(form) = request {
             let email = form
                 .fields
@@ -56,7 +58,7 @@ impl Auth for LegacyGames {
         }
     }
 
-    async fn logout() -> Result<(), Error> {
+    async fn logout() -> Result<()> {
         KvStore::delete("email")?;
         KvStore::delete("token")?;
         Ok(())
@@ -65,7 +67,7 @@ impl Auth for LegacyGames {
 
 #[pdk::export]
 impl Storefront for LegacyGames {
-    async fn list_games() -> Result<Vec<Game>, Error> {
+    async fn list_games() -> Result<Vec<Game>> {
         let email: String = KvStore::get("email")?.ok_or(Error::auth("not logged in"))?;
         let token = KvStore::get::<String>("token")?;
         let user_id = KvStore::get("user_id")?;
@@ -79,7 +81,7 @@ impl Storefront for LegacyGames {
         Ok(games)
     }
 
-    async fn list_game_versions(game: Game) -> Result<Vec<GameVersion>, Error> {
+    async fn list_game_versions(game: Game) -> Result<Vec<GameVersion>> {
         Ok(vec![GameVersion {
             id: game.lookup_id,
             pretty_name: Some(game.name),

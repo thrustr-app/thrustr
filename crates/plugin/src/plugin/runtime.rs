@@ -1,5 +1,6 @@
 use crate::plugin::PluginState;
 use crate::wit::{export_name, thrustr::plugin::types::Error as PluginError};
+use component::Timers;
 use domain::component::{ComponentStorage, Error as ComponentError};
 use reqwest::Client;
 use runtime::TokioHandle;
@@ -20,6 +21,7 @@ pub struct PluginRuntime {
     pub storage: Arc<dyn ComponentStorage>,
     pub tokio_handle: TokioHandle,
     pub http_client: Client,
+    pub timers: Timers,
 }
 
 impl PluginRuntime {
@@ -57,6 +59,7 @@ impl PluginRuntime {
                     runtime.storage.clone(),
                     runtime.http_client.clone(),
                     runtime.allowed_hosts.clone(),
+                    runtime.timers.clone(),
                 );
                 let mut store = Store::new(&runtime.engine, state);
 

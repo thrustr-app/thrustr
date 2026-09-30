@@ -56,16 +56,16 @@ impl StorefrontHandle {
 
         event::emit(Topic::Games);
 
-        self.component.context.artwork_service.trigger_backfill();
+        self.component.context().artwork_service.trigger_backfill();
 
         Ok(())
     }
 
     async fn store_games(&self, games: Vec<NewGame>) -> Result<usize> {
-        let repository = self.component.context.game_repository.clone();
+        let repository = self.component.context().game_repository.clone();
         let inserted = self
             .component
-            .context
+            .context()
             .tokio_handle
             .spawn_blocking(move || repository.insert_many(&games))
             .await

@@ -12,7 +12,8 @@ use tokio::sync::watch::{Receiver, Sender};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Topic {
-    Component,
+    ComponentRegistered,
+    ComponentState,
     Games,
     Plugin,
 }

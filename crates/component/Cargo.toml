@@ -13,4 +13,5 @@ event.workspace = true
 runtime.workspace = true
 strum.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true

@@ -1,29 +1,43 @@
 use super::error::Result;
 use crate::ComponentHandle;
-use domain::component::{Error, Operation, Running};
+use domain::component::{Activation, Error, Operation, Running};
 
 /// Holds a component while an operation is running.
 ///
 /// Component errors are reported through [`Permit::finish`], as they can
 /// change the status. Any other failure drops the permit, which cancels the
 /// operation.
-pub(super) struct Permit {
+pub(crate) struct Permit {
     handle: ComponentHandle,
     running: Option<Running>,
 }
 
 impl Permit {
-    pub(super) fn begin(handle: &ComponentHandle, operation: impl Into<Operation>) -> Result<Self> {
-        let running = handle.start(operation.into())?;
-        Ok(Self {
+    pub(crate) fn begin(handle: &ComponentHandle, operation: impl Into<Operation>) -> Result<Self> {
+        let running = handle.start(operation.into(), None)?;
+        Ok(Self::new(handle, running))
+    }
+
+    /// Like [`Permit::begin`], but only while `activation` is still current.
+    pub(crate) fn begin_in(
+        handle: &ComponentHandle,
+        activation: Activation,
+        operation: impl Into<Operation>,
+    ) -> Result<Self> {
+        let running = handle.start(operation.into(), Some(activation))?;
+        Ok(Self::new(handle, running))
+    }
+
+    fn new(handle: &ComponentHandle, running: Running) -> Self {
+        Self {
             handle: handle.clone(),
             running: Some(running),
-        })
+        }
     }
 
     /// Reports the result of the operation, running any initialization it
     /// starts.
-    pub(super) async fn finish(mut self, result: std::result::Result<(), Error>) -> Result<()> {
+    pub(crate) async fn finish(mut self, result: std::result::Result<(), Error>) -> Result<()> {
         let running = self
             .running
             .take()

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 pub mod config;
 pub mod kv_store;
+mod scheduler;
 
 #[doc(hidden)]
 pub mod wit {
@@ -29,6 +30,17 @@ pub mod wit {
             world: "config-capability",
             pub_export_macro: true,
             export_macro_name: "export_config",
+            with: {
+                "thrustr:plugin/types@0.1.0": crate::wit::plugin::thrustr::plugin::types,
+            },
+        });
+    }
+
+    pub mod scheduler {
+        wit_bindgen::generate!({
+            world: "scheduler-capability",
+            pub_export_macro: true,
+            export_macro_name: "export_scheduler",
             with: {
                 "thrustr:plugin/types@0.1.0": crate::wit::plugin::thrustr::plugin::types,
             },
@@ -67,9 +79,12 @@ impl Error {
 
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::scheduler::{Task, cancel, decode, millis, schedule, task_arg};
+
     pub struct Plugin;
     pub struct Auth;
     pub struct Config;
+    pub struct Scheduler;
     pub struct Storefront;
 
     #[diagnostic::on_unimplemented(
@@ -113,6 +128,17 @@ pub trait Storefront: Plugin + __private::Exported<__private::Storefront> {
     fn list_game_versions(game: Game) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
 }
 
+pub trait Scheduler: Plugin + __private::Exported<__private::Scheduler> {
+    #[doc(hidden)]
+    type Task: __private::Task;
+
+    #[doc(hidden)]
+    fn periodic() -> Vec<(Self::Task, std::time::Duration)>;
+
+    #[doc(hidden)]
+    fn run(task: Self::Task, args: Vec<u8>) -> impl Future<Output = Result<(), Error>>;
+}
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __export {
@@ -123,7 +149,7 @@ macro_rules! __export {
             struct Guest;
 
             impl $crate::wit::plugin::exports::thrustr::plugin::base::Guest for Guest {
-                async fn init() -> Result<(), $crate::Error> {
+                async fn init() -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Plugin>::init().await
                 }
             }
@@ -138,16 +164,16 @@ macro_rules! __export {
             struct Guest;
 
             impl $crate::wit::auth::exports::thrustr::plugin::auth::Guest for Guest {
-                async fn get_login_flow() -> Result<Option<$crate::AuthFlow>, $crate::Error> {
+                async fn get_login_flow() -> std::result::Result<Option<$crate::AuthFlow>, $crate::Error> {
                     <$ty as $crate::Auth>::login_flow().await
                 }
-                async fn get_logout_flow() -> Result<Option<$crate::AuthFlow>, $crate::Error> {
+                async fn get_logout_flow() -> std::result::Result<Option<$crate::AuthFlow>, $crate::Error> {
                     <$ty as $crate::Auth>::logout_flow().await
                 }
-                async fn login(request: $crate::LoginRequest) -> Result<(), $crate::Error> {
+                async fn login(request: $crate::LoginRequest) -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Auth>::login(request).await
                 }
-                async fn logout() -> Result<(), $crate::Error> {
+                async fn logout() -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Auth>::logout().await
                 }
             }
@@ -172,6 +198,32 @@ macro_rules! __export {
             $crate::wit::config::export_config! { Guest with_types_in $crate::wit::config }
         };
     };
+    (Scheduler, $ty:ty) => {
+        const _: () = {
+            impl $crate::__private::Exported<$crate::__private::Scheduler> for $ty {}
+
+            struct Guest;
+
+            impl $crate::wit::scheduler::exports::thrustr::plugin::scheduler::Guest for Guest {
+                async fn periodic() -> Vec<$crate::wit::scheduler::exports::thrustr::plugin::scheduler::PeriodicTask> {
+                    <$ty as $crate::Scheduler>::periodic()
+                        .into_iter()
+                        .map(|(task, interval)| $crate::wit::scheduler::exports::thrustr::plugin::scheduler::PeriodicTask {
+                            task: $crate::__private::Task::name(&task).to_owned(),
+                            interval_ms: $crate::__private::millis(interval),
+                        })
+                        .collect()
+                }
+                async fn run(task: String, args: Vec<u8>) -> std::result::Result<(), $crate::Error> {
+                    let task = <<$ty as $crate::Scheduler>::Task as $crate::__private::Task>::from_name(&task)
+                        .ok_or_else(|| $crate::Error::other(::std::format!("unknown task `{task}`")))?;
+                    <$ty as $crate::Scheduler>::run(task, args).await
+                }
+            }
+
+            $crate::wit::scheduler::export_scheduler! { Guest with_types_in $crate::wit::scheduler }
+        };
+    };
     (Storefront, $ty:ty) => {
         const _: () = {
             impl $crate::__private::Exported<$crate::__private::Storefront> for $ty {}
@@ -179,12 +231,12 @@ macro_rules! __export {
             struct Guest;
 
             impl $crate::wit::storefront::exports::thrustr::plugin::storefront::Guest for Guest {
-                async fn get_games() -> Result<Vec<$crate::Game>, $crate::Error> {
+                async fn get_games() -> std::result::Result<Vec<$crate::Game>, $crate::Error> {
                     <$ty as $crate::Storefront>::list_games().await
                 }
                 async fn get_game_versions(
                     game: $crate::Game,
-                ) -> Result<Vec<$crate::GameVersion>, $crate::Error> {
+                ) -> std::result::Result<Vec<$crate::GameVersion>, $crate::Error> {
                     <$ty as $crate::Storefront>::list_game_versions(game).await
                 }
             }

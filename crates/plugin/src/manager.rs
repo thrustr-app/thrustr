@@ -1,11 +1,12 @@
 use crate::{
     plugin::{
-        Plugin, PluginAuth, PluginConfig, PluginManifest, PluginRuntime, PluginState,
-        PluginStorefront, http_client,
+        Plugin, PluginAuth, PluginConfig, PluginManifest, PluginRuntime, PluginScheduler,
+        PluginState, PluginStorefront, http_client,
     },
     wit::{PluginHost, exports::thrustr::plugin::base},
 };
 use anyhow::{Result, bail};
+use component::ComponentRegistry;
 use config::paths::plugins_cache_dir;
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use reqwest::Client;
@@ -27,12 +28,17 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
+    component_registry: ComponentRegistry,
     tokio_handle: TokioHandle,
     http_client: Client,
 }
 
 impl PluginManager {
-    pub fn new(storage: Arc<dyn ComponentStorage>, tokio_handle: TokioHandle) -> Self {
+    pub fn new(
+        storage: Arc<dyn ComponentStorage>,
+        component_registry: ComponentRegistry,
+        tokio_handle: TokioHandle,
+    ) -> Self {
         let mut config = WasmtimeConfig::new();
         config.wasm_component_model_async(true);
         config.wasm_component_model_map(true);
@@ -56,6 +62,7 @@ impl PluginManager {
             engine,
             linker: Arc::new(linker),
             storage,
+            component_registry,
             tokio_handle,
             http_client: http_client(),
         }
@@ -93,6 +100,7 @@ impl PluginManager {
             storage: self.storage.clone(),
             tokio_handle: self.tokio_handle.clone(),
             http_client: self.http_client.clone(),
+            timers: self.component_registry.timers(&info.id),
         });
 
         let base = base::GuestIndices::new(&runtime.pre).map_err(|e| {
@@ -101,6 +109,7 @@ impl PluginManager {
         let auth = PluginAuth::resolve(&runtime, login_form)?;
         let config = PluginConfig::resolve(&runtime, config_schema)?;
         let storefront = PluginStorefront::resolve(&runtime)?;
+        let scheduler = PluginScheduler::resolve(&runtime).await?;
 
         let plugin = Plugin {
             info,
@@ -110,6 +119,7 @@ impl PluginManager {
             auth: auth.map(|auth| Arc::new(auth) as _),
             config: config.map(|config| Arc::new(config) as _),
             storefront: storefront.map(|storefront| Arc::new(storefront) as _),
+            scheduler: scheduler.map(|scheduler| Arc::new(scheduler) as _),
         };
 
         Ok(plugin)

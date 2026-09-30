@@ -4,5 +4,6 @@ world plugin-host {
     include plugin;
     include auth-capability;
     include config-capability;
+    include scheduler-capability;
     include storefront-capability;
 }

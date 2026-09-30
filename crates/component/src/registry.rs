@@ -1,14 +1,17 @@
-use crate::{ComponentHandle, StorefrontHandle};
+use crate::{ComponentHandle, StorefrontHandle, Timers};
 use artwork::ArtworkService;
 use dashmap::{DashMap, Entry};
 use domain::{
     component::{Component, ComponentStorage},
     game::GameRepository,
 };
+use event::Topic;
 use runtime::TokioHandle;
 use std::sync::Arc;
 use thiserror::Error;
 use tracing::debug;
+
+pub(crate) type Components = DashMap<String, ComponentHandle>;
 
 #[derive(Clone)]
 pub struct RegistryContext {
@@ -26,16 +29,22 @@ pub enum RegisterError {
 
 #[derive(Clone)]
 pub struct ComponentRegistry {
-    components: Arc<DashMap<String, ComponentHandle>>,
+    components: Arc<Components>,
     context: RegistryContext,
 }
 
 impl ComponentRegistry {
     pub fn new(context: RegistryContext) -> Self {
         Self {
-            components: Arc::new(DashMap::new()),
+            components: Arc::default(),
             context,
         }
+    }
+
+    /// The timers of the component `component_id`, usable once it is
+    /// registered.
+    pub fn timers(&self, component_id: &str) -> Timers {
+        Timers::new(&self.components, component_id)
     }
 
     pub fn register(
@@ -51,6 +60,7 @@ impl ComponentRegistry {
                 let handle = ComponentHandle::new(component, self.context.clone());
                 entry.insert(handle.clone());
                 debug!(component = handle.id(), "component registered");
+                event::emit(Topic::ComponentRegistered);
                 Ok(handle)
             }
         }

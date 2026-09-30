@@ -2,7 +2,8 @@ use crate::wit::exports::thrustr::plugin::base;
 use crate::wit::thrustr::plugin::types::Error as PluginError;
 use async_trait::async_trait;
 use domain::component::{
-    Auth, Component, Config, Error as ComponentError, Image, Metadata, Origin, Storefront,
+    Auth, Component, Config, Error as ComponentError, Image, Metadata, Origin, Scheduler,
+    Storefront,
 };
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ mod manifest;
 mod runtime;
 mod state;
 
-pub use capabilities::{PluginAuth, PluginConfig, PluginStorefront};
+pub use capabilities::{PluginAuth, PluginConfig, PluginScheduler, PluginStorefront};
 pub use host::http_client;
 pub use manifest::*;
 pub use runtime::PluginRuntime;
@@ -27,6 +28,7 @@ pub struct Plugin {
     pub(crate) auth: Option<Arc<dyn Auth>>,
     pub(crate) config: Option<Arc<dyn Config>>,
     pub(crate) storefront: Option<Arc<dyn Storefront>>,
+    pub(crate) scheduler: Option<Arc<dyn Scheduler>>,
 }
 
 #[async_trait]
@@ -53,6 +55,10 @@ impl Component for Plugin {
 
     fn storefront(&self) -> Option<Arc<dyn Storefront>> {
         self.storefront.clone()
+    }
+
+    fn scheduler(&self) -> Option<Arc<dyn Scheduler>> {
+        self.scheduler.clone()
     }
 
     async fn init(&self) -> Result<(), ComponentError> {

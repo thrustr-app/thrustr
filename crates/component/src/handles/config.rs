@@ -27,7 +27,7 @@ impl ConfigHandle {
     pub fn values(&self) -> Result<HashMap<String, String>> {
         Ok(self
             .component
-            .context
+            .context()
             .component_storage
             .get_config_values(self.component.id())?)
     }
@@ -44,7 +44,7 @@ impl ConfigHandle {
         }
 
         self.component
-            .context
+            .context()
             .component_storage
             .set_config_values(self.component.id(), &fields)
             .inspect_err(|e|  warn!(component = self.component.id(), error = %e, "storing configuration failed"))?;

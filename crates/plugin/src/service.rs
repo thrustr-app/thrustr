@@ -26,7 +26,7 @@ impl PluginService {
         tokio_handle: TokioHandle,
     ) -> Self {
         Self {
-            manager: PluginManager::new(storage, tokio_handle),
+            manager: PluginManager::new(storage, component_registry.clone(), tokio_handle),
             component_registry,
         }
     }

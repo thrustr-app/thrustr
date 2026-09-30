@@ -1227,6 +1227,7 @@ dependencies = [
  "runtime",
  "strum",
  "thiserror 2.0.21",
+ "tokio",
  "tracing",
 ]
 
@@ -5726,6 +5727,8 @@ name = "pdk"
 version = "0.1.0"
 dependencies = [
  "pdk-macros",
+ "postcard",
+ "serde",
  "wit-bindgen 0.62.0",
 ]
 

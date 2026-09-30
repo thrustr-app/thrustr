@@ -1,11 +1,11 @@
 use self::error::Result;
-use crate::RegistryContext;
+use crate::{RegistryContext, timers::ComponentTimers};
 use domain::component::{
-    Auth, Capabilities, Component, Config, Error, Initialization, Metadata, Operation, Outcome,
-    Running, State, Status, Storefront,
+    Activation, Auth, Capabilities, Component, Config, Error, Initialization, Metadata, Operation,
+    Outcome, Running, State, Status, Storefront,
 };
 use event::Topic;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use tracing::{debug, info, warn};
 
 mod auth;
@@ -17,67 +17,105 @@ mod storefront;
 pub use auth::{AuthHandle, LoginPermit, LogoutPermit};
 pub use config::ConfigHandle;
 pub use error::OperationError;
+pub(crate) use permit::Permit;
 pub use storefront::StorefrontHandle;
 
 #[derive(Clone)]
-pub struct ComponentHandle {
+pub struct ComponentHandle(Arc<Inner>);
+
+/// A [`ComponentHandle`] that does not keep the component alive.
+#[derive(Clone)]
+pub(crate) struct WeakComponentHandle(Weak<Inner>);
+
+struct Inner {
     component: Arc<dyn Component>,
     auth: Option<Arc<dyn Auth>>,
     config: Option<Arc<dyn Config>>,
     storefront: Option<Arc<dyn Storefront>>,
+    timers: Option<ComponentTimers>,
     context: RegistryContext,
-    state: Arc<RwLock<State>>,
+    state: RwLock<State>,
 }
 
 impl ComponentHandle {
-    pub fn new(component: Arc<dyn Component>, context: RegistryContext) -> Self {
+    pub(crate) fn new(component: Arc<dyn Component>, context: RegistryContext) -> Self {
         let auth = component.auth();
         let config = component.config();
         let storefront = component.storefront();
+        let scheduler = component.scheduler();
         let capabilities = Capabilities {
             auth: auth.is_some(),
             config: config.is_some(),
             storefront: storefront.is_some(),
+            scheduler: scheduler.is_some(),
         };
 
-        Self {
+        Self(Arc::new(Inner {
             component,
             auth,
             config,
             storefront,
+            timers: scheduler
+                .map(|scheduler| ComponentTimers::new(scheduler, context.tokio_handle.clone())),
             context,
-            state: Arc::new(RwLock::new(State::new(capabilities))),
-        }
+            state: RwLock::new(State::new(capabilities)),
+        }))
+    }
+
+    pub(crate) fn downgrade(&self) -> WeakComponentHandle {
+        WeakComponentHandle(Arc::downgrade(&self.0))
     }
 
     pub fn id(&self) -> &str {
-        self.component.metadata().id
+        self.0.component.metadata().id
     }
 
     pub fn metadata(&self) -> Metadata<'_> {
-        self.component.metadata()
+        self.0.component.metadata()
     }
 
     pub fn status(&self) -> Status {
         self.state_read().status().clone()
     }
 
+    /// The current activation and whether the component is already active, or
+    /// the status if the component is neither initializing nor active.
+    pub(crate) fn activation(&self) -> std::result::Result<(Activation, bool), Status> {
+        let state = self.state_read();
+        let status = state.status();
+        state
+            .activation()
+            .map(|activation| (activation, status.is_active()))
+            .ok_or_else(|| status.clone())
+    }
+
     pub fn auth(&self) -> Option<AuthHandle> {
-        self.auth
+        self.0
+            .auth
             .clone()
             .map(|auth| AuthHandle::new(auth, self.clone()))
     }
 
     pub fn config(&self) -> Option<ConfigHandle> {
-        self.config
+        self.0
+            .config
             .clone()
             .map(|config| ConfigHandle::new(config, self.clone()))
     }
 
     pub fn storefront(&self) -> Option<StorefrontHandle> {
-        self.storefront
+        self.0
+            .storefront
             .clone()
             .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
+    }
+
+    pub(crate) fn timers(&self) -> Option<&ComponentTimers> {
+        self.0.timers.as_ref()
+    }
+
+    fn context(&self) -> &RegistryContext {
+        &self.0.context
     }
 
     /// Whether the component supports `operation` and its status permits it,
@@ -127,7 +165,7 @@ impl ComponentHandle {
             handle: self,
             initialization: Some(initialization),
         };
-        let result = self.component.init().await;
+        let result = self.0.component.init().await;
         initializing.finish(result.clone());
         result?;
 
@@ -142,8 +180,11 @@ impl ComponentHandle {
         Ok(())
     }
 
-    fn start(&self, operation: Operation) -> Result<Running> {
-        let started = self.state_write().start(operation);
+    fn start(&self, operation: Operation, activation: Option<Activation>) -> Result<Running> {
+        let started = match activation {
+            Some(activation) => self.state_write().start_in(activation, operation),
+            None => self.state_write().start(operation),
+        };
         let running = started.map_err(|rejection| {
             debug!(component = self.id(), %operation, %rejection, "operation rejected");
             OperationError::Rejected {
@@ -153,7 +194,7 @@ impl ComponentHandle {
         })?;
 
         debug!(component = self.id(), %operation, "operation started");
-        event::emit(Topic::Component);
+        event::emit(Topic::ComponentState);
         Ok(running)
     }
 
@@ -162,7 +203,7 @@ impl ComponentHandle {
         self.state_write().cancel(running);
 
         debug!(component = self.id(), %operation, "operation cancelled");
-        event::emit(Topic::Component);
+        event::emit(Topic::ComponentState);
     }
 
     fn finish_initialization(
@@ -193,24 +234,39 @@ impl ComponentHandle {
                     "component status changed"
                 ),
             }
+
+            if let Some(timers) = self.timers() {
+                match to.is_active() {
+                    true => timers.activate(self),
+                    false => timers.prune(self),
+                }
+            }
         }
         if let Some(error) = &outcome.transient_error {
             warn!(component = self.id(), %error, "operation failed");
         }
 
-        event::emit(Topic::Component);
+        event::emit(Topic::ComponentState);
     }
 
     fn state_read(&self) -> RwLockReadGuard<'_, State> {
-        self.state
+        self.0
+            .state
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn state_write(&self) -> RwLockWriteGuard<'_, State> {
-        self.state
+        self.0
+            .state
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+impl WeakComponentHandle {
+    pub(crate) fn upgrade(&self) -> Option<ComponentHandle> {
+        self.0.upgrade().map(ComponentHandle)
     }
 }
 
