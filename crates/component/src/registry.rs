@@ -1,4 +1,4 @@
-use crate::{ComponentHandle, StorefrontHandle, Timers};
+use crate::{ComponentHandle, ComponentLink, StorefrontHandle};
 use artwork::ArtworkService;
 use dashmap::{DashMap, Entry};
 use domain::{
@@ -41,23 +41,26 @@ impl ComponentRegistry {
         }
     }
 
-    /// The timers of the component `component_id`, usable once it is
-    /// registered.
-    pub fn timers(&self, component_id: &str) -> Timers {
-        Timers::new(&self.components, component_id)
-    }
-
-    pub fn register(
+    pub async fn register<C, E>(
         &self,
-        component: Arc<dyn Component>,
-    ) -> Result<ComponentHandle, RegisterError> {
+        build: impl AsyncFnOnce(ComponentLink) -> Result<C, E>,
+    ) -> Result<ComponentHandle, E>
+    where
+        C: Component + 'static,
+        E: From<RegisterError>,
+    {
+        let link = ComponentLink::new();
+        let component: Arc<dyn Component> = Arc::new(build(link.clone()).await?);
+
         let id = component.metadata().id.to_owned();
         match self.components.entry(id) {
             Entry::Occupied(entry) => Err(RegisterError::Duplicate {
                 id: entry.key().clone(),
-            }),
+            }
+            .into()),
             Entry::Vacant(entry) => {
                 let handle = ComponentHandle::new(component, self.context.clone());
+                link.bind(&handle);
                 entry.insert(handle.clone());
                 debug!(component = handle.id(), "component registered");
                 event::emit(Topic::ComponentRegistered);

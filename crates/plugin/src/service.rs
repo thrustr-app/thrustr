@@ -26,7 +26,7 @@ impl PluginService {
         tokio_handle: TokioHandle,
     ) -> Self {
         Self {
-            manager: PluginManager::new(storage, component_registry.clone(), tokio_handle),
+            manager: PluginManager::new(storage, tokio_handle),
             component_registry,
         }
     }
@@ -67,10 +67,14 @@ impl PluginService {
     }
 
     async fn load_and_init_plugin(&self, path: &Path) -> Result<()> {
-        let plugin = self.manager.load_plugin(path.to_path_buf()).await?;
-        event::emit(Topic::Plugin);
-
-        let component = self.component_registry.register(Arc::new(plugin))?;
+        let component = self
+            .component_registry
+            .register(async |link| {
+                let plugin = self.manager.load_plugin(path.to_path_buf(), link).await?;
+                event::emit(Topic::Plugin);
+                anyhow::Ok(plugin)
+            })
+            .await?;
 
         component
             .enable()

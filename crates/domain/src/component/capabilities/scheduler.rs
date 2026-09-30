@@ -36,9 +36,6 @@ pub struct Schedule {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScheduleError {
-    #[error("component `{0}` is not registered")]
-    NotRegistered(String),
-
     #[error("the component does not run scheduled tasks")]
     Unsupported,
 

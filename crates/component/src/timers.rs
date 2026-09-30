@@ -1,7 +1,6 @@
 use crate::{
-    ComponentHandle,
+    ComponentHandle, ComponentLink,
     handles::{Permit, WeakComponentHandle},
-    registry::Components,
 };
 use domain::component::{
     Activation, PeriodicTask, Schedule, ScheduleError, Scheduler, SchedulerOperation,
@@ -10,9 +9,10 @@ use runtime::TokioHandle;
 use std::{
     collections::HashMap,
     mem,
-    sync::{Arc, Mutex, MutexGuard, Weak},
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
+use thiserror::Error;
 use tokio::{
     select,
     sync::oneshot::{self, error::TryRecvError},
@@ -24,18 +24,20 @@ const MAX_TASKS: usize = 64;
 const MAX_ARGS_SIZE: usize = 64 * 1024;
 const MIN_DELAY: Duration = Duration::from_secs(1);
 
-#[derive(Clone)]
-pub struct Timers {
-    components: Weak<Components>,
-    component_id: Arc<str>,
+pub struct Timers<'a>(&'a ComponentLink);
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TimersError {
+    #[error("the component is not registered")]
+    NotRegistered,
+
+    #[error(transparent)]
+    Schedule(#[from] ScheduleError),
 }
 
-impl Timers {
-    pub(crate) fn new(components: &Arc<Components>, component_id: &str) -> Self {
-        Self {
-            components: Arc::downgrade(components),
-            component_id: component_id.into(),
-        }
+impl<'a> Timers<'a> {
+    pub(crate) fn new(link: &'a ComponentLink) -> Self {
+        Self(link)
     }
 
     pub fn schedule(
@@ -43,27 +45,18 @@ impl Timers {
         task: String,
         args: Vec<u8>,
         schedule: Schedule,
-    ) -> Result<(), ScheduleError> {
-        let handle = self
-            .handle()
-            .ok_or_else(|| ScheduleError::NotRegistered(self.component_id.to_string()))?;
+    ) -> Result<(), TimersError> {
+        let handle = self.0.handle().ok_or(TimersError::NotRegistered)?;
         let timers = handle.timers().ok_or(ScheduleError::Unsupported)?;
-        timers.schedule(&handle, task, args, schedule)
+        Ok(timers.schedule(&handle, task, args, schedule)?)
     }
 
     pub fn cancel(&self, task: &str) {
-        if let Some(handle) = self.handle()
+        if let Some(handle) = self.0.handle()
             && let Some(timers) = handle.timers()
         {
             timers.cancel(task);
         }
-    }
-
-    fn handle(&self) -> Option<ComponentHandle> {
-        let components = self.components.upgrade()?;
-        components
-            .get(&*self.component_id)
-            .map(|c| c.value().clone())
     }
 }
 

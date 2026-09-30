@@ -6,7 +6,7 @@ use crate::{
     wit::{PluginHost, exports::thrustr::plugin::base},
 };
 use anyhow::{Result, bail};
-use component::ComponentRegistry;
+use component::ComponentLink;
 use config::paths::plugins_cache_dir;
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use reqwest::Client;
@@ -28,17 +28,12 @@ pub struct PluginManager {
     engine: Engine,
     linker: Arc<Linker<PluginState>>,
     storage: Arc<dyn ComponentStorage>,
-    component_registry: ComponentRegistry,
     tokio_handle: TokioHandle,
     http_client: Client,
 }
 
 impl PluginManager {
-    pub fn new(
-        storage: Arc<dyn ComponentStorage>,
-        component_registry: ComponentRegistry,
-        tokio_handle: TokioHandle,
-    ) -> Self {
+    pub fn new(storage: Arc<dyn ComponentStorage>, tokio_handle: TokioHandle) -> Self {
         let mut config = WasmtimeConfig::new();
         config.wasm_component_model_async(true);
         config.wasm_component_model_map(true);
@@ -62,7 +57,6 @@ impl PluginManager {
             engine,
             linker: Arc::new(linker),
             storage,
-            component_registry,
             tokio_handle,
             http_client: http_client(),
         }
@@ -72,7 +66,7 @@ impl PluginManager {
         &self.tokio_handle
     }
 
-    pub async fn load_plugin(&self, path: PathBuf) -> Result<Plugin> {
+    pub async fn load_plugin(&self, path: PathBuf, link: ComponentLink) -> Result<Plugin> {
         let (manifest, wasm_bytes, icon) = self
             .tokio_handle
             .spawn_blocking(move || read_plugin_archive(path))
@@ -100,7 +94,7 @@ impl PluginManager {
             storage: self.storage.clone(),
             tokio_handle: self.tokio_handle.clone(),
             http_client: self.http_client.clone(),
-            timers: self.component_registry.timers(&info.id),
+            link,
         });
 
         let base = base::GuestIndices::new(&runtime.pre).map_err(|e| {

@@ -24,7 +24,7 @@ pub use storefront::StorefrontHandle;
 pub struct ComponentHandle(Arc<Inner>);
 
 /// A [`ComponentHandle`] that does not keep the component alive.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct WeakComponentHandle(Weak<Inner>);
 
 struct Inner {

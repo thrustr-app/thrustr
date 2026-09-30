@@ -1,5 +1,5 @@
 use crate::{plugin::host::OutboundHttp, wit::thrustr::plugin::types::Host};
-use component::Timers;
+use component::ComponentLink;
 use domain::component::ComponentStorage;
 use reqwest::Client;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ pub struct PluginState {
     limits: StoreLimits,
     pub(crate) id: String,
     pub(crate) storage: Arc<dyn ComponentStorage>,
-    pub(crate) timers: Timers,
+    pub(crate) link: ComponentLink,
 }
 
 impl PluginState {
@@ -27,7 +27,7 @@ impl PluginState {
         storage: Arc<dyn ComponentStorage>,
         http_client: Client,
         allowed_hosts: Arc<[String]>,
-        timers: Timers,
+        link: ComponentLink,
     ) -> Self {
         let ctx = WasiCtx::builder().inherit_stdout().build();
 
@@ -39,7 +39,7 @@ impl PluginState {
             limits: StoreLimitsBuilder::new().memory_size(MAX_MEMORY).build(),
             id: id.to_owned(),
             storage,
-            timers,
+            link,
         }
     }
 
