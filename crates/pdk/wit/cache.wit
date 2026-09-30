@@ -1,0 +1,8 @@
+package thrustr:plugin@0.1.0;
+
+interface cache {
+    get: func(key: string) -> option<list<u8>>;
+    set: func(key: string, value: list<u8>, ttl-ms: option<u64>);
+    delete: func(key: string);
+    %list: func(prefix: option<string>) -> list<string>;
+}

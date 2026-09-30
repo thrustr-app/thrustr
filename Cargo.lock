@@ -5887,6 +5887,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "hyper",
+ "lru",
  "reqwest",
  "runtime",
  "semver",

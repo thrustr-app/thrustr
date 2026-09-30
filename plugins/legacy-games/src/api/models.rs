@@ -1,5 +1,5 @@
 use crate::api::error::Error;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -94,7 +94,7 @@ pub struct LoginSuccess {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Game {
     pub game_id: String,
     pub game_name: String,
@@ -105,7 +105,7 @@ pub struct Game {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Product {
     pub id: u64,
     pub name: String,

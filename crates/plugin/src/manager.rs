@@ -1,7 +1,7 @@
 use crate::{
     plugin::{
-        Plugin, PluginAuth, PluginConfig, PluginManifest, PluginRuntime, PluginScheduler,
-        PluginState, PluginStorefront, http_client,
+        Plugin, PluginAuth, PluginCache, PluginConfig, PluginManifest, PluginRuntime,
+        PluginScheduler, PluginState, PluginStorefront, http_client,
     },
     wit::{PluginHost, exports::thrustr::plugin::base},
 };
@@ -95,6 +95,7 @@ impl PluginManager {
             tokio_handle: self.tokio_handle.clone(),
             http_client: self.http_client.clone(),
             link,
+            cache: Arc::new(PluginCache::new()),
         });
 
         let base = base::GuestIndices::new(&runtime.pre).map_err(|e| {

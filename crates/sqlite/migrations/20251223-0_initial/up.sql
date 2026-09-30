@@ -16,6 +16,7 @@ CREATE TABLE component_data (
   component_id TEXT NOT NULL,
   key TEXT NOT NULL,
   value BLOB NOT NULL,
+  expires_at INTEGER,
   PRIMARY KEY (component_id, key)
 ) WITHOUT ROWID;
 
@@ -42,6 +43,10 @@ CREATE TABLE artwork (
 CREATE INDEX idx_games_sort_name ON games (sort_name GLOB '[a-z]*', sort_name, id);
 
 CREATE INDEX idx_artwork_hash ON artwork (hash);
+
+CREATE INDEX idx_component_data_expires_at ON component_data (expires_at)
+WHERE
+  expires_at IS NOT NULL;
 
 CREATE VIRTUAL TABLE games_fts USING fts5 (
   search_text,

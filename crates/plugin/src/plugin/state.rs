@@ -1,4 +1,7 @@
-use crate::{plugin::host::OutboundHttp, wit::thrustr::plugin::types::Host};
+use crate::{
+    plugin::host::{OutboundHttp, PluginCache},
+    wit::thrustr::plugin::types::Host,
+};
 use component::ComponentLink;
 use domain::component::ComponentStorage;
 use reqwest::Client;
@@ -19,6 +22,7 @@ pub struct PluginState {
     pub(crate) id: String,
     pub(crate) storage: Arc<dyn ComponentStorage>,
     pub(crate) link: ComponentLink,
+    pub(crate) cache: Arc<PluginCache>,
 }
 
 impl PluginState {
@@ -28,6 +32,7 @@ impl PluginState {
         http_client: Client,
         allowed_hosts: Arc<[String]>,
         link: ComponentLink,
+        cache: Arc<PluginCache>,
     ) -> Self {
         let ctx = WasiCtx::builder().inherit_stdout().build();
 
@@ -40,6 +45,7 @@ impl PluginState {
             id: id.to_owned(),
             storage,
             link,
+            cache,
         }
     }
 

@@ -5,7 +5,7 @@ use crate::{
 use domain::component::{
     Activation, PeriodicTask, Schedule, ScheduleError, Scheduler, SchedulerOperation,
 };
-use runtime::TokioHandle;
+use runtime::{TokioHandle, clock::after};
 use std::{
     collections::HashMap,
     mem,
@@ -16,7 +16,6 @@ use thiserror::Error;
 use tokio::{
     select,
     sync::oneshot::{self, error::TryRecvError},
-    time::sleep,
 };
 use tracing::{debug, warn};
 
@@ -223,7 +222,7 @@ async fn timer(handle: WeakComponentHandle, job: Job, mut cancelled: oneshot::Re
         select! {
             biased;
             _ = &mut cancelled => return,
-            () = sleep(delay) => {}
+            () = after(delay) => {}
         }
 
         let Some(handle) = handle.upgrade() else {

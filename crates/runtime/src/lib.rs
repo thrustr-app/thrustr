@@ -2,6 +2,8 @@ use std::future::Future;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
+pub mod clock;
+
 #[derive(Clone)]
 pub struct TokioHandle(Handle);
 
