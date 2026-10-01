@@ -209,7 +209,9 @@ impl RenderOnce for Input {
 
         let focus_handle = self.focus.configure(state.focus_handle(cx));
 
-        let placeholder_color = self.placeholder_color.or(Some(cx.theme().colors.secondary));
+        let placeholder_color = self
+            .placeholder_color
+            .or(Some(cx.theme().colors.field.placeholder));
 
         state.update(cx, |state, _cx| {
             state.set_value(self.value);
@@ -235,9 +237,9 @@ impl RenderOnce for Input {
         let mut input = self
             .base
             .border_1()
-            .border_color(theme.colors.border)
+            .border_color(theme.colors.field.border)
             .text_color(theme.colors.primary)
-            .bg(theme.colors.surface_sunken)
+            .bg(theme.colors.field.background)
             .rounded(radius)
             .p(rems(0.5))
             .gap(rems(0.75))
@@ -298,7 +300,7 @@ impl RenderOnce for Input {
                     .on_mouse_move(window.listener_for(&state, InputState::on_mouse_move))
             })
             .on_scroll_wheel(window.listener_for(&state, InputState::on_scroll_wheel))
-            .focus(|input| input.border_1().border_color(theme.colors.primary))
+            .focus(|input| input.border_1().border_color(theme.colors.field.focus))
             .when(self.disabled, |button| button.opacity(0.6))
             .child(state.clone())
             .when(self.clear_button && has_value, |input| {

@@ -1,17 +1,22 @@
 use super::{Route, cover_path};
 use crate::{
-    adapters::ColorExt, context::SpawnTaskExt, globals::GameServiceExt, navigation::NavigatorExt,
+    adapters::ColorExt,
+    context::SpawnTaskExt,
+    globals::{ComponentRegistryExt, GameServiceExt},
+    navigation::NavigatorExt,
 };
-use domain::game::GameId;
+use anyhow::Context as _;
+use domain::{game::GameId, platform::Platform};
 use gpui::{
-    AnyElement, BoxShadow, Context, Entity, FontWeight, Hsla, ImageSource, IntoElement, ObjectFit,
-    ParentElement, Rems, Render, Resource, RetainAllImageCache, SharedString, Styled, StyledImage,
-    Task, Window, black, div, img, linear_color_stop, linear_gradient, px, relative, rems,
+    AnyElement, AppContext, BoxShadow, ClickEvent, Context, Entity, FontWeight, Hsla, ImageSource,
+    IntoElement, ObjectFit, ParentElement, Rems, Render, Resource, RetainAllImageCache,
+    SharedString, Styled, StyledImage, Task, Window, black, div, img, linear_color_stop,
+    linear_gradient, prelude::FluentBuilder, px, relative, rems,
 };
 use std::{path::Path, sync::Arc};
 use theme::ThemeExt;
 use tracing::error;
-use ui::{Button, Icon, WithFocus, WithSize, WithVariant};
+use ui::{Alert, Button, Icon, PortalContext, Select, WithFocus, WithSize, WithVariant};
 
 // FIXME: gpui gradients only take two stops, so this is a workaround to simulate
 // a multi-stop gradient by stacking layers
@@ -20,7 +25,8 @@ const COVER_HEIGHT: Rems = rems(12.);
 const COVER_PLACEHOLDER_ASPECT_RATIO: f32 = 2. / 3.;
 
 pub struct Game {
-    _id: GameId,
+    id: GameId,
+    source_id: Option<SharedString>,
     name: SharedString,
     summary: Option<SharedString>,
     cover_path: Option<Arc<Path>>,
@@ -42,6 +48,7 @@ impl Route for Game {
             async move { game_service.get(id) },
             |game, result, _| match result {
                 Ok(Some(loaded)) => {
+                    game.source_id = Some(loaded.source.id.into());
                     game.name = loaded.name.into();
                     game.summary = loaded.summary.map(Into::into);
                     if let Some(cover) = loaded.cover {
@@ -57,7 +64,8 @@ impl Route for Game {
         );
 
         Self {
-            _id: id,
+            id,
+            source_id: None,
             name: SharedString::default(),
             summary: None,
             cover_path: None,
@@ -69,6 +77,21 @@ impl Route for Game {
 }
 
 impl Game {
+    fn open_install_dialog(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(source_id) = &self.source_id else {
+            return;
+        };
+        let title: SharedString = format!("Install {}", self.name).into();
+        let install_dialog = cx.new(|cx| InstallDialog::new(self.id, source_id, cx));
+        window.open_dialog(cx, move |dialog, _, _| {
+            dialog
+                .w(rems(24.))
+                .title(title.clone())
+                .ok_text("Install")
+                .child(install_dialog.clone())
+        });
+    }
+
     fn render_cover(&self, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let shadow = vec![BoxShadow::new(px(0.), px(4.), black().opacity(0.3)).blur_radius(px(5.))];
@@ -161,7 +184,8 @@ impl Game {
                                     .blur_radius(px(6.)),
                             ])
                             .with_icon(Icon::download())
-                            .child("Download"),
+                            .child("Download")
+                            .on_click(cx.listener(Self::open_install_dialog)),
                     )
                     .child(
                         Button::icon("menu", Icon::menu())
@@ -179,5 +203,98 @@ impl Render for Game {
             .flex()
             .flex_col()
             .child(self.render_header(cx))
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct VersionOption {
+    id: SharedString,
+    label: SharedString,
+    platform: Platform,
+}
+
+fn platform_icon(platform: Platform) -> Option<Icon> {
+    match platform {
+        Platform::Windows => Some(Icon::windows()),
+        Platform::Linux => Some(Icon::linux()),
+        Platform::Macos => Some(Icon::apple()),
+    }
+}
+
+struct InstallDialog {
+    versions: Vec<VersionOption>,
+    selected: Option<VersionOption>,
+    loading: bool,
+    error: Option<SharedString>,
+    _load_task: Task<()>,
+}
+
+impl InstallDialog {
+    fn new(game_id: GameId, source_id: &str, cx: &mut Context<Self>) -> Self {
+        let storefront = cx.component_registry().storefront(source_id);
+        let load_task = cx.spawn_and_update(
+            async move {
+                let storefront = storefront.context("storefront is not available")?;
+                anyhow::Ok(storefront.list_game_versions(game_id).await?)
+            },
+            |this, result, _| {
+                this.loading = false;
+                match result {
+                    Ok(versions) => {
+                        this.versions = versions
+                            .into_iter()
+                            .map(|v| VersionOption {
+                                label: v.pretty_name.unwrap_or_else(|| v.id.clone()).into(),
+                                id: v.id.into(),
+                                platform: v.platform,
+                            })
+                            .collect();
+                        this.selected = this.versions.first().cloned();
+                    }
+                    Err(e) => this.error = Some(format!("{e:#}").into()),
+                }
+            },
+        );
+
+        Self {
+            versions: Vec::new(),
+            selected: None,
+            loading: true,
+            error: None,
+            _load_task: load_task,
+        }
+    }
+}
+
+impl Render for InstallDialog {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(rems(1.))
+            .children(self.error.clone().map(Alert::new))
+            .child(
+                Select::new("version", |version: &VersionOption, _, cx| {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(rems(0.5))
+                        .children(
+                            platform_icon(version.platform)
+                                .map(|icon| icon.size_sm().color(cx.theme().colors.primary)),
+                        )
+                        .child(div().min_w_0().child(version.label.clone()))
+                })
+                .size_lg()
+                .w_full()
+                .placeholder("Select a version")
+                .items(self.versions.iter().cloned())
+                .value(self.selected.clone())
+                .when(self.loading, Select::loading)
+                .on_change(cx.listener(|this, version: &VersionOption, _, cx| {
+                    this.selected = Some(version.clone());
+                    cx.notify();
+                })),
+            )
     }
 }

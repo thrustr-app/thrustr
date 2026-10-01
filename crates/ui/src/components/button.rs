@@ -1,12 +1,11 @@
 use crate::{FocusProps, Icon, Size, Variant, WithFocus, WithSize, WithVariant};
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla,
-    InteractiveElement, IntoElement, KeyBinding, NoAction, ParentElement, Refineable, Rems,
-    RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div,
-    percentage, prelude::FluentBuilder, relative, rems, transparent_black,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
+    KeyBinding, NoAction, ParentElement, Refineable, Rems, RenderOnce, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, div, prelude::FluentBuilder, relative, rems,
+    transparent_black,
 };
 use smallvec::SmallVec;
-use std::time::Duration;
 use theme::{Theme, ThemeExt};
 
 const CONTEXT: &str = "button";
@@ -233,15 +232,7 @@ impl RenderOnce for Button {
                         Icon::loader()
                             .size(self.size)
                             .color(palette.foreground)
-                            .with_animation(
-                                "loading",
-                                Animation::new(Duration::from_millis(850))
-                                    .repeat()
-                                    .with_max_fps(30.),
-                                |loader: Icon, delta| {
-                                    loader.transform(Transformation::rotate(percentage(delta)))
-                                },
-                            ),
+                            .spin(),
                     )
                 },
                 |button| {
