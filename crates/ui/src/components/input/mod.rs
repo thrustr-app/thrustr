@@ -11,14 +11,14 @@
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 use crate::{
-    FocusProps, Icon, Radius, Size, WithFocus, WithRadius, WithSize,
+    FieldProps, FocusProps, Icon, Radius, Size, WithField, WithFocus, WithRadius, WithSize,
     components::input::state::InputState,
 };
 use gpui::{
     App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, FontWeight, Hsla,
     InteractiveElement, Interactivity, IntoElement, MouseButton, ParentElement, Refineable,
     RenderOnce, SharedString, Stateful, StatefulInteractiveElement, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder, relative, rems,
+    Window, div, prelude::FluentBuilder, rems,
 };
 
 mod actions;
@@ -51,7 +51,6 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         value: None,
         on_input: None,
         on_change: None,
-        label: None,
         placeholder: None,
         placeholder_color: None,
         selection_color: None,
@@ -61,6 +60,7 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         leading_icon: None,
         clear_button: false,
         focus: FocusProps::default(),
+        field: FieldProps::default(),
         radius: Radius::default(),
         size: Size::default(),
     }
@@ -76,7 +76,6 @@ pub struct Input {
     value: Option<SharedString>,
     on_input: Option<Box<dyn Fn(&InputEvent, &mut Window, &mut App) + 'static>>,
     on_change: Option<Box<dyn Fn(&ChangeEvent, &mut Window, &mut App) + 'static>>,
-    label: Option<SharedString>,
     placeholder: Option<SharedString>,
     placeholder_color: Option<Hsla>,
     selection_color: Option<Hsla>,
@@ -86,6 +85,7 @@ pub struct Input {
     leading_icon: Option<Icon>,
     clear_button: bool,
     focus: FocusProps,
+    field: FieldProps,
     radius: Radius,
     size: Size,
 }
@@ -109,11 +109,6 @@ impl Input {
         callback: impl Fn(&ChangeEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_change = Some(Box::new(callback));
-        self
-    }
-
-    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = Some(label.into());
         self
     }
 
@@ -166,6 +161,12 @@ impl Input {
 impl WithFocus for Input {
     fn focus_props(&mut self) -> &mut FocusProps {
         &mut self.focus
+    }
+}
+
+impl WithField for Input {
+    fn field_props(&mut self) -> &mut FieldProps {
+        &mut self.field
     }
 }
 
@@ -319,28 +320,9 @@ impl RenderOnce for Input {
 
         input.style().refine(&self.style);
 
-        let width = input.style().max_size.width;
-
-        let label_focus_handle = focus_handle.clone();
-        let container = div()
-            .id((self.id.clone(), "field"))
-            .when_some(width, |container, width| container.max_w(width))
-            .when_some(self.label, |container, label| {
-                container.child(
-                    div()
-                        .id((self.id.clone(), "label"))
-                        .on_click(move |_, window, cx| {
-                            label_focus_handle.focus(window, cx);
-                        })
-                        .text_size(theme.text.sm)
-                        .line_height(relative(1.))
-                        .font_weight(FontWeight::NORMAL)
-                        .child(label)
-                        .mb(rems(0.375))
-                        .text_color(theme.colors.secondary),
-                )
-            })
-            .child(input);
+        let container = self
+            .field
+            .wrap(self.id.clone(), input, Some(focus_handle.clone()));
 
         self.focus
             .attach_reveal(container, &focus_handle, (self.id, "reveal"), window, cx)

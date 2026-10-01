@@ -19,8 +19,8 @@ use gpui::{
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithFocus, WithScrollbar,
-    WithSize, WithVariant, input,
+    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithField, WithFocus,
+    WithScrollbar, WithSize, WithVariant, input,
 };
 
 type Values = HashMap<SharedString, SharedString>;
@@ -301,6 +301,7 @@ impl Config {
             .flex()
             .justify_between()
             .items_center()
+            .min_h(rems(2.375))
             .child(
                 div()
                     .flex()

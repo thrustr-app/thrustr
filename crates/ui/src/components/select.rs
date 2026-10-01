@@ -1,4 +1,6 @@
-use crate::{FocusProps, Icon, Size, Tab, TabPrev, WithFocus, WithScrollbar, WithSize};
+use crate::{
+    FieldProps, FocusProps, Icon, Size, Tab, TabPrev, WithField, WithFocus, WithScrollbar, WithSize,
+};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Bounds, ClickEvent, Context, ElementId, Entity,
     FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyBinding, MouseButton,
@@ -63,6 +65,7 @@ pub struct Select<T: PartialEq + 'static> {
     render_item: ItemRenderer<T>,
     on_change: Option<ChangeHandler<T>>,
     focus: FocusProps,
+    field: FieldProps,
     loading: bool,
     disabled: bool,
 }
@@ -84,6 +87,7 @@ impl<T: PartialEq + 'static> Select<T> {
             }),
             on_change: None,
             focus: FocusProps::default(),
+            field: FieldProps::default(),
             loading: false,
             disabled: false,
         }
@@ -163,6 +167,12 @@ impl<T: PartialEq + 'static> WithSize for Select<T> {
 impl<T: PartialEq + 'static> WithFocus for Select<T> {
     fn focus_props(&mut self) -> &mut FocusProps {
         &mut self.focus
+    }
+}
+
+impl<T: PartialEq + 'static> WithField for Select<T> {
+    fn field_props(&mut self) -> &mut FieldProps {
+        &mut self.field
     }
 }
 
@@ -281,8 +291,14 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
 
         trigger.style().refine(&self.style);
 
+        let container = self.field.wrap(
+            self.id.clone(),
+            trigger,
+            interactive.then(|| focus_handle.clone()),
+        );
+
         self.focus
-            .attach_reveal(trigger, &focus_handle, (self.id, "reveal"), window, cx)
+            .attach_reveal(container, &focus_handle, (self.id, "reveal"), window, cx)
     }
 }
 

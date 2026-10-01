@@ -14,14 +14,15 @@ use gpui::{
     linear_gradient, prelude::FluentBuilder, px, relative, rems,
 };
 use std::{path::Path, sync::Arc};
-use theme::ThemeExt;
+use theme::{Theme, ThemeExt};
 use tracing::error;
-use ui::{Alert, Button, Icon, PortalContext, Select, WithFocus, WithSize, WithVariant};
+use ui::{Alert, Button, Icon, PortalContext, Select, WithField, WithFocus, WithSize, WithVariant};
 
 // FIXME: gpui gradients only take two stops, so this is a workaround to simulate
 // a multi-stop gradient by stacking layers
 const HEADER_GRADIENT_LAYERS: usize = 3;
 const COVER_HEIGHT: Rems = rems(12.);
+const DIALOG_COVER_HEIGHT: Rems = rems(15.);
 const COVER_PLACEHOLDER_ASPECT_RATIO: f32 = 2. / 3.;
 
 pub struct Game {
@@ -82,40 +83,17 @@ impl Game {
             return;
         };
         let title: SharedString = format!("Install {}", self.name).into();
-        let install_dialog = cx.new(|cx| InstallDialog::new(self.id, source_id, cx));
+        let cover_path = self.cover_path.clone();
+        let image_cache = self.image_cache.clone();
+        let install_dialog =
+            cx.new(|cx| InstallDialog::new(self.id, source_id, cover_path, image_cache, cx));
         window.open_dialog(cx, move |dialog, _, _| {
             dialog
-                .w(rems(24.))
+                .w(rems(36.))
                 .title(title.clone())
                 .ok_text("Install")
                 .child(install_dialog.clone())
         });
-    }
-
-    fn render_cover(&self, cx: &Context<Self>) -> AnyElement {
-        let theme = cx.theme();
-        let shadow = vec![BoxShadow::new(px(0.), px(4.), black().opacity(0.3)).blur_radius(px(5.))];
-
-        let Some(path) = self.cover_path.clone() else {
-            return div()
-                .flex_shrink_0()
-                .h(COVER_HEIGHT)
-                .aspect_ratio(COVER_PLACEHOLDER_ASPECT_RATIO)
-                .rounded(theme.radius.md)
-                .bg(theme.colors.surface)
-                .shadow(shadow)
-                .into_any_element();
-        };
-
-        img(ImageSource::Resource(Resource::Path(path)))
-            .flex_shrink_0()
-            .h(COVER_HEIGHT)
-            .aspect_ratio(COVER_PLACEHOLDER_ASPECT_RATIO)
-            .object_fit(ObjectFit::Cover)
-            .rounded(theme.radius.md)
-            .bg(theme.colors.surface)
-            .shadow(shadow)
-            .into_any_element()
     }
 
     fn render_header(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -156,7 +134,7 @@ impl Game {
                     .flex()
                     .items_center()
                     .gap(rems(1.5))
-                    .child(self.render_cover(cx))
+                    .child(render_cover(self.cover_path.clone(), COVER_HEIGHT, &theme))
                     .child(
                         div()
                             .min_w_0()
@@ -206,6 +184,31 @@ impl Render for Game {
     }
 }
 
+fn render_cover(path: Option<Arc<Path>>, height: Rems, theme: &Theme) -> AnyElement {
+    let shadow = vec![BoxShadow::new(px(0.), px(4.), black().opacity(0.3)).blur_radius(px(5.))];
+
+    let Some(path) = path else {
+        return div()
+            .flex_shrink_0()
+            .h(height)
+            .aspect_ratio(COVER_PLACEHOLDER_ASPECT_RATIO)
+            .rounded(theme.radius.md)
+            .bg(theme.colors.surface)
+            .shadow(shadow)
+            .into_any_element();
+    };
+
+    img(ImageSource::Resource(Resource::Path(path)))
+        .flex_shrink_0()
+        .h(height)
+        .aspect_ratio(COVER_PLACEHOLDER_ASPECT_RATIO)
+        .object_fit(ObjectFit::Cover)
+        .rounded(theme.radius.md)
+        .bg(theme.colors.surface)
+        .shadow(shadow)
+        .into_any_element()
+}
+
 #[derive(Clone, PartialEq)]
 struct VersionOption {
     id: SharedString,
@@ -222,6 +225,10 @@ fn platform_icon(platform: Platform) -> Option<Icon> {
 }
 
 struct InstallDialog {
+    cover_path: Option<Arc<Path>>,
+    // shared with the game page so the already loaded cover is reused and
+    // disposed along with the page instead of leaking into the global asset cache
+    image_cache: Entity<RetainAllImageCache>,
     versions: Vec<VersionOption>,
     selected: Option<VersionOption>,
     loading: bool,
@@ -230,7 +237,13 @@ struct InstallDialog {
 }
 
 impl InstallDialog {
-    fn new(game_id: GameId, source_id: &str, cx: &mut Context<Self>) -> Self {
+    fn new(
+        game_id: GameId,
+        source_id: &str,
+        cover_path: Option<Arc<Path>>,
+        image_cache: Entity<RetainAllImageCache>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let storefront = cx.component_registry().storefront(source_id);
         let load_task = cx.spawn_and_update(
             async move {
@@ -257,6 +270,8 @@ impl InstallDialog {
         );
 
         Self {
+            cover_path,
+            image_cache,
             versions: Vec::new(),
             selected: None,
             loading: true,
@@ -269,6 +284,24 @@ impl InstallDialog {
 impl Render for InstallDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .image_cache(self.image_cache.clone())
+            .flex()
+            .items_start()
+            .gap(rems(1.5))
+            .child(render_cover(
+                self.cover_path.clone(),
+                DIALOG_COVER_HEIGHT,
+                &cx.theme(),
+            ))
+            .child(self.render_fields(cx))
+    }
+}
+
+impl InstallDialog {
+    fn render_fields(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex_1()
+            .min_w_0()
             .flex()
             .flex_col()
             .gap(rems(1.))
@@ -287,6 +320,7 @@ impl Render for InstallDialog {
                 })
                 .size_lg()
                 .w_full()
+                .label("Game version")
                 .placeholder("Select a version")
                 .items(self.versions.iter().cloned())
                 .value(self.selected.clone())
