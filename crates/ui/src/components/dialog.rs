@@ -1,4 +1,4 @@
-use crate::{Alert, Button, PortalContext, UiProvider, WithSize, WithVariant};
+use crate::{Alert, Button, PortalContext, UiProvider, WithRadius, WithSize, WithVariant};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ClickEvent, Div, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Refineable,
@@ -217,10 +217,11 @@ impl RenderOnce for Dialog {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap(rems(1.))
+                    .gap(rems(0.75))
                     .child(
                         Button::new("ok-dialog")
                             .size_lg()
+                            .radius_pill()
                             .w_full()
                             .variant_accent()
                             .child(self.ok_text)
@@ -231,6 +232,7 @@ impl RenderOnce for Dialog {
                     .child(
                         Button::new("close-dialog")
                             .size_lg()
+                            .radius_pill()
                             .variant_ghost()
                             .child(self.cancel_text)
                             .when(self.loading, Button::disabled)

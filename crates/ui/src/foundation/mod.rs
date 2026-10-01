@@ -11,6 +11,7 @@ pub enum Variant {
     #[default]
     Outline,
     Ghost,
+    Field,
 }
 
 pub trait WithVariant: Sized {
@@ -38,6 +39,10 @@ pub trait WithVariant: Sized {
 
     fn variant_ghost(self) -> Self {
         self.variant(Variant::Ghost)
+    }
+
+    fn variant_field(self) -> Self {
+        self.variant(Variant::Field)
     }
 }
 

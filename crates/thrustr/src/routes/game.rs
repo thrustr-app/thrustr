@@ -6,23 +6,27 @@ use crate::{
     navigation::NavigatorExt,
 };
 use anyhow::Context as _;
+use config::paths;
 use domain::{game::GameId, platform::Platform};
 use gpui::{
     AnyElement, AppContext, BoxShadow, ClickEvent, Context, Entity, FontWeight, Hsla, ImageSource,
-    IntoElement, ObjectFit, ParentElement, Rems, Render, Resource, RetainAllImageCache,
-    SharedString, Styled, StyledImage, Task, Window, black, div, img, linear_color_stop,
-    linear_gradient, prelude::FluentBuilder, px, relative, rems,
+    IntoElement, ObjectFit, ParentElement, PathPromptOptions, Rems, Render, Resource,
+    RetainAllImageCache, SharedString, Styled, StyledImage, Task, Window, black, div, img,
+    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rems,
 };
 use std::{path::Path, sync::Arc};
 use theme::{Theme, ThemeExt};
 use tracing::error;
-use ui::{Alert, Button, Icon, PortalContext, Select, WithField, WithFocus, WithSize, WithVariant};
+use ui::{
+    Alert, Button, Icon, InputEvent, PortalContext, Select, WithField, WithFocus, WithRadius,
+    WithSize, WithVariant, input,
+};
 
 // FIXME: gpui gradients only take two stops, so this is a workaround to simulate
 // a multi-stop gradient by stacking layers
 const HEADER_GRADIENT_LAYERS: usize = 3;
 const COVER_HEIGHT: Rems = rems(12.);
-const DIALOG_COVER_HEIGHT: Rems = rems(15.);
+const DIALOG_COVER_HEIGHT: Rems = rems(10.);
 const COVER_PLACEHOLDER_ASPECT_RATIO: f32 = 2. / 3.;
 
 pub struct Game {
@@ -123,6 +127,7 @@ impl Game {
                     .auto_focus()
                     .variant_outline()
                     .size_sm()
+                    .radius_pill()
                     .absolute()
                     .top(rems(2.))
                     .left(rems(2.))
@@ -156,6 +161,7 @@ impl Game {
                     .child(
                         Button::new("download")
                             .size_xl()
+                            .radius_pill()
                             .variant_accent()
                             .shadow(vec![
                                 BoxShadow::new(px(0.), px(0.), theme.colors.accent.opacity(0.35))
@@ -168,6 +174,7 @@ impl Game {
                     .child(
                         Button::icon("menu", Icon::menu())
                             .size_xl()
+                            .radius_pill()
                             .variant_outline(),
                     ),
             )
@@ -226,14 +233,14 @@ fn platform_icon(platform: Platform) -> Option<Icon> {
 
 struct InstallDialog {
     cover_path: Option<Arc<Path>>,
-    // shared with the game page so the already loaded cover is reused and
-    // disposed along with the page instead of leaking into the global asset cache
     image_cache: Entity<RetainAllImageCache>,
     versions: Vec<VersionOption>,
     selected: Option<VersionOption>,
+    install_dir: SharedString,
     loading: bool,
     error: Option<SharedString>,
     _load_task: Task<()>,
+    _browse_task: Option<Task<()>>,
 }
 
 impl InstallDialog {
@@ -274,10 +281,33 @@ impl InstallDialog {
             image_cache,
             versions: Vec::new(),
             selected: None,
+            install_dir: paths::default_install_dir()
+                .to_string_lossy()
+                .into_owned()
+                .into(),
             loading: true,
             error: None,
             _load_task: load_task,
+            _browse_task: None,
         }
+    }
+
+    fn browse_install_dir(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Select".into()),
+        });
+        self._browse_task = Some(cx.spawn_and_update(paths, |this, result, _| match result {
+            Ok(Ok(Some(paths))) => {
+                if let Some(path) = paths.into_iter().next() {
+                    this.install_dir = path.to_string_lossy().into_owned().into();
+                }
+            }
+            Ok(Err(e)) => error!("failed to open the folder picker: {e:#}"),
+            Ok(Ok(None)) | Err(_) => {}
+        }));
     }
 }
 
@@ -329,6 +359,30 @@ impl InstallDialog {
                     this.selected = Some(version.clone());
                     cx.notify();
                 })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(rems(0.5))
+                    .child(
+                        div().flex_1().min_w_0().child(
+                            input("install-dir")
+                                .size_lg()
+                                .label("Install location")
+                                .value(self.install_dir.clone())
+                                .on_input(cx.listener(|this, event: &InputEvent, _, cx| {
+                                    this.install_dir = event.value.clone();
+                                    cx.notify();
+                                })),
+                        ),
+                    )
+                    .child(
+                        Button::icon("browse-install-dir", Icon::folder())
+                            .size_lg()
+                            .variant_field()
+                            .on_click(cx.listener(Self::browse_install_dir)),
+                    ),
             )
     }
 }

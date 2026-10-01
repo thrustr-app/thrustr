@@ -26,6 +26,7 @@ icon_constructors! {
     collections => "icons/collections.svg",
     danger => "icons/danger.svg",
     download => "icons/download.svg",
+    folder => "icons/folder.svg",
     home => "icons/home.svg",
     library => "icons/library.svg",
     linux => "icons/linux.svg",

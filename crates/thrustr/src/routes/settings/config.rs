@@ -20,7 +20,7 @@ use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
     Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithField, WithFocus,
-    WithScrollbar, WithSize, WithVariant, input,
+    WithRadius, WithScrollbar, WithSize, WithVariant, input,
 };
 
 type Values = HashMap<SharedString, SharedString>;
@@ -284,6 +284,7 @@ impl Config {
             .when(!enabled, Button::disabled)
             .when(self.component.is_running(operation), Button::loading)
             .size_md()
+            .radius_pill()
             .w(rems(10.))
             .child(label)
     }
@@ -312,6 +313,7 @@ impl Config {
                         Button::icon("back-button", Icon::arrow())
                             .variant_outline()
                             .size_sm()
+                            .radius_pill()
                             .when(autofocus_back, |this| this.auto_focus())
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
