@@ -234,11 +234,13 @@ impl RenderOnce for Input {
             Radius::Medium => theme.radius.md,
             Radius::Pill => theme.radius.pill,
         };
+        let border_color = self.field.border_color(theme.colors.field.border, &theme);
+        let focus_border_color = self.field.border_color(theme.colors.field.focus, &theme);
 
         let mut input = self
             .base
             .border_1()
-            .border_color(theme.colors.field.border)
+            .border_color(border_color)
             .text_color(theme.colors.primary)
             .bg(theme.colors.field.background)
             .rounded(radius)
@@ -301,7 +303,7 @@ impl RenderOnce for Input {
                     .on_mouse_move(window.listener_for(&state, InputState::on_mouse_move))
             })
             .on_scroll_wheel(window.listener_for(&state, InputState::on_scroll_wheel))
-            .focus(|input| input.border_1().border_color(theme.colors.field.focus))
+            .focus(|input| input.border_1().border_color(focus_border_color))
             .when(self.disabled, |button| button.opacity(0.6))
             .child(state.clone())
             .when(self.clear_button && has_value, |input| {

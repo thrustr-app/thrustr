@@ -220,6 +220,9 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
         }
         .color(theme.colors.secondary);
 
+        let border_color = self.field.border_color(theme.colors.field.border, &theme);
+        let focus_border_color = self.field.border_color(theme.colors.field.focus, &theme);
+
         let mut trigger = div()
             .id(self.id.clone())
             .relative()
@@ -230,15 +233,15 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
             .px(padding(self.size))
             .rounded(theme.radius.md)
             .border_1()
-            .border_color(theme.colors.field.border)
+            .border_color(border_color)
             .bg(theme.colors.field.background)
             .text_color(theme.colors.primary)
             .text_size(theme.text.md)
             .line_height(relative(1.1))
             .font_weight(FontWeight::NORMAL)
-            .focus(|trigger| trigger.border_color(theme.colors.field.focus))
+            .focus(|trigger| trigger.border_color(focus_border_color))
             .when(highlighted.is_some(), |trigger| {
-                trigger.border_color(theme.colors.field.focus)
+                trigger.border_color(focus_border_color)
             })
             .when(self.disabled, |trigger| trigger.opacity(0.6))
             .when(interactive, |trigger| {

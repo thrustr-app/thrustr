@@ -8,13 +8,17 @@ use crate::{
 use anyhow::Context as _;
 use config::paths;
 use domain::{game::GameId, platform::Platform};
+use download::{InstallTarget, InstallTargetError};
 use gpui::{
     AnyElement, AppContext, BoxShadow, ClickEvent, Context, Entity, FontWeight, Hsla, ImageSource,
     IntoElement, ObjectFit, ParentElement, PathPromptOptions, Rems, Render, Resource,
     RetainAllImageCache, SharedString, Styled, StyledImage, Task, Window, black, div, img,
     linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rems,
 };
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use theme::{Theme, ThemeExt};
 use tracing::error;
 use ui::{
@@ -87,10 +91,11 @@ impl Game {
             return;
         };
         let title: SharedString = format!("Install {}", self.name).into();
+        let name = self.name.clone();
         let cover_path = self.cover_path.clone();
         let image_cache = self.image_cache.clone();
         let install_dialog =
-            cx.new(|cx| InstallDialog::new(self.id, source_id, cover_path, image_cache, cx));
+            cx.new(|cx| InstallDialog::new(self.id, source_id, name, cover_path, image_cache, cx));
         window.open_dialog(cx, move |dialog, _, _| {
             dialog
                 .w(rems(36.))
@@ -232,21 +237,25 @@ fn platform_icon(platform: Platform) -> Option<Icon> {
 }
 
 struct InstallDialog {
+    name: SharedString,
     cover_path: Option<Arc<Path>>,
     image_cache: Entity<RetainAllImageCache>,
     versions: Vec<VersionOption>,
     selected: Option<VersionOption>,
     install_dir: SharedString,
+    install_target: Option<Result<InstallTarget, InstallTargetError>>,
     loading: bool,
     error: Option<SharedString>,
     _load_task: Task<()>,
     _browse_task: Option<Task<()>>,
+    _install_target_task: Option<Task<()>>,
 }
 
 impl InstallDialog {
     fn new(
         game_id: GameId,
         source_id: &str,
+        name: SharedString,
         cover_path: Option<Arc<Path>>,
         image_cache: Entity<RetainAllImageCache>,
         cx: &mut Context<Self>,
@@ -276,7 +285,8 @@ impl InstallDialog {
             },
         );
 
-        Self {
+        let mut this = Self {
+            name,
             cover_path,
             image_cache,
             versions: Vec::new(),
@@ -285,11 +295,24 @@ impl InstallDialog {
                 .to_string_lossy()
                 .into_owned()
                 .into(),
+            install_target: None,
             loading: true,
             error: None,
             _load_task: load_task,
             _browse_task: None,
-        }
+            _install_target_task: None,
+        };
+        this.update_install_target(cx);
+        this
+    }
+
+    fn update_install_target(&mut self, cx: &mut Context<Self>) {
+        let dir = PathBuf::from(self.install_dir.as_ref());
+        let name = self.name.clone();
+        self._install_target_task = Some(cx.spawn_and_update(
+            async move { InstallTarget::resolve(&dir, &name) },
+            |this, result, _| this.install_target = Some(result),
+        ));
     }
 
     fn browse_install_dir(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -299,10 +322,11 @@ impl InstallDialog {
             multiple: false,
             prompt: Some("Select".into()),
         });
-        self._browse_task = Some(cx.spawn_and_update(paths, |this, result, _| match result {
+        self._browse_task = Some(cx.spawn_and_update(paths, |this, result, cx| match result {
             Ok(Ok(Some(paths))) => {
                 if let Some(path) = paths.into_iter().next() {
                     this.install_dir = path.to_string_lossy().into_owned().into();
+                    this.update_install_target(cx);
                 }
             }
             Ok(Err(e)) => error!("failed to open the folder picker: {e:#}"),
@@ -361,28 +385,61 @@ impl InstallDialog {
                 })),
             )
             .child(
-                div()
-                    .flex()
-                    .items_end()
-                    .gap(rems(0.5))
-                    .child(
-                        div().flex_1().min_w_0().child(
-                            input("install-dir")
-                                .size_lg()
-                                .label("Install location")
-                                .value(self.install_dir.clone())
-                                .on_input(cx.listener(|this, event: &InputEvent, _, cx| {
-                                    this.install_dir = event.value.clone();
-                                    cx.notify();
-                                })),
-                        ),
-                    )
-                    .child(
+                input("install-dir")
+                    .size_lg()
+                    .label("Install location")
+                    .value(self.install_dir.clone())
+                    .map(|input| match &self.install_target {
+                        Some(Ok(target)) => {
+                            input.description(target.dir.to_string_lossy().into_owned())
+                        }
+                        Some(Err(e)) => input.error(e.to_string()),
+                        None => input,
+                    })
+                    .trailing(
                         Button::icon("browse-install-dir", Icon::folder())
                             .size_lg()
                             .variant_field()
                             .on_click(cx.listener(Self::browse_install_dir)),
-                    ),
+                    )
+                    .on_input(cx.listener(|this, event: &InputEvent, _, cx| {
+                        this.install_dir = event.value.clone();
+                        this.update_install_target(cx);
+                        cx.notify();
+                    })),
             )
+            .when_some(
+                self.install_target.as_ref().and_then(|r| r.as_ref().ok()),
+                |fields, target| {
+                    let theme = cx.theme();
+                    fields.child(
+                        div()
+                            .text_size(theme.text.sm)
+                            .text_color(theme.colors.secondary)
+                            .child(format!(
+                                "{} free of {}",
+                                format_size(target.available_space),
+                                format_size(target.total_space)
+                            )),
+                    )
+                },
+            )
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024. && unit < UNITS.len() - 1 {
+        size /= 1024.;
+        unit += 1;
+    }
+
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{size:.1} {}", UNITS[unit])
     }
 }
