@@ -82,10 +82,22 @@ impl Storefront for LegacyGames {
     }
 
     async fn list_game_versions(game: Game) -> Result<Vec<GameVersion>> {
-        Ok(vec![GameVersion {
-            id: game.lookup_id,
-            pretty_name: Some(game.name),
-            platform: Platform::Windows,
-        }])
+        Ok(vec![
+            GameVersion {
+                id: game.lookup_id.clone(),
+                pretty_name: Some(game.name.clone()),
+                platform: Platform::Windows,
+            },
+            GameVersion {
+                id: game.lookup_id.clone() + "-linux",
+                pretty_name: Some(game.name.clone()),
+                platform: Platform::Linux,
+            },
+            GameVersion {
+                id: game.lookup_id + "-macos",
+                pretty_name: Some(game.name),
+                platform: Platform::Macos,
+            },
+        ])
     }
 }

@@ -1,8 +1,9 @@
 use crate::{Size, WithSize};
 use gpui::{
-    Hsla, IntoElement, Rems, RenderOnce, SharedString, Styled, Transformation, Window,
-    prelude::FluentBuilder, rems, svg,
+    Animation, AnimationExt, Hsla, IntoElement, Rems, RenderOnce, SharedString, Styled,
+    Transformation, Window, percentage, prelude::FluentBuilder, rems, svg,
 };
+use std::time::Duration;
 
 macro_rules! icon_constructors {
     ($($fn_name:ident => $path:literal),+ $(,)?) => {
@@ -18,12 +19,17 @@ macro_rules! icon_constructors {
 
 icon_constructors! {
     appearance => "icons/appearance.svg",
+    apple => "icons/apple.svg",
     arrow => "icons/arrow.svg",
+    check => "icons/check.svg",
+    chevrons => "icons/chevrons.svg",
     collections => "icons/collections.svg",
     danger => "icons/danger.svg",
     download => "icons/download.svg",
+    folder => "icons/folder.svg",
     home => "icons/home.svg",
     library => "icons/library.svg",
+    linux => "icons/linux.svg",
     loader => "icons/loader.svg",
     logo => "icons/logo.svg",
     maximize => "icons/maximize.svg",
@@ -34,6 +40,7 @@ icon_constructors! {
     search => "icons/search.svg",
     settings => "icons/settings.svg",
     storefront => "icons/storefront.svg",
+    windows => "icons/windows.svg",
     x => "icons/x.svg",
 }
 
@@ -43,6 +50,7 @@ pub struct Icon {
     size: Size,
     color: Option<Hsla>,
     transformation: Option<Transformation>,
+    spin: bool,
 }
 
 impl Icon {
@@ -52,6 +60,7 @@ impl Icon {
             size: Size::default(),
             color: None,
             transformation: None,
+            spin: false,
         }
     }
 
@@ -65,7 +74,12 @@ impl Icon {
         self
     }
 
-    fn length(size: Size) -> Rems {
+    pub fn spin(mut self) -> Self {
+        self.spin = true;
+        self
+    }
+
+    pub(crate) fn length(size: Size) -> Rems {
         match size {
             Size::Small => rems(1.),
             Size::Medium => rems(1.125),
@@ -83,13 +97,26 @@ impl WithSize for Icon {
 
 impl RenderOnce for Icon {
     fn render(self, _window: &mut Window, _cx: &mut gpui::App) -> impl IntoElement {
-        svg()
+        let svg = svg()
             .flex_shrink_0()
             .path(self.path)
             .size(Self::length(self.size))
-            .when_some(self.color, |svg, color| svg.text_color(color))
-            .when_some(self.transformation, |svg, transformation| {
+            .when_some(self.color, |svg, color| svg.text_color(color));
+
+        if self.spin {
+            svg.with_animation(
+                "spin",
+                Animation::new(Duration::from_millis(850))
+                    .repeat()
+                    .with_max_fps(30.),
+                |svg, delta| svg.with_transformation(Transformation::rotate(percentage(delta))),
+            )
+            .into_any_element()
+        } else {
+            svg.when_some(self.transformation, |svg, transformation| {
                 svg.with_transformation(transformation)
             })
+            .into_any_element()
+        }
     }
 }

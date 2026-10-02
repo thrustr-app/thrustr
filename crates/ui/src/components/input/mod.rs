@@ -11,14 +11,14 @@
 // Modified and redistributed as part of Thrustr under GPL-3.0-or-later.
 
 use crate::{
-    FocusProps, Icon, Radius, Size, WithFocus, WithRadius, WithSize,
+    FieldProps, FocusProps, Icon, Radius, Size, WithField, WithFocus, WithRadius, WithSize,
     components::input::state::InputState,
 };
 use gpui::{
     App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, FontWeight, Hsla,
     InteractiveElement, Interactivity, IntoElement, MouseButton, ParentElement, Refineable,
     RenderOnce, SharedString, Stateful, StatefulInteractiveElement, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder, relative, rems,
+    Window, div, prelude::FluentBuilder, rems,
 };
 
 mod actions;
@@ -51,7 +51,6 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         value: None,
         on_input: None,
         on_change: None,
-        label: None,
         placeholder: None,
         placeholder_color: None,
         selection_color: None,
@@ -61,6 +60,7 @@ pub fn input(id: impl Into<ElementId>) -> Input {
         leading_icon: None,
         clear_button: false,
         focus: FocusProps::default(),
+        field: FieldProps::default(),
         radius: Radius::default(),
         size: Size::default(),
     }
@@ -76,7 +76,6 @@ pub struct Input {
     value: Option<SharedString>,
     on_input: Option<Box<dyn Fn(&InputEvent, &mut Window, &mut App) + 'static>>,
     on_change: Option<Box<dyn Fn(&ChangeEvent, &mut Window, &mut App) + 'static>>,
-    label: Option<SharedString>,
     placeholder: Option<SharedString>,
     placeholder_color: Option<Hsla>,
     selection_color: Option<Hsla>,
@@ -86,6 +85,7 @@ pub struct Input {
     leading_icon: Option<Icon>,
     clear_button: bool,
     focus: FocusProps,
+    field: FieldProps,
     radius: Radius,
     size: Size,
 }
@@ -109,11 +109,6 @@ impl Input {
         callback: impl Fn(&ChangeEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_change = Some(Box::new(callback));
-        self
-    }
-
-    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = Some(label.into());
         self
     }
 
@@ -169,6 +164,12 @@ impl WithFocus for Input {
     }
 }
 
+impl WithField for Input {
+    fn field_props(&mut self) -> &mut FieldProps {
+        &mut self.field
+    }
+}
+
 impl WithRadius for Input {
     fn radius(mut self, radius: Radius) -> Self {
         self.radius = radius;
@@ -209,7 +210,9 @@ impl RenderOnce for Input {
 
         let focus_handle = self.focus.configure(state.focus_handle(cx));
 
-        let placeholder_color = self.placeholder_color.or(Some(cx.theme().colors.secondary));
+        let placeholder_color = self
+            .placeholder_color
+            .or(Some(cx.theme().colors.field.placeholder));
 
         state.update(cx, |state, _cx| {
             state.set_value(self.value);
@@ -231,13 +234,15 @@ impl RenderOnce for Input {
             Radius::Medium => theme.radius.md,
             Radius::Pill => theme.radius.pill,
         };
+        let border_color = self.field.border_color(theme.colors.field.border, &theme);
+        let focus_border_color = self.field.border_color(theme.colors.field.focus, &theme);
 
         let mut input = self
             .base
             .border_1()
-            .border_color(theme.colors.border)
+            .border_color(border_color)
             .text_color(theme.colors.primary)
-            .bg(theme.colors.surface_sunken)
+            .bg(theme.colors.field.background)
             .rounded(radius)
             .p(rems(0.5))
             .gap(rems(0.75))
@@ -298,7 +303,7 @@ impl RenderOnce for Input {
                     .on_mouse_move(window.listener_for(&state, InputState::on_mouse_move))
             })
             .on_scroll_wheel(window.listener_for(&state, InputState::on_scroll_wheel))
-            .focus(|input| input.border_1().border_color(theme.colors.primary))
+            .focus(|input| input.border_1().border_color(focus_border_color))
             .when(self.disabled, |button| button.opacity(0.6))
             .child(state.clone())
             .when(self.clear_button && has_value, |input| {
@@ -317,28 +322,9 @@ impl RenderOnce for Input {
 
         input.style().refine(&self.style);
 
-        let width = input.style().max_size.width;
-
-        let label_focus_handle = focus_handle.clone();
-        let container = div()
-            .id((self.id.clone(), "field"))
-            .when_some(width, |container, width| container.max_w(width))
-            .when_some(self.label, |container, label| {
-                container.child(
-                    div()
-                        .id((self.id.clone(), "label"))
-                        .on_click(move |_, window, cx| {
-                            label_focus_handle.focus(window, cx);
-                        })
-                        .text_size(theme.text.sm)
-                        .line_height(relative(1.))
-                        .font_weight(FontWeight::NORMAL)
-                        .child(label)
-                        .mb(rems(0.375))
-                        .text_color(theme.colors.secondary),
-                )
-            })
-            .child(input);
+        let container = self
+            .field
+            .wrap(self.id.clone(), input, Some(focus_handle.clone()));
 
         self.focus
             .attach_reveal(container, &focus_handle, (self.id, "reveal"), window, cx)

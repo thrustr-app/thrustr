@@ -9,6 +9,8 @@ use strum::Display;
 #[strum(serialize_all = "lowercase")]
 pub enum StorefrontOperation {
     Sync,
+    #[strum(to_string = "list versions")]
+    ListVersions,
 }
 
 impl From<StorefrontOperation> for Operation {

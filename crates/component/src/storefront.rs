@@ -1,10 +1,10 @@
 use crate::{
     ComponentHandle,
-    handle::{Permit, Result},
+    handle::{OperationError, Permit, Result},
 };
 use domain::{
     component::{Storefront, StorefrontOperation},
-    game::NewGame,
+    game::{Game, GameId, GameVersion, NewGame},
 };
 use event::Topic;
 use std::sync::Arc;
@@ -60,6 +60,39 @@ impl StorefrontHandle {
         self.component.context().artwork_service.trigger_backfill();
 
         Ok(())
+    }
+
+    pub async fn list_game_versions(&self, game_id: GameId) -> Result<Vec<GameVersion>> {
+        let permit = Permit::begin(&self.component, StorefrontOperation::ListVersions)?;
+
+        let game = self.load_game(game_id).await?;
+        let versions = match self.storefront.list_game_versions(game).await {
+            Ok(versions) => versions,
+            Err(error) => {
+                permit.finish(Err(error.clone())).await?;
+                return Err(error.into());
+            }
+        };
+        permit.finish(Ok(())).await?;
+
+        Ok(versions)
+    }
+
+    async fn load_game(&self, game_id: GameId) -> Result<Game> {
+        let repository = self.component.context().game_repository.clone();
+        let game = self
+            .component
+            .context()
+            .tokio_handle
+            .spawn_blocking(move || repository.get(game_id))
+            .await
+            .map_err(anyhow::Error::from)??
+            .ok_or(OperationError::GameNotFound(game_id))?;
+
+        if game.source.id != self.component.id() {
+            return Err(OperationError::ForeignGame(game_id));
+        }
+        Ok(game)
     }
 
     async fn store_games(&self, games: Vec<NewGame>) -> Result<usize> {

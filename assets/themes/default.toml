@@ -13,7 +13,6 @@ secondary_background = "#202427"
 secondary_foreground = "#0B0D0F"
 tertiary = "#6E7276"
 surface = "#1C2024"
-surface_sunken = "#0D1013"
 border = "#26292D"
 accent = "#8BF0FE"
 accent_background = "#152830"
@@ -42,6 +41,17 @@ primary = "#FFFFFF"
 secondary = "#767B80"
 border = "#1F222599"
 hover = "#1A1A1A"
+
+[colors.field]
+background = "#0D1013"
+border = "#26292D"
+focus = "#F0F2F4"
+placeholder = "#8C9094"
+
+[colors.popover]
+background = "#171A1C"
+border = "#2E3133"
+highlight = "#26292C"
 
 [radius]
 sm = "0.625rem"

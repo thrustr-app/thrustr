@@ -1,9 +1,12 @@
 use crate::{
     AuthHandle, ConfigHandle, RegistryContext, StorefrontHandle, Timers, timers::ComponentTimers,
 };
-use domain::component::{
-    Activation, Auth, Capabilities, Component, Config, Error, Initialization, Metadata,
-    MissingFieldError, Operation, Outcome, Rejection, Running, State, Status, Storefront,
+use domain::{
+    component::{
+        Activation, Auth, Capabilities, Component, Config, Error, Initialization, Metadata,
+        MissingFieldError, Operation, Outcome, Rejection, Running, State, Status, Storefront,
+    },
+    game::GameId,
 };
 use event::Topic;
 use std::sync::{Arc, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
@@ -388,6 +391,12 @@ pub enum OperationError {
 
     #[error("component offers neither a login flow nor a login form")]
     NoLoginMethod,
+
+    #[error("game {0} does not exist")]
+    GameNotFound(GameId),
+
+    #[error("game {0} does not belong to the component")]
+    ForeignGame(GameId),
 
     #[error(transparent)]
     Component(#[from] Error),

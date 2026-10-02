@@ -1,12 +1,13 @@
-use crate::{FocusProps, Icon, Size, Variant, WithFocus, WithSize, WithVariant};
+use crate::{
+    FocusProps, Icon, Radius, Size, Variant, WithFocus, WithRadius, WithSize, WithVariant,
+};
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla,
-    InteractiveElement, IntoElement, KeyBinding, NoAction, ParentElement, Refineable, Rems,
-    RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div,
-    percentage, prelude::FluentBuilder, relative, rems, transparent_black,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
+    KeyBinding, NoAction, ParentElement, Refineable, Rems, RenderOnce, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, div, prelude::FluentBuilder, relative, rems,
+    transparent_black,
 };
 use smallvec::SmallVec;
-use std::time::Duration;
 use theme::{Theme, ThemeExt};
 
 const CONTEXT: &str = "button";
@@ -34,6 +35,7 @@ pub struct Button {
     style: StyleRefinement,
     variant: Variant,
     size: Size,
+    radius: Radius,
     icon: Option<Icon>,
     children: SmallVec<[AnyElement; 1]>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
@@ -49,6 +51,7 @@ impl Button {
             style: StyleRefinement::default(),
             variant: Variant::default(),
             size: Size::default(),
+            radius: Radius::default(),
             icon: None,
             children: SmallVec::new(),
             on_click: None,
@@ -90,7 +93,7 @@ impl Button {
 
     fn height(&self) -> Rems {
         if self.variant == Variant::Ghost {
-            return rems(1.);
+            return rems(2.);
         }
 
         match self.size {
@@ -103,7 +106,7 @@ impl Button {
 
     fn padding(&self) -> Rems {
         if self.variant == Variant::Ghost {
-            return rems(0.25);
+            return rems(0.5);
         }
 
         match self.size {
@@ -137,6 +140,13 @@ impl Button {
                 ring: colors.primary,
                 weight: FontWeight::SEMIBOLD,
             },
+            Variant::Field => Palette {
+                background: colors.field.background,
+                foreground: colors.primary,
+                border: colors.field.border,
+                ring: colors.field.focus,
+                weight: FontWeight::SEMIBOLD,
+            },
             Variant::Ghost => Palette {
                 background: transparent_black(),
                 foreground: colors.secondary,
@@ -163,6 +173,13 @@ impl ParentElement for Button {
 impl WithSize for Button {
     fn size(mut self, size: Size) -> Self {
         self.size = size;
+        self
+    }
+}
+
+impl WithRadius for Button {
+    fn radius(mut self, radius: Radius) -> Self {
+        self.radius = radius;
         self
     }
 }
@@ -198,6 +215,10 @@ impl RenderOnce for Button {
         let palette = self.palette(&theme);
         let height = self.height();
         let is_icon = self.icon.is_some() && self.children.is_empty();
+        let radius = match self.radius {
+            Radius::Medium => theme.radius.md,
+            Radius::Pill => theme.radius.pill,
+        };
         let interactive = !self.disabled && !self.loading;
 
         let mut button = div()
@@ -207,7 +228,7 @@ impl RenderOnce for Button {
             .justify_center()
             .gap(rems(0.5))
             .h(height)
-            .rounded(theme.radius.pill)
+            .rounded(radius)
             .when(is_icon, |button| button.min_w(height))
             .when(!is_icon, |button| button.px(self.padding()))
             .border_1()
@@ -233,15 +254,7 @@ impl RenderOnce for Button {
                         Icon::loader()
                             .size(self.size)
                             .color(palette.foreground)
-                            .with_animation(
-                                "loading",
-                                Animation::new(Duration::from_millis(850))
-                                    .repeat()
-                                    .with_max_fps(30.),
-                                |loader: Icon, delta| {
-                                    loader.transform(Transformation::rotate(percentage(delta)))
-                                },
-                            ),
+                            .spin(),
                     )
                 },
                 |button| {

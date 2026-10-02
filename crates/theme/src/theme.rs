@@ -21,6 +21,19 @@ define_theme_group!(TitlebarColors: Hsla {
     hover,
 });
 
+define_theme_group!(FieldColors: Hsla {
+    background,
+    border,
+    focus,
+    placeholder,
+});
+
+define_theme_group!(PopoverColors: Hsla {
+    background,
+    border,
+    highlight,
+});
+
 define_theme_colors!(
     colors: [
         background,
@@ -30,7 +43,6 @@ define_theme_colors!(
         secondary_foreground,
         tertiary,
         surface,
-        surface_sunken,
         hover,
         accent,
         accent_background,
@@ -47,6 +59,8 @@ define_theme_colors!(
     groups: [
         sidebar: SidebarColors,
         titlebar: TitlebarColors,
+        field: FieldColors,
+        popover: PopoverColors,
     ]
 );
 
