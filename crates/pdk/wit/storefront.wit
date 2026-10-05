@@ -1,10 +1,11 @@
 package thrustr:plugin@0.1.0;
 
 interface storefront {
-    use types.{error, game, game-version};
+    use types.{error, game, game-version, game-version-details};
 
     get-games: async func() -> result<list<game>, error>;
     get-game-versions: async func(game: game) -> result<list<game-version>, error>;
+    get-game-version-details: async func(game: game, version-id: string) -> result<game-version-details, error>;
 }
 
 world storefront-capability {

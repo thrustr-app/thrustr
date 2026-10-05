@@ -7,6 +7,7 @@ plugin:
   description: Plugin to interact with Legacy Games.
   allowed-hosts:
     - api.legacygames.com
+    - cdn.legacygames.com
 
 auth:
   elements:

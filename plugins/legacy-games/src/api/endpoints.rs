@@ -19,3 +19,7 @@ pub fn get_giveaway_catalog_by_email(email: &str) -> String {
 pub fn catalog() -> String {
     format!("{BASE_URL}/products/catalog")
 }
+
+pub fn download(product_id: &str, game_id: &str) -> String {
+    format!("{BASE_URL}/products/download?productId={product_id}&gameId={game_id}")
+}

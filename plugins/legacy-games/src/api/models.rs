@@ -120,6 +120,11 @@ pub struct Entitlement {
     pub product_id: u64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Download {
+    pub file: String,
+}
+
 pub type IsExistsByEmailResponse = ApiResponse<IsExistsByEmailSuccess>;
 
 impl IsExistsByEmailResponse {
@@ -160,6 +165,17 @@ pub type EntitlementsResponse = ApiResponse<Vec<Entitlement>>;
 
 impl EntitlementsResponse {
     pub fn into_result(self) -> Result<Vec<Entitlement>, Error> {
+        match self {
+            Self::Ok { data } => Ok(data),
+            Self::Error { data, .. } => Err(Error::Other(data.to_string())),
+        }
+    }
+}
+
+pub type DownloadResponse = ApiResponse<Download>;
+
+impl DownloadResponse {
+    pub fn into_result(self) -> Result<Download, Error> {
         match self {
             Self::Ok { data } => Ok(data),
             Self::Error { data, .. } => Err(Error::Other(data.to_string())),

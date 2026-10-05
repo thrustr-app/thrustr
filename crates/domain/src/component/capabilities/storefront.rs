@@ -1,6 +1,6 @@
 use crate::{
     component::{Error, Operation},
-    game::{Game, GameVersion, NewGame},
+    game::{Game, GameVersion, GameVersionDetails, NewGame},
 };
 use async_trait::async_trait;
 use strum::Display;
@@ -11,6 +11,8 @@ pub enum StorefrontOperation {
     Sync,
     #[strum(to_string = "list versions")]
     ListVersions,
+    #[strum(to_string = "version details")]
+    VersionDetails,
 }
 
 impl From<StorefrontOperation> for Operation {
@@ -23,4 +25,9 @@ impl From<StorefrontOperation> for Operation {
 pub trait Storefront: Send + Sync {
     async fn list_games(&self) -> Result<Vec<NewGame>, Error>;
     async fn list_game_versions(&self, game: Game) -> Result<Vec<GameVersion>, Error>;
+    async fn game_version_details(
+        &self,
+        game: Game,
+        version_id: String,
+    ) -> Result<GameVersionDetails, Error>;
 }

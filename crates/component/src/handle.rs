@@ -1,5 +1,6 @@
 use crate::{
-    AuthHandle, ConfigHandle, RegistryContext, StorefrontHandle, Timers, timers::ComponentTimers,
+    AuthHandle, ConfigHandle, RegistryContext, StorefrontHandle, Timers,
+    storefront::VersionDetailsCache, timers::ComponentTimers,
 };
 use domain::{
     component::{
@@ -20,6 +21,7 @@ struct Inner {
     auth: Option<Arc<dyn Auth>>,
     config: Option<Arc<dyn Config>>,
     storefront: Option<Arc<dyn Storefront>>,
+    version_details_cache: VersionDetailsCache,
     timers: Option<ComponentTimers>,
     context: RegistryContext,
     state: RwLock<State>,
@@ -43,6 +45,7 @@ impl ComponentHandle {
             auth,
             config,
             storefront,
+            version_details_cache: VersionDetailsCache::default(),
             timers: scheduler
                 .map(|scheduler| ComponentTimers::new(scheduler, context.tokio_handle.clone())),
             context,
@@ -96,6 +99,10 @@ impl ComponentHandle {
             .storefront
             .clone()
             .map(|storefront| StorefrontHandle::new(storefront, self.clone()))
+    }
+
+    pub(crate) fn version_details_cache(&self) -> &VersionDetailsCache {
+        &self.0.version_details_cache
     }
 
     pub(crate) fn timers(&self) -> Option<&ComponentTimers> {
@@ -153,6 +160,8 @@ impl ComponentHandle {
             handle: self,
             initialization: Some(initialization),
         };
+
+        self.0.version_details_cache.clear();
         let result = self.0.component.init().await;
         initializing.finish(result.clone());
         result?;

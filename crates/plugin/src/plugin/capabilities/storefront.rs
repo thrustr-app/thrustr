@@ -5,7 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use domain::{
     component::{Error, Storefront},
-    game::{Game, GameSource, GameVersion, NewGame},
+    game::{Game, GameSource, GameVersion, GameVersionDetails, NewGame},
     platform::Platform,
 };
 use std::sync::Arc;
@@ -42,6 +42,18 @@ impl Storefront for PluginStorefront {
 
         Ok(versions.into_iter().map(Into::into).collect())
     }
+
+    async fn game_version_details(
+        &self,
+        game: Game,
+        version_id: String,
+    ) -> Result<GameVersionDetails, Error> {
+        let details = guest_call!(self.runtime, self.indices, |storefront, accessor| {
+            storefront.call_get_game_version_details(accessor, game.into(), version_id)
+        })?;
+
+        Ok(details.into())
+    }
 }
 
 impl PluginStorefront {
@@ -66,6 +78,15 @@ impl From<types::GameVersion> for GameVersion {
             id: value.id,
             pretty_name: value.pretty_name,
             platform: value.platform.into(),
+        }
+    }
+}
+
+impl From<types::GameVersionDetails> for GameVersionDetails {
+    fn from(value: types::GameVersionDetails) -> Self {
+        GameVersionDetails {
+            install_size: value.install_size,
+            download_size: value.download_size,
         }
     }
 }

@@ -6,8 +6,12 @@ use crate::{
     navigation::NavigatorExt,
 };
 use anyhow::Context as _;
+use component::StorefrontHandle;
 use config::paths;
-use domain::{game::GameId, platform::Platform};
+use domain::{
+    game::{GameId, GameVersionDetails},
+    platform::Platform,
+};
 use download::{InstallTarget, InstallTargetError};
 use gpui::{
     AnyElement, AppContext, BoxShadow, ClickEvent, Context, Entity, FontWeight, Hsla, ImageSource,
@@ -237,16 +241,21 @@ fn platform_icon(platform: Platform) -> Option<Icon> {
 }
 
 struct InstallDialog {
+    game_id: GameId,
+    storefront: Option<StorefrontHandle>,
     name: SharedString,
     cover_path: Option<Arc<Path>>,
     image_cache: Entity<RetainAllImageCache>,
     versions: Vec<VersionOption>,
     selected: Option<VersionOption>,
+    details: Option<GameVersionDetails>,
+    details_loading: bool,
     install_dir: SharedString,
     install_target: Option<Result<InstallTarget, InstallTargetError>>,
     loading: bool,
     error: Option<SharedString>,
     _load_task: Task<()>,
+    _details_task: Option<Task<()>>,
     _browse_task: Option<Task<()>>,
     _install_target_task: Option<Task<()>>,
 }
@@ -262,11 +271,14 @@ impl InstallDialog {
     ) -> Self {
         let storefront = cx.component_registry().storefront(source_id);
         let load_task = cx.spawn_and_update(
-            async move {
-                let storefront = storefront.context("storefront is not available")?;
-                anyhow::Ok(storefront.list_game_versions(game_id).await?)
+            {
+                let storefront = storefront.clone();
+                async move {
+                    let storefront = storefront.context("storefront is not available")?;
+                    anyhow::Ok(storefront.list_game_versions(game_id).await?)
+                }
             },
-            |this, result, _| {
+            |this, result, cx| {
                 this.loading = false;
                 match result {
                     Ok(versions) => {
@@ -278,7 +290,8 @@ impl InstallDialog {
                                 platform: v.platform,
                             })
                             .collect();
-                        this.selected = this.versions.first().cloned();
+                        let first = this.versions.first().cloned();
+                        this.select_version(first, cx);
                     }
                     Err(e) => this.error = Some(format!("{e:#}").into()),
                 }
@@ -286,11 +299,15 @@ impl InstallDialog {
         );
 
         let mut this = Self {
+            game_id,
+            storefront,
             name,
             cover_path,
             image_cache,
             versions: Vec::new(),
             selected: None,
+            details: None,
+            details_loading: false,
             install_dir: paths::default_install_dir()
                 .to_string_lossy()
                 .into_owned()
@@ -299,11 +316,36 @@ impl InstallDialog {
             loading: true,
             error: None,
             _load_task: load_task,
+            _details_task: None,
             _browse_task: None,
             _install_target_task: None,
         };
         this.update_install_target(cx);
         this
+    }
+
+    fn select_version(&mut self, version: Option<VersionOption>, cx: &mut Context<Self>) {
+        self.details = None;
+        self._details_task =
+            version
+                .as_ref()
+                .zip(self.storefront.clone())
+                .map(|(version, storefront)| {
+                    let game_id = self.game_id;
+                    let version_id = version.id.to_string();
+                    cx.spawn_and_update(
+                        async move { storefront.game_version_details(game_id, version_id).await },
+                        |this, result, _| {
+                            this.details_loading = false;
+                            match result {
+                                Ok(details) => this.details = Some(details),
+                                Err(e) => error!("failed to load version details: {e:#}"),
+                            }
+                        },
+                    )
+                });
+        self.details_loading = self._details_task.is_some();
+        self.selected = version;
     }
 
     fn update_install_target(&mut self, cx: &mut Context<Self>) {
@@ -380,7 +422,7 @@ impl InstallDialog {
                 .value(self.selected.clone())
                 .when(self.loading, Select::loading)
                 .on_change(cx.listener(|this, version: &VersionOption, _, cx| {
-                    this.selected = Some(version.clone());
+                    this.select_version(Some(version.clone()), cx);
                     cx.notify();
                 })),
             )
@@ -408,23 +450,51 @@ impl InstallDialog {
                         cx.notify();
                     })),
             )
-            .when_some(
-                self.install_target.as_ref().and_then(|r| r.as_ref().ok()),
-                |fields, target| {
-                    let theme = cx.theme();
-                    fields.child(
-                        div()
-                            .text_size(theme.text.sm)
-                            .text_color(theme.colors.secondary)
-                            .child(format!(
-                                "{} free of {}",
-                                format_size(target.available_space),
-                                format_size(target.total_space)
-                            )),
-                    )
-                },
-            )
+            .children(self.render_space_info(cx))
     }
+
+    fn render_space_info(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+        let version_size = match self.loading || self.details_loading {
+            true => Some("Calculating size…".to_owned()),
+            false => self.details.as_ref().and_then(format_details),
+        };
+        let free_space = match &self.install_target {
+            Some(Ok(target)) => Some(format!(
+                "{} free of {}",
+                format_size(target.available_space),
+                format_size(target.total_space)
+            )),
+            Some(Err(_)) => None,
+            None => Some("Calculating free space…".to_owned()),
+        };
+        if version_size.is_none() && free_space.is_none() {
+            return None;
+        }
+
+        let theme = cx.theme();
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(rems(0.25))
+                .text_size(theme.text.sm)
+                .text_color(theme.colors.secondary)
+                .children(version_size)
+                .children(free_space),
+        )
+    }
+}
+
+fn format_details(details: &GameVersionDetails) -> Option<String> {
+    let sizes: Vec<String> = [
+        (details.download_size, "download"),
+        (details.install_size, "installed"),
+    ]
+    .into_iter()
+    .filter_map(|(size, label)| size.map(|size| format!("{} {label}", format_size(size))))
+    .collect();
+
+    (!sizes.is_empty()).then(|| sizes.join(" · "))
 }
 
 fn format_size(bytes: u64) -> String {
