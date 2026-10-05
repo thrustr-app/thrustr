@@ -9,7 +9,6 @@ define_theme_group!(SidebarColors: Hsla {
     secondary,
     border,
     surface,
-    hover,
     logo,
 });
 
@@ -18,12 +17,12 @@ define_theme_group!(TitlebarColors: Hsla {
     primary,
     secondary,
     border,
-    hover,
 });
 
 define_theme_group!(FieldColors: Hsla {
     background,
     border,
+    hover,
     focus,
     placeholder,
 });
@@ -44,6 +43,7 @@ define_theme_colors!(
         tertiary,
         surface,
         hover,
+        active,
         accent,
         accent_background,
         accent_foreground,
@@ -54,6 +54,7 @@ define_theme_colors!(
         danger,
         danger_background,
         danger_foreground,
+        danger_muted_foreground,
         overlay,
     ],
     groups: [
@@ -76,6 +77,7 @@ define_theme_group!(ThemeText: AbsoluteLength {
     md,
     lg,
     xl,
+    display,
 });
 
 #[doc(hidden)]

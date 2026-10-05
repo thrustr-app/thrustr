@@ -168,7 +168,7 @@ fn render_row(
                             this.child(Icon::plugin().size_sm().color(theme.colors.secondary))
                         })
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(rems(0.875))
+                        .text_size(theme.text.md)
                         .line_height(relative(1.))
                         .text_color(theme.colors.primary)
                         .child(storefront.name.clone()),

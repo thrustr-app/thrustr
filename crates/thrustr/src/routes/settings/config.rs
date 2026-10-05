@@ -323,7 +323,7 @@ impl Config {
                             .items_center()
                             .gap(rems(0.5))
                             .font_weight(FontWeight::BOLD)
-                            .text_size(rems(1.125))
+                            .text_size(theme.text.lg)
                             .line_height(relative(1.))
                             .when_some(self.icon.clone(), |div, icon| {
                                 div.child(img(ImageSource::Image(icon)).size(rems(1.5)))
@@ -415,7 +415,7 @@ impl Config {
         autofocus_field: Option<&SharedString>,
         cx: &mut Context<Self>,
     ) -> Div {
-        let text_color = cx.theme().colors.secondary;
+        let theme = cx.theme();
         let elements = section.elements.iter().map(|element| match element {
             Element::Field(f) => self.render_field(f, can_configure, autofocus_field, cx),
             Element::Hbox(fields) => div()
@@ -433,10 +433,10 @@ impl Config {
         div()
             .flex()
             .flex_col()
-            .text_size(rems(0.875))
+            .text_size(theme.text.md)
             .line_height(relative(1.))
             .font_weight(FontWeight::BOLD)
-            .text_color(text_color)
+            .text_color(theme.colors.secondary)
             .gap(rems(0.875))
             .child(section.name.clone())
             .child(div().flex().flex_col().gap(rems(1.5)).children(elements))

@@ -1,6 +1,16 @@
+use gpui::{Hsla, Rems, rems};
+
 mod focus;
 
 pub use focus::*;
+
+pub(crate) fn composite(background: Hsla, layer: Hsla) -> Hsla {
+    if background.is_transparent() {
+        layer
+    } else {
+        background.blend(layer)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Variant {
@@ -53,6 +63,26 @@ pub enum Size {
     Medium,
     Large,
     ExtraLarge,
+}
+
+impl Size {
+    pub fn control_height(self) -> Rems {
+        match self {
+            Self::Small => rems(2.),
+            Self::Medium => rems(2.375),
+            Self::Large => rems(2.625),
+            Self::ExtraLarge => rems(2.875),
+        }
+    }
+
+    pub(crate) fn field_px(self) -> Rems {
+        match self {
+            Self::Small => rems(0.625),
+            Self::Medium => rems(0.75),
+            Self::Large => rems(1.),
+            Self::ExtraLarge => rems(1.25),
+        }
+    }
 }
 
 pub trait WithSize: Sized {

@@ -24,7 +24,6 @@ impl<T: Clone + PartialEq + 'static> SidebarValue for T {}
 
 #[derive(Clone, Copy)]
 struct Palette {
-    hover: Hsla,
     active_bg: Hsla,
     active_fg: Hsla,
     muted_fg: Hsla,
@@ -137,8 +136,11 @@ impl<T: SidebarValue> RenderOnce for SidebarItem<T> {
             } else {
                 FontWeight::NORMAL
             })
-            .hover(move |div| div.bg(palette.hover))
-            .when(active, |div| div.bg(palette.active_bg))
+            .when_else(
+                active,
+                |div| div.bg(palette.active_bg),
+                |div| div.hover(|div| div.bg(theme.colors.hover)),
+            )
             .when(active && focused, |div| div.border_color(palette.ring))
             .when_else(
                 has_label,
@@ -244,14 +246,12 @@ impl<T: SidebarValue> Sidebar<T> {
 
         match self.kind {
             Kind::Main => Palette {
-                hover: colors.sidebar.hover,
                 active_bg: colors.sidebar.surface,
                 active_fg: colors.sidebar.primary,
                 muted_fg: colors.sidebar.secondary,
                 ring: colors.sidebar.primary,
             },
             Kind::Content => Palette {
-                hover: colors.hover,
                 active_bg: colors.surface,
                 active_fg: colors.primary,
                 muted_fg: colors.secondary,

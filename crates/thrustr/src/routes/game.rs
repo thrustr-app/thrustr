@@ -26,8 +26,8 @@ use std::{
 use theme::{Theme, ThemeExt};
 use tracing::error;
 use ui::{
-    Alert, Button, Icon, InputEvent, PortalContext, Select, WithField, WithFocus, WithRadius,
-    WithSize, WithVariant, input,
+    Alert, Button, Dialog, Icon, InputEvent, Meter, PortalContext, Select, WithField, WithFocus,
+    WithRadius, WithSize, WithVariant, input,
 };
 
 // FIXME: gpui gradients only take two stops, so this is a workaround to simulate
@@ -100,11 +100,12 @@ impl Game {
         let image_cache = self.image_cache.clone();
         let install_dialog =
             cx.new(|cx| InstallDialog::new(self.id, source_id, name, cover_path, image_cache, cx));
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, _, cx| {
             dialog
                 .w(rems(36.))
                 .title(title.clone())
                 .ok_text("Install")
+                .when(!install_dialog.read(cx).can_install(), Dialog::disabled)
                 .child(install_dialog.clone())
         });
     }
@@ -154,7 +155,7 @@ impl Game {
                             .min_w_0()
                             .line_clamp(2)
                             .text_ellipsis()
-                            .text_size(rems(2.5))
+                            .text_size(theme.text.display)
                             .line_height(relative(1.2))
                             .font_weight(FontWeight::BLACK)
                             .text_color(theme.colors.primary)
@@ -173,8 +174,8 @@ impl Game {
                             .radius_pill()
                             .variant_accent()
                             .shadow(vec![
-                                BoxShadow::new(px(0.), px(0.), theme.colors.accent.opacity(0.35))
-                                    .blur_radius(px(6.)),
+                                BoxShadow::new(px(0.), px(6.), theme.colors.accent.opacity(0.2))
+                                    .blur_radius(px(20.)),
                             ])
                             .with_icon(Icon::download())
                             .child("Download")
@@ -429,6 +430,7 @@ impl InstallDialog {
             .child(
                 input("install-dir")
                     .size_lg()
+                    .w_full()
                     .label("Install location")
                     .value(self.install_dir.clone())
                     .map(|input| match &self.install_target {
@@ -450,51 +452,126 @@ impl InstallDialog {
                         cx.notify();
                     })),
             )
-            .children(self.render_space_info(cx))
+            .children(self.render_storage(cx))
     }
 
-    fn render_space_info(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
-        let version_size = match self.loading || self.details_loading {
-            true => Some("Calculating size…".to_owned()),
-            false => self.details.as_ref().and_then(format_details),
+    fn render_storage(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+        let target = match &self.install_target {
+            Some(Ok(target)) => Some(target),
+            Some(Err(_)) => return None,
+            None => None,
         };
-        let free_space = match &self.install_target {
-            Some(Ok(target)) => Some(format!(
+
+        let theme = cx.theme();
+        let calculating_size = self.loading || self.details_loading;
+        let required = self.required_space();
+        let missing_space = self.missing_space();
+
+        let game_color = match missing_space {
+            Some(_) => theme.colors.danger,
+            None => theme.colors.primary,
+        };
+
+        let free_space = match target {
+            Some(target) => format!(
                 "{} free of {}",
                 format_size(target.available_space),
                 format_size(target.total_space)
-            )),
-            Some(Err(_)) => None,
-            None => Some("Calculating free space…".to_owned()),
+            ),
+            None => "Calculating free space…".to_owned(),
         };
-        if version_size.is_none() && free_space.is_none() {
-            return None;
-        }
 
-        let theme = cx.theme();
+        let meter = match target {
+            Some(target) => Meter::new(target.total_space as f64)
+                .segment(
+                    target.total_space.saturating_sub(target.available_space) as f64,
+                    theme.colors.tertiary,
+                )
+                .segment(required.unwrap_or(0) as f64, game_color),
+            None => Meter::new(0.),
+        };
+
+        let sizes = match (calculating_size, &self.details) {
+            (true, _) => vec![div().child("Calculating size…")],
+            (false, Some(details)) => [
+                (
+                    details.download_size,
+                    Icon::download(),
+                    "download",
+                    details.install_size.is_none(),
+                ),
+                (details.install_size, Icon::disk(), "installed", true),
+            ]
+            .into_iter()
+            .filter_map(|(size, icon, label, in_meter)| {
+                let color = match in_meter {
+                    true => game_color,
+                    false => theme.colors.secondary,
+                };
+                size.map(|size| {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(rems(0.375))
+                        .child(icon.size_sm().color(color))
+                        .child(format!("{} {label}", format_size(size)))
+                })
+            })
+            .collect(),
+            (false, None) => Vec::new(),
+        };
+
         Some(
             div()
                 .flex()
                 .flex_col()
-                .gap(rems(0.25))
-                .text_size(theme.text.sm)
-                .text_color(theme.colors.secondary)
-                .children(version_size)
-                .children(free_space),
+                .gap(rems(0.625))
+                .child(
+                    meter
+                        .id("storage-meter")
+                        .label("Storage")
+                        .value_label(free_space),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(rems(0.5))
+                        .text_size(theme.text.sm)
+                        .line_height(relative(1.))
+                        .text_color(theme.colors.secondary)
+                        .when(!sizes.is_empty(), |legend| {
+                            legend.child(div().flex().flex_wrap().gap(rems(1.)).children(sizes))
+                        })
+                        .children(missing_space.map(|missing_space| {
+                            div().text_color(theme.colors.danger).child(format!(
+                                "Not enough space: {} more needed.",
+                                format_size(missing_space)
+                            ))
+                        })),
+                ),
         )
     }
-}
 
-fn format_details(details: &GameVersionDetails) -> Option<String> {
-    let sizes: Vec<String> = [
-        (details.download_size, "download"),
-        (details.install_size, "installed"),
-    ]
-    .into_iter()
-    .filter_map(|(size, label)| size.map(|size| format!("{} {label}", format_size(size))))
-    .collect();
+    fn required_space(&self) -> Option<u64> {
+        let details = self.details.as_ref()?;
+        details.install_size.or(details.download_size)
+    }
 
-    (!sizes.is_empty()).then(|| sizes.join(" · "))
+    fn missing_space(&self) -> Option<u64> {
+        let Some(Ok(target)) = &self.install_target else {
+            return None;
+        };
+        self.required_space()?
+            .checked_sub(target.available_space)
+            .filter(|&missing| missing > 0)
+    }
+
+    fn can_install(&self) -> bool {
+        self.selected.is_some()
+            && matches!(self.install_target, Some(Ok(_)))
+            && self.missing_space().is_none()
+    }
 }
 
 fn format_size(bytes: u64) -> String {

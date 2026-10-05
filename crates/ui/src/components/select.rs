@@ -124,30 +124,12 @@ impl<T: PartialEq + 'static> Select<T> {
     }
 }
 
-fn height(size: Size) -> Rems {
-    match size {
-        Size::Small => rems(2.),
-        Size::Medium => rems(2.375),
-        Size::Large => rems(2.625),
-        Size::ExtraLarge => rems(2.875),
-    }
-}
-
-fn item_padding_y(size: Size) -> Rems {
+fn item_py(size: Size) -> Rems {
     match size {
         Size::Small => rems(0.25),
         Size::Medium => rems(0.375),
         Size::Large => rems(0.5),
         Size::ExtraLarge => rems(0.625),
-    }
-}
-
-fn padding(size: Size) -> Rems {
-    match size {
-        Size::Small => rems(0.625),
-        Size::Medium => rems(0.75),
-        Size::Large => rems(1.),
-        Size::ExtraLarge => rems(1.25),
     }
 }
 
@@ -221,7 +203,9 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
         .color(theme.colors.secondary);
 
         let border_color = self.field.border_color(theme.colors.field.border, &theme);
+        let hover_border_color = self.field.border_color(theme.colors.field.hover, &theme);
         let focus_border_color = self.field.border_color(theme.colors.field.focus, &theme);
+        let focused = focus_handle.is_focused(window) || highlighted.is_some();
 
         let mut trigger = div()
             .id(self.id.clone())
@@ -229,8 +213,8 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
             .flex()
             .items_center()
             .gap(rems(0.5))
-            .h(height(self.size))
-            .px(padding(self.size))
+            .h(self.size.control_height())
+            .px(self.size.field_px())
             .rounded(theme.radius.md)
             .border_1()
             .border_color(border_color)
@@ -239,13 +223,13 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
             .text_size(theme.text.md)
             .line_height(relative(1.1))
             .font_weight(FontWeight::NORMAL)
-            .focus(|trigger| trigger.border_color(focus_border_color))
-            .when(highlighted.is_some(), |trigger| {
-                trigger.border_color(focus_border_color)
-            })
+            .when(focused, |trigger| trigger.border_color(focus_border_color))
             .when(self.disabled, |trigger| trigger.opacity(0.6))
             .when(interactive, |trigger| {
                 trigger
+                    .when(!focused, |trigger| {
+                        trigger.hover(|trigger| trigger.border_color(hover_border_color))
+                    })
                     .key_context(CONTEXT)
                     .track_focus(&focus_handle)
                     .cursor_pointer()
@@ -509,7 +493,7 @@ impl<T: 'static> Menu<T> {
             (state.trigger_bounds.size.width, state.scroll_handle.clone())
         };
         let gap = MENU_GAP.to_pixels(window.rem_size());
-        let item_padding_x = rems(padding(size).0 - MENU_PADDING.0);
+        let item_padding_x = rems(size.field_px().0 - MENU_PADDING.0);
 
         let items = self.options.items.iter().enumerate().map(|(ix, item)| {
             div()
@@ -517,7 +501,7 @@ impl<T: 'static> Menu<T> {
                 .items_center()
                 .gap(rems(0.5))
                 .px(item_padding_x)
-                .py(item_padding_y(size))
+                .py(item_py(size))
                 .rounded(theme.radius.sm)
                 .cursor_pointer()
                 .when(ix == highlighted, |item| {

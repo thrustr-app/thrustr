@@ -25,6 +25,7 @@ icon_constructors! {
     chevrons => "icons/chevrons.svg",
     collections => "icons/collections.svg",
     danger => "icons/danger.svg",
+    disk => "icons/disk.svg",
     download => "icons/download.svg",
     folder => "icons/folder.svg",
     home => "icons/home.svg",

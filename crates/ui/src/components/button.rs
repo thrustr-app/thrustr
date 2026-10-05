@@ -1,5 +1,6 @@
 use crate::{
     FocusProps, Icon, Radius, Size, Variant, WithFocus, WithRadius, WithSize, WithVariant,
+    composite,
 };
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
@@ -91,24 +92,15 @@ impl Button {
         self
     }
 
-    fn height(&self) -> Rems {
-        if self.variant == Variant::Ghost {
-            return rems(2.);
-        }
-
+    fn icon_size(&self) -> Size {
         match self.size {
-            Size::Small => rems(2.),
-            Size::Medium => rems(2.375),
-            Size::Large => rems(2.625),
-            Size::ExtraLarge => rems(2.875),
+            Size::Small | Size::Medium => Size::Small,
+            Size::Large => Size::Medium,
+            Size::ExtraLarge => Size::Large,
         }
     }
 
     fn padding(&self) -> Rems {
-        if self.variant == Variant::Ghost {
-            return rems(0.5);
-        }
-
         match self.size {
             Size::Small => rems(0.75),
             Size::Medium => rems(1.125),
@@ -213,7 +205,10 @@ impl RenderOnce for Button {
 
         let theme = cx.theme();
         let palette = self.palette(&theme);
-        let height = self.height();
+        let hover = composite(palette.background, theme.colors.hover);
+        let active = composite(palette.background, theme.colors.active);
+        let height = self.size.control_height();
+        let icon_size = self.icon_size();
         let is_icon = self.icon.is_some() && self.children.is_empty();
         let radius = match self.radius {
             Radius::Medium => theme.radius.md,
@@ -242,6 +237,8 @@ impl RenderOnce for Button {
             .when(self.disabled, |button| button.opacity(0.6))
             .when(interactive, |button| {
                 button
+                    .hover(move |button| button.bg(hover))
+                    .active(move |button| button.bg(active))
                     .key_context(CONTEXT)
                     .track_focus(&focus_handle)
                     .cursor_pointer()
@@ -252,7 +249,7 @@ impl RenderOnce for Button {
                 |button| {
                     button.child(
                         Icon::loader()
-                            .size(self.size)
+                            .size(icon_size)
                             .color(palette.foreground)
                             .spin(),
                     )
@@ -260,7 +257,7 @@ impl RenderOnce for Button {
                 |button| {
                     button
                         .when_some(self.icon, |button, icon| {
-                            button.child(icon.size(self.size).color(palette.foreground))
+                            button.child(icon.size(icon_size).color(palette.foreground))
                         })
                         .children(self.children)
                 },

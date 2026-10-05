@@ -235,7 +235,9 @@ impl RenderOnce for Input {
             Radius::Pill => theme.radius.pill,
         };
         let border_color = self.field.border_color(theme.colors.field.border, &theme);
+        let hover_border_color = self.field.border_color(theme.colors.field.hover, &theme);
         let focus_border_color = self.field.border_color(theme.colors.field.focus, &theme);
+        let focused = focus_handle.is_focused(window);
 
         let mut input = self
             .base
@@ -244,17 +246,13 @@ impl RenderOnce for Input {
             .text_color(theme.colors.primary)
             .bg(theme.colors.field.background)
             .rounded(radius)
-            .p(rems(0.5))
+            .h(self.size.control_height())
+            .px(self.size.field_px())
             .gap(rems(0.75))
+            .text_size(theme.text.md)
             .font_weight(FontWeight::NORMAL)
-            .when(self.size == Size::Medium, |el| {
-                el.h(rems(2.375)).px(rems(0.75)).text_size(theme.text.md)
-            })
-            .when(self.size == Size::Large, |el| {
-                el.w_full()
-                    .h(rems(2.625))
-                    .px(rems(1.))
-                    .text_size(theme.text.md)
+            .when(!self.disabled && !focused, |input| {
+                input.hover(|input| input.border_color(hover_border_color))
             })
             .when_some(self.leading_icon, |input, icon| {
                 input.child(icon.size_sm().color(theme.colors.secondary))
