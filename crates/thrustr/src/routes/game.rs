@@ -1,7 +1,8 @@
 use super::{Route, cover_path};
 use crate::{
-    adapters::ColorExt,
+    adapters::{ColorExt, PlatformExt},
     context::SpawnTaskExt,
+    format::format_size,
     globals::{ComponentRegistryExt, GameServiceExt},
     navigation::NavigatorExt,
 };
@@ -14,8 +15,8 @@ use domain::{
 };
 use download::{InstallTarget, InstallTargetError};
 use gpui::{
-    AnyElement, AppContext, BoxShadow, ClickEvent, Context, Entity, FontWeight, Hsla, ImageSource,
-    IntoElement, ObjectFit, ParentElement, PathPromptOptions, Rems, Render, Resource,
+    AnyElement, AppContext, BoxShadow, ClickEvent, Context, Div, Entity, FontWeight, Hsla,
+    ImageSource, IntoElement, ObjectFit, ParentElement, PathPromptOptions, Rems, Render, Resource,
     RetainAllImageCache, SharedString, Styled, StyledImage, Task, Window, black, div, img,
     linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rems,
 };
@@ -95,11 +96,7 @@ impl Game {
             return;
         };
         let title: SharedString = format!("Install {}", self.name).into();
-        let name = self.name.clone();
-        let cover_path = self.cover_path.clone();
-        let image_cache = self.image_cache.clone();
-        let install_dialog =
-            cx.new(|cx| InstallDialog::new(self.id, source_id, name, cover_path, image_cache, cx));
+        let install_dialog = cx.new(|cx| InstallDialog::new(self, source_id, cx));
         window.open_dialog(cx, move |dialog, _, cx| {
             dialog
                 .w(rems(36.))
@@ -202,28 +199,29 @@ impl Render for Game {
 }
 
 fn render_cover(path: Option<Arc<Path>>, height: Rems, theme: &Theme) -> AnyElement {
-    let shadow = vec![BoxShadow::new(px(0.), px(4.), black().opacity(0.3)).blur_radius(px(5.))];
-
     let Some(path) = path else {
-        return div()
-            .flex_shrink_0()
-            .h(height)
-            .aspect_ratio(COVER_PLACEHOLDER_ASPECT_RATIO)
-            .rounded(theme.radius.md)
-            .bg(theme.colors.surface)
-            .shadow(shadow)
-            .into_any_element();
+        return cover_style(div(), height, theme).into_any_element();
     };
 
-    img(ImageSource::Resource(Resource::Path(path)))
+    cover_style(
+        img(ImageSource::Resource(Resource::Path(path))),
+        height,
+        theme,
+    )
+    .object_fit(ObjectFit::Cover)
+    .into_any_element()
+}
+
+fn cover_style<E: Styled>(element: E, height: Rems, theme: &Theme) -> E {
+    element
         .flex_shrink_0()
         .h(height)
         .aspect_ratio(COVER_PLACEHOLDER_ASPECT_RATIO)
-        .object_fit(ObjectFit::Cover)
         .rounded(theme.radius.md)
         .bg(theme.colors.surface)
-        .shadow(shadow)
-        .into_any_element()
+        .shadow(vec![
+            BoxShadow::new(px(0.), px(4.), black().opacity(0.3)).blur_radius(px(5.)),
+        ])
 }
 
 #[derive(Clone, PartialEq)]
@@ -231,14 +229,6 @@ struct VersionOption {
     id: SharedString,
     label: SharedString,
     platform: Platform,
-}
-
-fn platform_icon(platform: Platform) -> Option<Icon> {
-    match platform {
-        Platform::Windows => Some(Icon::windows()),
-        Platform::Linux => Some(Icon::linux()),
-        Platform::Macos => Some(Icon::apple()),
-    }
 }
 
 struct InstallDialog {
@@ -253,6 +243,7 @@ struct InstallDialog {
     details_loading: bool,
     install_dir: SharedString,
     install_target: Option<Result<InstallTarget, InstallTargetError>>,
+    storage_labels: StorageLabels,
     loading: bool,
     error: Option<SharedString>,
     _load_task: Task<()>,
@@ -261,15 +252,17 @@ struct InstallDialog {
     _install_target_task: Option<Task<()>>,
 }
 
+#[derive(Default)]
+struct StorageLabels {
+    free_space: Option<SharedString>,
+    download_size: Option<SharedString>,
+    install_size: Option<SharedString>,
+    missing_space: Option<SharedString>,
+}
+
 impl InstallDialog {
-    fn new(
-        game_id: GameId,
-        source_id: &str,
-        name: SharedString,
-        cover_path: Option<Arc<Path>>,
-        image_cache: Entity<RetainAllImageCache>,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    fn new(game: &Game, source_id: &str, cx: &mut Context<Self>) -> Self {
+        let game_id = game.id;
         let storefront = cx.component_registry().storefront(source_id);
         let load_task = cx.spawn_and_update(
             {
@@ -302,9 +295,9 @@ impl InstallDialog {
         let mut this = Self {
             game_id,
             storefront,
-            name,
-            cover_path,
-            image_cache,
+            name: game.name.clone(),
+            cover_path: game.cover_path.clone(),
+            image_cache: game.image_cache.clone(),
             versions: Vec::new(),
             selected: None,
             details: None,
@@ -314,6 +307,7 @@ impl InstallDialog {
                 .into_owned()
                 .into(),
             install_target: None,
+            storage_labels: StorageLabels::default(),
             loading: true,
             error: None,
             _load_task: load_task,
@@ -326,27 +320,29 @@ impl InstallDialog {
     }
 
     fn select_version(&mut self, version: Option<VersionOption>, cx: &mut Context<Self>) {
-        self.details = None;
-        self._details_task =
-            version
-                .as_ref()
-                .zip(self.storefront.clone())
-                .map(|(version, storefront)| {
-                    let game_id = self.game_id;
-                    let version_id = version.id.to_string();
-                    cx.spawn_and_update(
-                        async move { storefront.game_version_details(game_id, version_id).await },
-                        |this, result, _| {
-                            this.details_loading = false;
-                            match result {
-                                Ok(details) => this.details = Some(details),
-                                Err(e) => error!("failed to load version details: {e:#}"),
-                            }
-                        },
-                    )
-                });
-        self.details_loading = self._details_task.is_some();
         self.selected = version;
+        self.details = None;
+        self.details_loading = false;
+        self._details_task = None;
+        self.update_storage_labels();
+
+        let (Some(version), Some(storefront)) = (&self.selected, self.storefront.clone()) else {
+            return;
+        };
+        let game_id = self.game_id;
+        let version_id = version.id.to_string();
+        self.details_loading = true;
+        self._details_task = Some(cx.spawn_and_update(
+            async move { storefront.game_version_details(game_id, version_id).await },
+            |this, result, _| {
+                this.details_loading = false;
+                match result {
+                    Ok(details) => this.details = Some(details),
+                    Err(e) => error!("failed to load version details: {e:#}"),
+                }
+                this.update_storage_labels();
+            },
+        ));
     }
 
     fn update_install_target(&mut self, cx: &mut Context<Self>) {
@@ -354,8 +350,35 @@ impl InstallDialog {
         let name = self.name.clone();
         self._install_target_task = Some(cx.spawn_and_update(
             async move { InstallTarget::resolve(&dir, &name) },
-            |this, result, _| this.install_target = Some(result),
+            |this, result, _| {
+                this.install_target = Some(result);
+                this.update_storage_labels();
+            },
         ));
+    }
+
+    fn update_storage_labels(&mut self) {
+        let target = self.target();
+        let details = self.details.as_ref();
+        self.storage_labels = StorageLabels {
+            free_space: target.map(|target| {
+                format!(
+                    "{} free of {}",
+                    format_size(target.available_space),
+                    format_size(target.total_space)
+                )
+                .into()
+            }),
+            download_size: details
+                .and_then(|details| details.download_size)
+                .map(|size| format!("{} download", format_size(size)).into()),
+            install_size: details
+                .and_then(|details| details.install_size)
+                .map(|size| format!("{} installed", format_size(size)).into()),
+            missing_space: self
+                .missing_space()
+                .map(|size| format!("Not enough space: {} more needed.", format_size(size)).into()),
+        };
     }
 
     fn browse_install_dir(&mut self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -409,9 +432,12 @@ impl InstallDialog {
                         .flex()
                         .items_center()
                         .gap(rems(0.5))
-                        .children(
-                            platform_icon(version.platform)
-                                .map(|icon| icon.size_sm().color(cx.theme().colors.primary)),
+                        .child(
+                            version
+                                .platform
+                                .icon()
+                                .size_sm()
+                                .color(cx.theme().colors.primary),
                         )
                         .child(div().min_w_0().child(version.label.clone()))
                 })
@@ -456,32 +482,26 @@ impl InstallDialog {
     }
 
     fn render_storage(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
-        let target = match &self.install_target {
-            Some(Ok(target)) => Some(target),
-            Some(Err(_)) => return None,
-            None => None,
-        };
+        if let Some(Err(_)) = self.install_target {
+            return None;
+        }
 
         let theme = cx.theme();
-        let calculating_size = self.loading || self.details_loading;
+        let labels = &self.storage_labels;
         let required = self.required_space();
-        let missing_space = self.missing_space();
 
-        let game_color = match missing_space {
-            Some(_) => theme.colors.danger,
-            None => theme.colors.primary,
+        let game_color = if labels.missing_space.is_some() {
+            theme.colors.danger
+        } else {
+            theme.colors.primary
         };
 
-        let free_space = match target {
-            Some(target) => format!(
-                "{} free of {}",
-                format_size(target.available_space),
-                format_size(target.total_space)
-            ),
-            None => "Calculating free space…".to_owned(),
-        };
+        let free_space = labels
+            .free_space
+            .clone()
+            .unwrap_or_else(|| "Calculating free space…".into());
 
-        let meter = match target {
+        let meter = match self.target() {
             Some(target) => Meter::new(target.total_space as f64)
                 .segment(
                     target.total_space.saturating_sub(target.available_space) as f64,
@@ -491,34 +511,27 @@ impl InstallDialog {
             None => Meter::new(0.),
         };
 
-        let sizes = match (calculating_size, &self.details) {
-            (true, _) => vec![div().child("Calculating size…")],
-            (false, Some(details)) => [
-                (
-                    details.download_size,
-                    Icon::download(),
-                    "download",
-                    details.install_size.is_none(),
-                ),
-                (details.install_size, Icon::disk(), "installed", true),
+        let sizes = if self.loading || self.details_loading {
+            vec![div().child("Calculating size…")]
+        } else {
+            let download_color = if labels.install_size.is_some() {
+                theme.colors.secondary
+            } else {
+                game_color
+            };
+            [
+                labels
+                    .download_size
+                    .clone()
+                    .map(|label| size_item(Icon::download(), label, download_color)),
+                labels
+                    .install_size
+                    .clone()
+                    .map(|label| size_item(Icon::disk(), label, game_color)),
             ]
             .into_iter()
-            .filter_map(|(size, icon, label, in_meter)| {
-                let color = match in_meter {
-                    true => game_color,
-                    false => theme.colors.secondary,
-                };
-                size.map(|size| {
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(rems(0.375))
-                        .child(icon.size_sm().color(color))
-                        .child(format!("{} {label}", format_size(size)))
-                })
-            })
-            .collect(),
-            (false, None) => Vec::new(),
+            .flatten()
+            .collect()
         };
 
         Some(
@@ -543,12 +556,12 @@ impl InstallDialog {
                         .when(!sizes.is_empty(), |legend| {
                             legend.child(div().flex().flex_wrap().gap(rems(1.)).children(sizes))
                         })
-                        .children(missing_space.map(|missing_space| {
-                            div().text_color(theme.colors.danger).child(format!(
-                                "Not enough space: {} more needed.",
-                                format_size(missing_space)
-                            ))
-                        })),
+                        .children(
+                            labels
+                                .missing_space
+                                .clone()
+                                .map(|label| div().text_color(theme.colors.danger).child(label)),
+                        ),
                 ),
         )
     }
@@ -558,35 +571,26 @@ impl InstallDialog {
         details.install_size.or(details.download_size)
     }
 
+    fn target(&self) -> Option<&InstallTarget> {
+        self.install_target.as_ref()?.as_ref().ok()
+    }
+
     fn missing_space(&self) -> Option<u64> {
-        let Some(Ok(target)) = &self.install_target else {
-            return None;
-        };
         self.required_space()?
-            .checked_sub(target.available_space)
+            .checked_sub(self.target()?.available_space)
             .filter(|&missing| missing > 0)
     }
 
     fn can_install(&self) -> bool {
-        self.selected.is_some()
-            && matches!(self.install_target, Some(Ok(_)))
-            && self.missing_space().is_none()
+        self.selected.is_some() && self.target().is_some() && self.missing_space().is_none()
     }
 }
 
-fn format_size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-
-    let mut size = bytes as f64;
-    let mut unit = 0;
-    while size >= 1024. && unit < UNITS.len() - 1 {
-        size /= 1024.;
-        unit += 1;
-    }
-
-    if unit == 0 {
-        format!("{bytes} B")
-    } else {
-        format!("{size:.1} {}", UNITS[unit])
-    }
+fn size_item(icon: Icon, label: SharedString, color: Hsla) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap(rems(0.375))
+        .child(icon.size_sm().color(color))
+        .child(label)
 }

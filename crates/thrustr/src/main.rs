@@ -12,6 +12,7 @@ use ui::{TRAFFIC_LIGHT_POSITION, UiProvider};
 mod adapters;
 mod auth_webview;
 mod context;
+mod format;
 mod globals;
 mod navigation;
 mod routes;
