@@ -241,6 +241,7 @@ struct InstallDialog {
     selected: Option<VersionOption>,
     details: Option<GameVersionDetails>,
     details_loading: bool,
+    details_failed: bool,
     install_dir: SharedString,
     install_target: Option<Result<InstallTarget, InstallTargetError>>,
     storage_labels: StorageLabels,
@@ -303,6 +304,7 @@ impl InstallDialog {
             selected: None,
             details: None,
             details_loading: false,
+            details_failed: false,
             install_dir: paths::default_install_dir()
                 .to_string_lossy()
                 .into_owned()
@@ -324,6 +326,7 @@ impl InstallDialog {
         self.selected = version;
         self.details = None;
         self.details_loading = false;
+        self.details_failed = false;
         self._details_task = None;
         self.update_storage_labels();
 
@@ -339,7 +342,10 @@ impl InstallDialog {
                 this.details_loading = false;
                 match result {
                     Ok(details) => this.details = Some(details),
-                    Err(e) => error!("failed to load version details: {e:#}"),
+                    Err(e) => {
+                        error!("failed to load version details: {e:#}");
+                        this.details_failed = true;
+                    }
                 }
                 this.update_storage_labels();
             },
@@ -447,8 +453,9 @@ impl InstallDialog {
                 .label("Game version")
                 .placeholder("Select a version")
                 .loading_placeholder("Fetching available versions")
-                .when(self.error.is_none(), |select| {
-                    select.empty_placeholder("No versions available for this platform")
+                .empty_placeholder(match self.error {
+                    Some(_) => "Couldn't load versions",
+                    None => "No versions available for this platform",
                 })
                 .items(self.versions.iter().cloned())
                 .value(self.selected.clone())
@@ -518,6 +525,8 @@ impl InstallDialog {
 
         let sizes = if self.loading || self.details_loading {
             vec![div().child("Calculating size…")]
+        } else if self.details_failed {
+            vec![div().child("Couldn't fetch the game size")]
         } else {
             let download_color = if labels.install_size.is_some() {
                 theme.colors.secondary
@@ -587,7 +596,10 @@ impl InstallDialog {
     }
 
     fn can_install(&self) -> bool {
-        self.selected.is_some() && self.target().is_some() && self.missing_space().is_none()
+        self.selected.is_some()
+            && !self.details_loading
+            && self.target().is_some()
+            && self.missing_space().is_none()
     }
 }
 

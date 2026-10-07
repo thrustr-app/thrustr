@@ -2161,6 +2161,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "fs4",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 
