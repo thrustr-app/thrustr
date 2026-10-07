@@ -62,6 +62,8 @@ pub struct Select<T: PartialEq + 'static> {
     items: Vec<T>,
     value: Option<T>,
     placeholder: Option<SharedString>,
+    empty_placeholder: Option<SharedString>,
+    loading_placeholder: Option<SharedString>,
     render_item: ItemRenderer<T>,
     on_change: Option<ChangeHandler<T>>,
     focus: FocusProps,
@@ -82,6 +84,8 @@ impl<T: PartialEq + 'static> Select<T> {
             items: Vec::new(),
             value: None,
             placeholder: None,
+            empty_placeholder: None,
+            loading_placeholder: None,
             render_item: Box::new(move |item, window, cx| {
                 render_item(item, window, cx).into_any_element()
             }),
@@ -105,6 +109,16 @@ impl<T: PartialEq + 'static> Select<T> {
 
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.placeholder = Some(placeholder.into());
+        self
+    }
+
+    pub fn empty_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.empty_placeholder = Some(placeholder.into());
+        self
+    }
+
+    pub fn loading_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.loading_placeholder = Some(placeholder.into());
         self
     }
 
@@ -164,7 +178,10 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
             SelectState::new(self.focus.auto_focus, window, cx)
         });
 
-        let interactive = !self.disabled && !self.loading;
+        let empty = !self.loading && self.items.is_empty();
+        let empty_placeholder = self.empty_placeholder.filter(|_| empty);
+        let loading_placeholder = self.loading_placeholder.filter(|_| self.loading);
+        let interactive = !self.disabled && !self.loading && empty_placeholder.is_none();
         if !interactive {
             state.update(cx, |state, cx| state.close(cx));
         }
@@ -191,7 +208,11 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
             Some(ix) => (self.render_item)(&menu.options.items[ix], window, cx),
             None => div()
                 .text_color(theme.colors.field.placeholder)
-                .children(self.placeholder)
+                .children(
+                    loading_placeholder
+                        .or(empty_placeholder)
+                        .or(self.placeholder),
+                )
                 .into_any_element(),
         };
 

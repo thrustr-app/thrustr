@@ -278,6 +278,7 @@ impl InstallDialog {
                     Ok(versions) => {
                         this.versions = versions
                             .into_iter()
+                            .filter(|v| v.platform == Platform::CURRENT)
                             .map(|v| VersionOption {
                                 label: v.pretty_name.unwrap_or_else(|| v.id.clone()).into(),
                                 id: v.id.into(),
@@ -445,6 +446,10 @@ impl InstallDialog {
                 .w_full()
                 .label("Game version")
                 .placeholder("Select a version")
+                .loading_placeholder("Fetching available versions")
+                .when(self.error.is_none(), |select| {
+                    select.empty_placeholder("No versions available for this platform")
+                })
                 .items(self.versions.iter().cloned())
                 .value(self.selected.clone())
                 .when(self.loading, Select::loading)
