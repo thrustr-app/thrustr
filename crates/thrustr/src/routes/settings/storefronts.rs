@@ -38,12 +38,11 @@ impl Storefronts {
             _tasks: Vec::new(),
         };
 
-        for topic in [Topic::ComponentRegistered, Topic::ComponentState] {
-            let task = cx.listen(topic, |page, cx| {
-                page.refresh_storefronts(cx);
-            });
-            page._tasks.push(task);
-        }
+        let task = cx.listen_any(
+            &[Topic::ComponentRegistered, Topic::ComponentState],
+            Self::refresh_storefronts,
+        );
+        page._tasks.push(task);
 
         page.refresh_storefronts(cx);
         page

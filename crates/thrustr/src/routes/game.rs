@@ -1,7 +1,7 @@
 use super::{Route, cover_path};
 use crate::{
     adapters::{ColorExt, PlatformExt},
-    context::SpawnTaskExt,
+    context::{EventListenerExt, SpawnTaskExt},
     format::format_size,
     globals::{ComponentRegistryExt, GameServiceExt},
     navigation::NavigatorExt,
@@ -10,12 +10,14 @@ use anyhow::Context as _;
 use component::StorefrontHandle;
 use config::paths;
 use domain::{
+    component::StorefrontOperation,
     game::{GameId, GameVersionDetails},
     platform::Platform,
 };
 use download::{InstallTarget, InstallTargetError};
+use event::Topic;
 use gpui::{
-    AnyElement, AppContext, BoxShadow, ClickEvent, Context, Div, Entity, FontWeight, Hsla,
+    AnyElement, App, AppContext, BoxShadow, ClickEvent, Context, Div, Entity, FontWeight, Hsla,
     ImageSource, IntoElement, ObjectFit, ParentElement, PathPromptOptions, Rems, Render, Resource,
     RetainAllImageCache, SharedString, Styled, StyledImage, Task, Window, black, div, img,
     linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rems,
@@ -47,6 +49,7 @@ pub struct Game {
     accent: Option<Hsla>,
     image_cache: Entity<RetainAllImageCache>,
     _load_task: Task<()>,
+    _components_task: Task<()>,
 }
 
 impl Route for Game {
@@ -86,11 +89,22 @@ impl Route for Game {
             accent: None,
             image_cache: RetainAllImageCache::new(cx),
             _load_task: load_task,
+            _components_task: cx.listen_any(
+                &[Topic::ComponentRegistered, Topic::ComponentState],
+                |_, cx| cx.notify(),
+            ),
         }
     }
 }
 
 impl Game {
+    fn storefront_ready(&self, cx: &App) -> bool {
+        self.source_id
+            .as_ref()
+            .and_then(|id| cx.component_registry().storefront(id))
+            .is_some_and(|storefront| storefront_ready(&storefront))
+    }
+
     fn open_install_dialog(&mut self, _: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(source_id) = &self.source_id else {
             return;
@@ -176,6 +190,7 @@ impl Game {
                             ])
                             .with_icon(Icon::download())
                             .child("Download")
+                            .when(!self.storefront_ready(cx), Button::disabled)
                             .on_click(cx.listener(Self::open_install_dialog)),
                     )
                     .child(
@@ -251,6 +266,7 @@ struct InstallDialog {
     _details_task: Option<Task<()>>,
     _browse_task: Option<Task<()>>,
     _install_target_task: Option<Task<()>>,
+    _components_task: Task<()>,
 }
 
 #[derive(Default)]
@@ -317,6 +333,10 @@ impl InstallDialog {
             _details_task: None,
             _browse_task: None,
             _install_target_task: None,
+            _components_task: cx.listen_any(
+                &[Topic::ComponentRegistered, Topic::ComponentState],
+                |_, cx| cx.notify(),
+            ),
         };
         this.update_install_target(cx);
         this
@@ -596,11 +616,18 @@ impl InstallDialog {
     }
 
     fn can_install(&self) -> bool {
-        self.selected.is_some()
+        self.storefront.as_ref().is_some_and(storefront_ready)
+            && self.selected.is_some()
             && !self.details_loading
             && self.target().is_some()
             && self.missing_space().is_none()
     }
+}
+
+fn storefront_ready(storefront: &StorefrontHandle) -> bool {
+    storefront
+        .component()
+        .allows(StorefrontOperation::ListVersions)
 }
 
 fn size_item(icon: Icon, label: SharedString, color: Hsla) -> Div {
