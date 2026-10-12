@@ -72,7 +72,11 @@ fn nearest_existing_dir(path: &Path) -> Result<&Path, InstallTargetError> {
                     source,
                 });
             }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) => {}
             Err(e) => return Err(e.into()),
         }
     }
