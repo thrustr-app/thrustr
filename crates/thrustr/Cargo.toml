@@ -11,6 +11,7 @@ assets.workspace = true
 component.workspace = true
 config.workspace = true
 domain.workspace = true
+download.workspace = true
 event.workspace = true
 futures.workspace = true
 game.workspace = true

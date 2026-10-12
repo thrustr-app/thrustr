@@ -1,9 +1,11 @@
 use domain::{
     artwork::Color,
     component::{Image, ImageFormat},
+    platform::Platform,
 };
 use gpui::{Hsla, Image as GpuiImage, ImageFormat as GpuiImageFormat, Rgba, rgba};
 use std::sync::Arc;
+use ui::Icon;
 
 pub trait ImageExt {
     fn to_gpui(&self) -> Arc<GpuiImage>;
@@ -44,5 +46,19 @@ impl ColorExt for Color {
 
     fn to_gpui_hsla(&self) -> Hsla {
         self.to_gpui_rgba().into()
+    }
+}
+
+pub trait PlatformExt {
+    fn icon(self) -> Icon;
+}
+
+impl PlatformExt for Platform {
+    fn icon(self) -> Icon {
+        match self {
+            Platform::Windows => Icon::windows(),
+            Platform::Linux => Icon::linux(),
+            Platform::Macos => Icon::apple(),
+        }
     }
 }

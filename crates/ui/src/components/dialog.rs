@@ -1,8 +1,8 @@
-use crate::{Alert, Button, PortalContext, UiProvider, WithSize, WithVariant};
+use crate::{Alert, Button, PortalContext, UiProvider, WithRadius, WithSize, WithVariant};
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ClickEvent, Div, FocusHandle, FontWeight,
+    Animation, AnimationExt, AnyElement, App, BoxShadow, ClickEvent, Div, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Refineable,
-    RenderOnce, SharedString, StyleRefinement, Styled, Window, actions, anchored, div,
+    RenderOnce, SharedString, StyleRefinement, Styled, Window, actions, anchored, black, div,
     ease_out_quint, prelude::FluentBuilder, px, relative, rems,
 };
 use std::rc::Rc;
@@ -192,7 +192,12 @@ impl RenderOnce for Dialog {
             .bg(theme.colors.background)
             .border_1()
             .border_color(theme.colors.border)
+            .shadow(vec![
+                BoxShadow::new(px(0.), px(24.), black().opacity(0.5)).blur_radius(px(48.)),
+            ])
             .p(rems(2.))
+            // The ghost cancel button carries its own padding below the label.
+            .pb(rems(1.5))
             .occlude()
             .flex()
             .gap(rems(2.))
@@ -217,10 +222,11 @@ impl RenderOnce for Dialog {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap(rems(1.))
+                    .gap(rems(0.5))
                     .child(
                         Button::new("ok-dialog")
                             .size_lg()
+                            .radius_pill()
                             .w_full()
                             .variant_accent()
                             .child(self.ok_text)
@@ -231,6 +237,7 @@ impl RenderOnce for Dialog {
                     .child(
                         Button::new("close-dialog")
                             .size_lg()
+                            .radius_pill()
                             .variant_ghost()
                             .child(self.cancel_text)
                             .when(self.loading, Button::disabled)

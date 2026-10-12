@@ -1,4 +1,4 @@
-use directories::ProjectDirs;
+use directories::{BaseDirs, ProjectDirs};
 use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
@@ -6,6 +6,7 @@ use std::{
 use thiserror::Error;
 
 static PROJECT_DIRS: OnceLock<ProjectDirs> = OnceLock::new();
+static BASE_DIRS: OnceLock<BaseDirs> = OnceLock::new();
 const DB_NAME: &str = "thrustr.db";
 
 pub fn data_dir() -> &'static Path {
@@ -71,11 +72,19 @@ pub fn plugins_cache_dir() -> PathBuf {
     cache_dir().join("plugins")
 }
 
+pub fn default_install_dir() -> PathBuf {
+    base_dirs().home_dir().join("Games").join("Thrustr")
+}
+
 fn project_dirs() -> &'static ProjectDirs {
     PROJECT_DIRS.get_or_init(|| {
         ProjectDirs::from("com", "thrustr", "thrustr")
             .expect("platform should provide a home directory")
     })
+}
+
+fn base_dirs() -> &'static BaseDirs {
+    BASE_DIRS.get_or_init(|| BaseDirs::new().expect("platform should provide a home directory"))
 }
 
 fn workspace_dir() -> &'static Path {

@@ -230,9 +230,13 @@ impl RenderOnce for CaptionButton {
             a: 1.,
         }
         .into();
-        let (hover_bg, hover_fg) = match self {
-            Self::Close => (close_bg, gpui::white()),
-            _ => (theme.colors.titlebar.hover, theme.colors.titlebar.primary),
+        let (hover_bg, active_bg, hover_fg) = match self {
+            Self::Close => (close_bg, close_bg.opacity(0.8), gpui::white()),
+            _ => (
+                theme.colors.hover,
+                theme.colors.active,
+                theme.colors.titlebar.primary,
+            ),
         };
 
         div()
@@ -247,11 +251,7 @@ impl RenderOnce for CaptionButton {
             .line_height(relative(1.))
             .text_color(theme.colors.primary)
             .hover(|style| style.bg(hover_bg).text_color(hover_fg))
-            .active(|style| {
-                style
-                    .bg(hover_bg.opacity(0.8))
-                    .text_color(hover_fg.opacity(0.8))
-            })
+            .active(|style| style.bg(active_bg).text_color(hover_fg.opacity(0.8)))
             .window_control_area(self.control_area())
             .child(glyph)
     }
@@ -332,7 +332,7 @@ impl RenderOnce for WindowControl {
             .size(rems(1.25))
             .rounded_full()
             .cursor_pointer()
-            .hover(|style| style.bg(theme.colors.titlebar.hover))
+            .hover(|style| style.bg(theme.colors.hover))
             .child(
                 svg()
                     .size(rems(0.875))

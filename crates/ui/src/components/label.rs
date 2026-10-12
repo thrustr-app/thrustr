@@ -50,7 +50,7 @@ impl Label {
             Variant::Accent => theme.colors.accent,
             Variant::Warning => theme.colors.warning,
             Variant::Danger => theme.colors.danger,
-            Variant::Outline | Variant::Ghost => theme.colors.secondary,
+            Variant::Outline | Variant::Ghost | Variant::Field => theme.colors.secondary,
         }
     }
 
@@ -61,7 +61,7 @@ impl Label {
                 Variant::Accent => Some(theme.colors.accent_background),
                 Variant::Warning => Some(theme.colors.warning_background),
                 Variant::Danger => Some(theme.colors.danger_background),
-                Variant::Outline | Variant::Ghost => None,
+                Variant::Outline | Variant::Ghost | Variant::Field => None,
             })
             .flatten();
 

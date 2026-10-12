@@ -343,7 +343,12 @@ impl Operation {
 
     /// Whether the operation may run alongside itself.
     fn is_reentrant(self) -> bool {
-        matches!(self, Self::Scheduler(_))
+        matches!(
+            self,
+            Self::Storefront(
+                StorefrontOperation::ListVersions | StorefrontOperation::VersionDetails
+            ) | Self::Scheduler(_)
+        )
     }
 }
 
@@ -391,8 +396,10 @@ mod tests {
     const LOGOUT: Operation = Operation::Auth(AuthOperation::Logout);
     const CONFIG: Operation = Operation::Config(ConfigOperation::Save);
     const SYNC: Operation = Operation::Storefront(StorefrontOperation::Sync);
+    const VERSIONS: Operation = Operation::Storefront(StorefrontOperation::ListVersions);
+    const DETAILS: Operation = Operation::Storefront(StorefrontOperation::VersionDetails);
     const TASK: Operation = Operation::Scheduler(SchedulerOperation::Run);
-    const OPERATIONS: [Operation; 5] = [LOGIN, LOGOUT, CONFIG, SYNC, TASK];
+    const OPERATIONS: [Operation; 7] = [LOGIN, LOGOUT, CONFIG, SYNC, VERSIONS, DETAILS, TASK];
 
     const ALL: Capabilities = Capabilities {
         auth: true,
@@ -629,7 +636,10 @@ mod tests {
     fn status_determines_allowed_operations() {
         check_allows(disabled(), &[CONFIG]);
         check_allows(Status::Initializing, &[]);
-        check_allows(Status::Active, &[LOGOUT, CONFIG, SYNC, TASK]);
+        check_allows(
+            Status::Active,
+            &[LOGOUT, CONFIG, SYNC, VERSIONS, DETAILS, TASK],
+        );
         check_allows(unauthenticated(), &[LOGIN, CONFIG]);
         check_allows(failed(auth()), &[LOGIN, LOGOUT, CONFIG]);
         check_allows(failed(config()), &[LOGOUT, CONFIG]);
@@ -722,7 +732,7 @@ mod tests {
             CONFIG,
             Err(Rejection::Busy(LOGIN)),
         );
-        for operation in [LOGOUT, CONFIG, SYNC, TASK] {
+        for operation in [LOGOUT, CONFIG, SYNC, VERSIONS, DETAILS, TASK] {
             check_start(
                 ALL,
                 Status::Active,
@@ -764,11 +774,16 @@ mod tests {
         check_start(ALL, Status::Active, &[SYNC], CONFIG, Ok(()));
         check_start(ALL, Status::Active, &[CONFIG, SYNC], TASK, Ok(()));
         check_start(ALL, Status::Active, &[TASK], SYNC, Ok(()));
+        check_start(ALL, Status::Active, &[SYNC], VERSIONS, Ok(()));
+        check_start(ALL, Status::Active, &[VERSIONS], SYNC, Ok(()));
+        check_start(ALL, Status::Active, &[VERSIONS], DETAILS, Ok(()));
     }
 
     #[test]
     fn reentrant_operations_run_alongside_others() {
         check_start(ALL, Status::Active, &[TASK, TASK], TASK, Ok(()));
+        check_start(ALL, Status::Active, &[VERSIONS, VERSIONS], VERSIONS, Ok(()));
+        check_start(ALL, Status::Active, &[DETAILS, DETAILS], DETAILS, Ok(()));
     }
 
     #[test]
@@ -932,7 +947,7 @@ mod tests {
 
     #[test]
     fn auth_or_config_errors_deactivate_the_component() {
-        for operation in [SYNC, TASK] {
+        for operation in [SYNC, VERSIONS, DETAILS, TASK] {
             for error in [auth(), config()] {
                 check_finish(Status::Active, operation, Err(error.clone()), failed(error));
             }
@@ -941,7 +956,7 @@ mod tests {
 
     #[test]
     fn other_results_keep_the_component_active() {
-        for operation in [SYNC, TASK] {
+        for operation in [SYNC, VERSIONS, DETAILS, TASK] {
             check_finish(Status::Active, operation, Ok(()), Status::Active);
             check_finish(Status::Active, operation, Err(other()), Status::Active);
         }

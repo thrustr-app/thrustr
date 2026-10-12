@@ -1,14 +1,18 @@
 use crate::{
     ComponentHandle,
-    handle::{Permit, Result},
+    handle::{OperationError, Permit, Result},
 };
+use dashmap::DashMap;
 use domain::{
     component::{Storefront, StorefrontOperation},
-    game::NewGame,
+    game::{Game, GameId, GameVersion, GameVersionDetails, NewGame},
 };
 use event::Topic;
-use std::sync::Arc;
+use runtime::clock::Moment;
+use std::{sync::Arc, time::Duration};
 use tracing::{info, warn};
+
+const VERSION_DETAILS_TTL: Duration = Duration::from_hours(1);
 
 #[derive(Clone)]
 pub struct StorefrontHandle {
@@ -62,6 +66,69 @@ impl StorefrontHandle {
         Ok(())
     }
 
+    pub async fn list_game_versions(&self, game_id: GameId) -> Result<Vec<GameVersion>> {
+        let permit = Permit::begin(&self.component, StorefrontOperation::ListVersions)?;
+
+        let game = self.load_game(game_id).await?;
+        let versions = match self.storefront.list_game_versions(game).await {
+            Ok(versions) => versions,
+            Err(error) => {
+                permit.finish(Err(error.clone())).await?;
+                return Err(error.into());
+            }
+        };
+        permit.finish(Ok(())).await?;
+
+        Ok(versions)
+    }
+
+    pub async fn game_version_details(
+        &self,
+        game_id: GameId,
+        version_id: String,
+    ) -> Result<GameVersionDetails> {
+        let cache = self.component.version_details_cache();
+        if let Some(details) = cache.get(game_id, &version_id) {
+            return Ok(details);
+        }
+
+        let permit = Permit::begin(&self.component, StorefrontOperation::VersionDetails)?;
+
+        let game = self.load_game(game_id).await?;
+        let details = match self
+            .storefront
+            .game_version_details(game, version_id.clone())
+            .await
+        {
+            Ok(details) => details,
+            Err(error) => {
+                permit.finish(Err(error.clone())).await?;
+                return Err(error.into());
+            }
+        };
+        permit.finish(Ok(())).await?;
+
+        cache.insert(game_id, version_id, details.clone());
+        Ok(details)
+    }
+
+    async fn load_game(&self, game_id: GameId) -> Result<Game> {
+        let repository = self.component.context().game_repository.clone();
+        let game = self
+            .component
+            .context()
+            .tokio_handle
+            .spawn_blocking(move || repository.get(game_id))
+            .await
+            .map_err(anyhow::Error::from)??
+            .ok_or(OperationError::GameNotFound(game_id))?;
+
+        if game.source.id != self.component.id() {
+            return Err(OperationError::ForeignGame(game_id));
+        }
+        Ok(game)
+    }
+
     async fn store_games(&self, games: Vec<NewGame>) -> Result<usize> {
         let repository = self.component.context().game_repository.clone();
         let inserted = self
@@ -76,5 +143,28 @@ impl StorefrontHandle {
             )?;
 
         Ok(inserted)
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct VersionDetailsCache(DashMap<(GameId, String), (Moment, GameVersionDetails)>);
+
+impl VersionDetailsCache {
+    fn get(&self, game_id: GameId, version_id: &str) -> Option<GameVersionDetails> {
+        let key = (game_id, version_id.to_owned());
+        let now = Moment::now();
+        self.0
+            .remove_if(&key, |_, (expires_at, _)| expires_at.has_passed(now));
+        self.0.get(&key).map(|entry| entry.1.clone())
+    }
+
+    fn insert(&self, game_id: GameId, version_id: String, details: GameVersionDetails) {
+        if let Some(expires_at) = Moment::now().checked_add(VERSION_DETAILS_TTL) {
+            self.0.insert((game_id, version_id), (expires_at, details));
+        }
+    }
+
+    pub(crate) fn clear(&self) {
+        self.0.clear();
     }
 }

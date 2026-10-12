@@ -19,8 +19,8 @@ use gpui::{
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithFocus, WithScrollbar,
-    WithSize, WithVariant, input,
+    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithField, WithFocus,
+    WithRadius, WithScrollbar, WithSize, WithVariant, input,
 };
 
 type Values = HashMap<SharedString, SharedString>;
@@ -83,7 +83,6 @@ pub struct Config {
     sections: Vec<Section>,
     values: Values,
     values_loaded: bool,
-    status: Status,
     local_error: Option<SharedString>,
     status_error: Option<SharedString>,
     scroll_handle: ScrollHandle,
@@ -121,14 +120,15 @@ impl Config {
             .map(Into::into)
             .collect();
 
-        let _tasks = vec![cx.listen(Topic::ComponentState, Self::refresh_status)];
+        let _tasks = vec![cx.listen_any(
+            &[Topic::ComponentRegistered, Topic::ComponentState],
+            Self::refresh_status_error,
+        )];
 
-        let status = component.status();
+        let status_error = status_error(&component.status());
         let mut page = Self {
             name: component.metadata().name.into(),
             icon,
-            status_error: status_error(&status),
-            status,
             component,
             auth,
             config,
@@ -136,6 +136,7 @@ impl Config {
             values,
             values_loaded,
             local_error,
+            status_error,
             scroll_handle: ScrollHandle::new(),
             _tasks,
         };
@@ -144,10 +145,8 @@ impl Config {
         page
     }
 
-    fn refresh_status(&mut self, cx: &mut Context<Self>) {
-        let status = self.component.status();
-        self.status_error = status_error(&status);
-        self.status = status;
+    fn refresh_status_error(&mut self, cx: &mut Context<Self>) {
+        self.status_error = status_error(&self.component.status());
         cx.notify();
     }
 
@@ -284,12 +283,14 @@ impl Config {
             .when(!enabled, Button::disabled)
             .when(self.component.is_running(operation), Button::loading)
             .size_md()
+            .radius_pill()
             .w(rems(10.))
             .child(label)
     }
 
     fn render_header(
         &self,
+        status: &Status,
         can_configure: bool,
         autofocus_back: bool,
         cx: &mut Context<Self>,
@@ -301,6 +302,7 @@ impl Config {
             .flex()
             .justify_between()
             .items_center()
+            .min_h(rems(2.375))
             .child(
                 div()
                     .flex()
@@ -311,6 +313,7 @@ impl Config {
                         Button::icon("back-button", Icon::arrow())
                             .variant_outline()
                             .size_sm()
+                            .radius_pill()
                             .when(autofocus_back, |this| this.auto_focus())
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
@@ -320,13 +323,13 @@ impl Config {
                             .items_center()
                             .gap(rems(0.5))
                             .font_weight(FontWeight::BOLD)
-                            .text_size(rems(1.125))
+                            .text_size(theme.text.lg)
                             .line_height(relative(1.))
                             .when_some(self.icon.clone(), |div, icon| {
                                 div.child(img(ImageSource::Image(icon)).size(rems(1.5)))
                             })
                             .child(self.name.clone())
-                            .child(status_label(&self.status).filled()),
+                            .child(status_label(status).filled()),
                     ),
             )
             .child(
@@ -412,7 +415,7 @@ impl Config {
         autofocus_field: Option<&SharedString>,
         cx: &mut Context<Self>,
     ) -> Div {
-        let text_color = cx.theme().colors.secondary;
+        let theme = cx.theme();
         let elements = section.elements.iter().map(|element| match element {
             Element::Field(f) => self.render_field(f, can_configure, autofocus_field, cx),
             Element::Hbox(fields) => div()
@@ -430,10 +433,10 @@ impl Config {
         div()
             .flex()
             .flex_col()
-            .text_size(rems(0.875))
+            .text_size(theme.text.md)
             .line_height(relative(1.))
             .font_weight(FontWeight::BOLD)
-            .text_color(text_color)
+            .text_color(theme.colors.secondary)
             .gap(rems(0.875))
             .child(section.name.clone())
             .child(div().flex().flex_col().gap(rems(1.5)).children(elements))
@@ -458,6 +461,7 @@ impl Config {
 
 impl Render for Config {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let status = self.component.status();
         let can_configure = self.values_loaded && self.component.can(ConfigOperation::Save);
         let autofocus_field = self
             .sections
@@ -473,7 +477,7 @@ impl Render for Config {
             .flex()
             .flex_col()
             .gap(rems(2.))
-            .child(self.render_header(can_configure, autofocus_field.is_none(), cx))
+            .child(self.render_header(&status, can_configure, autofocus_field.is_none(), cx))
             .child(self.render_body(can_configure, autofocus_field, cx))
     }
 }
@@ -573,19 +577,17 @@ impl LoginDialog {
 
         cx.notify();
 
-        let login =
-            cx.background_spawn(async move { permit.login(LoginRequest::Form { fields }).await });
-        cx.spawn_in(window, async move |this, cx| {
-            let result = login.await;
-            let _ = this.update_in(cx, |this, window, cx| match result {
+        cx.spawn_and_update_in(
+            window,
+            async move { permit.login(LoginRequest::Form { fields }).await },
+            |this, result, window, cx| match result {
                 Ok(()) => window.close_dialog(cx),
                 Err(err) => {
                     this.submitting = false;
                     this.submit_error = Some(err.to_string().into());
-                    cx.notify();
                 }
-            });
-        })
+            },
+        )
         .detach();
     }
 }

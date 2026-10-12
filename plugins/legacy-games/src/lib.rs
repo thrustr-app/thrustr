@@ -1,7 +1,8 @@
-use crate::api::{fetch_products, giveaway_login, login};
+use crate::api::{fetch_download_size, fetch_products, giveaway_login, login};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use pdk::{
-    Auth, Error, Game, GameVersion, LoginRequest, Platform, Plugin, Storefront, kv_store::KvStore,
+    Auth, Error, Game, GameVersion, GameVersionDetails, LoginRequest, Platform, Plugin, Storefront,
+    kv_store::KvStore,
 };
 
 mod api;
@@ -87,5 +88,20 @@ impl Storefront for LegacyGames {
             pretty_name: Some(game.name),
             platform: Platform::Windows,
         }])
+    }
+
+    async fn game_version_details(game: Game, _version_id: String) -> Result<GameVersionDetails> {
+        let external_id = |key: &str| {
+            game.external_ids
+                .get(key)
+                .ok_or_else(|| Error::other(format!("missing `{key}` for {}", game.name)))
+        };
+        let download_size =
+            fetch_download_size(external_id("product_id")?, external_id("game_id")?).await?;
+
+        Ok(GameVersionDetails {
+            install_size: None,
+            download_size,
+        })
     }
 }

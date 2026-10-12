@@ -1,12 +1,14 @@
-use crate::{FocusProps, Icon, Size, Variant, WithFocus, WithSize, WithVariant};
+use crate::{
+    FocusProps, Icon, Radius, Size, Variant, WithFocus, WithRadius, WithSize, WithVariant,
+    composite,
+};
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla,
-    InteractiveElement, IntoElement, KeyBinding, NoAction, ParentElement, Refineable, Rems,
-    RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Transformation, Window, div,
-    percentage, prelude::FluentBuilder, relative, rems, transparent_black,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
+    KeyBinding, NoAction, ParentElement, Refineable, Rems, RenderOnce, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, div, prelude::FluentBuilder, relative, rems,
+    transparent_black,
 };
 use smallvec::SmallVec;
-use std::time::Duration;
 use theme::{Theme, ThemeExt};
 
 const CONTEXT: &str = "button";
@@ -34,6 +36,7 @@ pub struct Button {
     style: StyleRefinement,
     variant: Variant,
     size: Size,
+    radius: Radius,
     icon: Option<Icon>,
     children: SmallVec<[AnyElement; 1]>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
@@ -49,6 +52,7 @@ impl Button {
             style: StyleRefinement::default(),
             variant: Variant::default(),
             size: Size::default(),
+            radius: Radius::default(),
             icon: None,
             children: SmallVec::new(),
             on_click: None,
@@ -88,24 +92,15 @@ impl Button {
         self
     }
 
-    fn height(&self) -> Rems {
-        if self.variant == Variant::Ghost {
-            return rems(1.);
-        }
-
+    fn icon_size(&self) -> Size {
         match self.size {
-            Size::Small => rems(2.),
-            Size::Medium => rems(2.375),
-            Size::Large => rems(2.625),
-            Size::ExtraLarge => rems(2.875),
+            Size::Small | Size::Medium => Size::Small,
+            Size::Large => Size::Medium,
+            Size::ExtraLarge => Size::Large,
         }
     }
 
     fn padding(&self) -> Rems {
-        if self.variant == Variant::Ghost {
-            return rems(0.25);
-        }
-
         match self.size {
             Size::Small => rems(0.75),
             Size::Medium => rems(1.125),
@@ -137,6 +132,13 @@ impl Button {
                 ring: colors.primary,
                 weight: FontWeight::SEMIBOLD,
             },
+            Variant::Field => Palette {
+                background: colors.field.background,
+                foreground: colors.primary,
+                border: colors.field.border,
+                ring: colors.field.focus,
+                weight: FontWeight::SEMIBOLD,
+            },
             Variant::Ghost => Palette {
                 background: transparent_black(),
                 foreground: colors.secondary,
@@ -163,6 +165,13 @@ impl ParentElement for Button {
 impl WithSize for Button {
     fn size(mut self, size: Size) -> Self {
         self.size = size;
+        self
+    }
+}
+
+impl WithRadius for Button {
+    fn radius(mut self, radius: Radius) -> Self {
+        self.radius = radius;
         self
     }
 }
@@ -196,8 +205,15 @@ impl RenderOnce for Button {
 
         let theme = cx.theme();
         let palette = self.palette(&theme);
-        let height = self.height();
+        let hover = composite(palette.background, theme.colors.hover);
+        let active = composite(palette.background, theme.colors.active);
+        let height = self.size.control_height();
+        let icon_size = self.icon_size();
         let is_icon = self.icon.is_some() && self.children.is_empty();
+        let radius = match self.radius {
+            Radius::Medium => theme.radius.md,
+            Radius::Pill => theme.radius.pill,
+        };
         let interactive = !self.disabled && !self.loading;
 
         let mut button = div()
@@ -207,7 +223,7 @@ impl RenderOnce for Button {
             .justify_center()
             .gap(rems(0.5))
             .h(height)
-            .rounded(theme.radius.pill)
+            .rounded(radius)
             .when(is_icon, |button| button.min_w(height))
             .when(!is_icon, |button| button.px(self.padding()))
             .border_1()
@@ -221,6 +237,8 @@ impl RenderOnce for Button {
             .when(self.disabled, |button| button.opacity(0.6))
             .when(interactive, |button| {
                 button
+                    .hover(move |button| button.bg(hover))
+                    .active(move |button| button.bg(active))
                     .key_context(CONTEXT)
                     .track_focus(&focus_handle)
                     .cursor_pointer()
@@ -231,23 +249,15 @@ impl RenderOnce for Button {
                 |button| {
                     button.child(
                         Icon::loader()
-                            .size(self.size)
+                            .size(icon_size)
                             .color(palette.foreground)
-                            .with_animation(
-                                "loading",
-                                Animation::new(Duration::from_millis(850))
-                                    .repeat()
-                                    .with_max_fps(30.),
-                                |loader: Icon, delta| {
-                                    loader.transform(Transformation::rotate(percentage(delta)))
-                                },
-                            ),
+                            .spin(),
                     )
                 },
                 |button| {
                     button
                         .when_some(self.icon, |button, icon| {
-                            button.child(icon.size(self.size).color(palette.foreground))
+                            button.child(icon.size(icon_size).color(palette.foreground))
                         })
                         .children(self.children)
                 },

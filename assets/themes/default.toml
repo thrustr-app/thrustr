@@ -13,7 +13,6 @@ secondary_background = "#202427"
 secondary_foreground = "#0B0D0F"
 tertiary = "#6E7276"
 surface = "#1C2024"
-surface_sunken = "#0D1013"
 border = "#26292D"
 accent = "#8BF0FE"
 accent_background = "#152830"
@@ -23,8 +22,10 @@ warning_background = "#2D2315"
 warning_foreground = "#231607"
 danger = "#ED5350"
 danger_background = "#291517"
-danger_foreground = "#E5D3D1"
-hover = "#1A1A1A"
+danger_foreground = "#240909"
+danger_muted_foreground = "#E5D3D1"
+hover = "#FFFFFF12"
+active = "#FFFFFF1F"
 overlay = "#000000A6"
 
 [colors.sidebar]
@@ -33,7 +34,6 @@ primary = "#F0F2F4"
 secondary = "#7A7F84"
 border = "#1F222599"
 surface = "#2B2E32"
-hover = "#1A1A1A"
 logo = "#6D7277"
 
 [colors.titlebar]
@@ -41,7 +41,18 @@ background = "#0B0E11"
 primary = "#FFFFFF"
 secondary = "#767B80"
 border = "#1F222599"
-hover = "#1A1A1A"
+
+[colors.field]
+background = "#0D1013"
+border = "#26292D"
+hover = "#3A3E43"
+focus = "#F0F2F4"
+placeholder = "#8C9094"
+
+[colors.popover]
+background = "#171A1C"
+border = "#2E3133"
+highlight = "#26292C"
 
 [radius]
 sm = "0.625rem"
@@ -54,3 +65,4 @@ sm = "0.75rem"
 md = "0.875rem"
 lg = "1.125rem"
 xl = "1.625rem"
+display = "2.5rem"

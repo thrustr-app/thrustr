@@ -2,7 +2,8 @@ use crate::api::{
     endpoints,
     error::Error,
     models::{
-        EntitlementsResponse, IsExistsByEmailResponse, LoginResponse, Product, ProductsResponse,
+        DownloadResponse, EntitlementsResponse, IsExistsByEmailResponse, LoginResponse, Product,
+        ProductsResponse,
     },
 };
 use pdk::kv_store::KvStore;
@@ -67,6 +68,26 @@ pub async fn fetch_products(
     }
 
     Ok(products)
+}
+
+pub async fn fetch_download_size(product_id: &str, game_id: &str) -> Result<Option<u64>, Error> {
+    let download: DownloadResponse =
+        send(base_request(&endpoints::download(product_id, game_id))).await?;
+    let file = download.into_result()?.file;
+
+    let response = Client::new().head(&file).send().await?;
+    if !response.status().is_success() {
+        return Err(Error::Other(format!(
+            "installer request failed with status {}",
+            response.status()
+        )));
+    }
+
+    Ok(response
+        .headers()
+        .get("content-length")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok()))
 }
 
 async fn fetch_catalog() -> Result<Vec<Product>, Error> {

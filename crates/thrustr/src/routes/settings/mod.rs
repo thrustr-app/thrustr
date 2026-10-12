@@ -1,12 +1,14 @@
 use super::Route;
 use crate::{
+    context::EventListenerExt,
     globals::ComponentRegistryExt,
     navigation::{NavNode, NavSidebar, Navigator, NavigatorExt, Page, SettingsPage, nav_item},
 };
 use domain::component::{InactiveReason, Status};
+use event::Topic;
 use gpui::{
-    AnyView, App, AppContext, Context, EmptyView, IntoElement, ParentElement, Render, Styled,
-    Window, div, rems,
+    AnyView, App, AppContext, Context, IntoElement, ParentElement, Render, Styled, Task, Window,
+    div, rems,
 };
 use ui::{Label, Sidebar, SidebarItem, WithVariant};
 
@@ -21,16 +23,16 @@ pub use plugins::Plugins;
 pub use storefronts::Storefronts;
 
 impl SettingsPage {
-    fn build_view(&self, cx: &mut App) -> AnyView {
-        match self {
+    fn build_view(&self, cx: &mut App) -> Option<AnyView> {
+        Some(match self {
             Self::Storefronts(None) => cx.new(Storefronts::new).into(),
             Self::Plugins(None) => cx.new(Plugins::new).into(),
-            Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => match cx.component(id) {
-                Some(component) => cx.new(|cx| Config::new(component, cx)).into(),
-                None => cx.new(|_| EmptyView).into(),
-            },
+            Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => {
+                let component = cx.component(id)?;
+                cx.new(|cx| Config::new(component, cx)).into()
+            }
             Self::Appearance => cx.new(|_| Appearance).into(),
-        }
+        })
     }
 }
 
@@ -53,7 +55,8 @@ fn status_label(status: &Status) -> Label {
 
 pub struct Settings {
     current_page: SettingsPage,
-    active_view: AnyView,
+    active_view: Option<AnyView>,
+    _components_task: Task<()>,
 }
 
 impl Route for Settings {
@@ -77,6 +80,19 @@ impl Route for Settings {
         Self {
             current_page: page,
             active_view,
+            _components_task: cx.listen_any(
+                &[Topic::ComponentRegistered, Topic::ComponentState],
+                Self::build_missing_view,
+            ),
+        }
+    }
+}
+
+impl Settings {
+    fn build_missing_view(&mut self, cx: &mut Context<Self>) {
+        if self.active_view.is_none() {
+            self.active_view = self.current_page.build_view(cx);
+            cx.notify();
         }
     }
 }
@@ -96,6 +112,6 @@ impl Render for Settings {
                     .item(settings_item(SettingsPage::Plugins(None)))
                     .item(settings_item(SettingsPage::Appearance)),
             )
-            .child(self.active_view.clone())
+            .children(self.active_view.clone())
     }
 }

@@ -85,6 +85,12 @@ pub struct GameVersion {
     pub platform: Platform,
 }
 
+#[derive(Debug, Clone)]
+pub struct GameVersionDetails {
+    pub install_size: Option<u64>,
+    pub download_size: Option<u64>,
+}
+
 #[derive(Debug)]
 pub struct NewGame {
     pub name: String,

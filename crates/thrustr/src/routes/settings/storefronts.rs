@@ -38,12 +38,11 @@ impl Storefronts {
             _tasks: Vec::new(),
         };
 
-        for topic in [Topic::ComponentRegistered, Topic::ComponentState] {
-            let task = cx.listen(topic, |page, cx| {
-                page.refresh_storefronts(cx);
-            });
-            page._tasks.push(task);
-        }
+        let task = cx.listen_any(
+            &[Topic::ComponentRegistered, Topic::ComponentState],
+            Self::refresh_storefronts,
+        );
+        page._tasks.push(task);
 
         page.refresh_storefronts(cx);
         page
@@ -168,7 +167,7 @@ fn render_row(
                             this.child(Icon::plugin().size_sm().color(theme.colors.secondary))
                         })
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(rems(0.875))
+                        .text_size(theme.text.md)
                         .line_height(relative(1.))
                         .text_color(theme.colors.primary)
                         .child(storefront.name.clone()),

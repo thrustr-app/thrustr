@@ -5,7 +5,7 @@ use gpui::{
     IsZero, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
     Pixels, Point, Position, Render, RenderOnce, ScrollHandle, ScrollWheelEvent, Stateful,
     StatefulInteractiveElement, Style, StyleRefinement, Styled, Task, UniformListDecoration,
-    UniformListScrollHandle, Window, px, quad, relative, size,
+    UniformListScrollHandle, Window, px, quad,
 };
 use smallvec::SmallVec;
 use std::{
@@ -652,8 +652,6 @@ impl Element for ScrollbarElement {
     ) -> (LayoutId, Self::RequestLayoutState) {
         let style = Style {
             position: Position::Absolute,
-            inset: Edges::default(),
-            size: size(relative(1.), relative(1.)).map(Into::into),
             ..Default::default()
         };
 

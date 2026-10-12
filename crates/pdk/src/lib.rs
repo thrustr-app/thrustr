@@ -62,7 +62,9 @@ pub mod wit {
 
 pub use pdk_macros::export;
 pub use wit::auth::exports::thrustr::plugin::auth::{AuthFlow, LoginFlow, LoginForm, LoginRequest};
-pub use wit::plugin::thrustr::plugin::types::{Error, Game, GameVersion, Platform};
+pub use wit::plugin::thrustr::plugin::types::{
+    Error, Game, GameVersion, GameVersionDetails, Platform,
+};
 
 impl Error {
     pub fn auth(message: impl Into<String>) -> Self {
@@ -127,6 +129,11 @@ pub trait Storefront: Plugin + __private::Exported<__private::Storefront> {
     fn list_games() -> impl Future<Output = Result<Vec<Game>, Error>>;
 
     fn list_game_versions(game: Game) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
+
+    fn game_version_details(
+        game: Game,
+        version_id: String,
+    ) -> impl Future<Output = Result<GameVersionDetails, Error>>;
 }
 
 pub trait Scheduler: Plugin + __private::Exported<__private::Scheduler> {
@@ -239,6 +246,12 @@ macro_rules! __export {
                     game: $crate::Game,
                 ) -> std::result::Result<Vec<$crate::GameVersion>, $crate::Error> {
                     <$ty as $crate::Storefront>::list_game_versions(game).await
+                }
+                async fn get_game_version_details(
+                    game: $crate::Game,
+                    version_id: String,
+                ) -> std::result::Result<$crate::GameVersionDetails, $crate::Error> {
+                    <$ty as $crate::Storefront>::game_version_details(game, version_id).await
                 }
             }
 

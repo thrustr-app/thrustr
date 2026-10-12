@@ -27,4 +27,9 @@ interface types {
         pretty-name: option<string>,
         platform: platform,
     }
+
+    record game-version-details {
+        install-size: option<u64>,
+        download-size: option<u64>,
+    }
 }
