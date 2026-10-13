@@ -7,7 +7,7 @@ use crate::{
 };
 use component::{AuthHandle, ComponentHandle, ConfigHandle};
 use domain::component::{
-    AuthFlow, AuthOperation, ConfigOperation, ConfigSection, Form, FormElement, LoginForm,
+    AuthOperation, ConfigOperation, ConfigSection, Form, FormElement, LoginFlow, LoginForm,
     LoginMethod, LoginRequest, Operation, Status, TextField,
 };
 use event::Topic;
@@ -197,7 +197,7 @@ impl Config {
         }
     }
 
-    fn login_with_flow(&mut self, auth: AuthHandle, login_flow: AuthFlow, cx: &mut Context<Self>) {
+    fn login_with_flow(&mut self, auth: AuthHandle, login_flow: LoginFlow, cx: &mut Context<Self>) {
         let permit = match auth.begin_login() {
             Ok(permit) => permit,
             Err(err) => {
@@ -240,29 +240,9 @@ impl Config {
         let Some(auth) = self.auth.as_ref().map(|a| a.handle.clone()) else {
             return;
         };
-        let permit = match auth.begin_logout() {
-            Ok(permit) => permit,
-            Err(err) => {
-                self.local_error = Some(err.to_string().into());
-                cx.notify();
-                return;
-            }
-        };
-
-        cx.spawn_and_update(
-            async move {
-                if let Some(flow) = auth.logout_flow().await?
-                    && open_auth_webview(flow).await?.is_none()
-                {
-                    return Ok(());
-                }
-                permit.logout().await?;
-                anyhow::Ok(())
-            },
-            |this, result, _| {
-                this.local_error = result.err().map(|e| e.to_string().into());
-            },
-        )
+        cx.spawn_and_update(async move { auth.logout().await }, |this, result, _| {
+            this.local_error = result.err().map(|e| e.to_string().into());
+        })
         .detach();
     }
 

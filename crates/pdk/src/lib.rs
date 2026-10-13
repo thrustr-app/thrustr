@@ -61,7 +61,9 @@ pub mod wit {
 }
 
 pub use pdk_macros::export;
-pub use wit::auth::exports::thrustr::plugin::auth::{AuthFlow, LoginFlow, LoginForm, LoginRequest};
+pub use wit::auth::exports::thrustr::plugin::auth::{
+    LoginCallback, LoginFlow, LoginForm, LoginRequest,
+};
 pub use wit::plugin::thrustr::plugin::types::{
     Error, Game, GameVersion, GameVersionDetails, Platform,
 };
@@ -103,11 +105,7 @@ pub trait Plugin: __private::Exported<__private::Plugin> {
 }
 
 pub trait Auth: Plugin + __private::Exported<__private::Auth> {
-    fn login_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
-        async { Ok(None) }
-    }
-
-    fn logout_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
+    fn login_flow() -> impl Future<Output = Result<Option<LoginFlow>, Error>> {
         async { Ok(None) }
     }
 
@@ -172,11 +170,8 @@ macro_rules! __export {
             struct Guest;
 
             impl $crate::wit::auth::exports::thrustr::plugin::auth::Guest for Guest {
-                async fn get_login_flow() -> std::result::Result<Option<$crate::AuthFlow>, $crate::Error> {
+                async fn get_login_flow() -> std::result::Result<Option<$crate::LoginFlow>, $crate::Error> {
                     <$ty as $crate::Auth>::login_flow().await
-                }
-                async fn get_logout_flow() -> std::result::Result<Option<$crate::AuthFlow>, $crate::Error> {
-                    <$ty as $crate::Auth>::logout_flow().await
                 }
                 async fn login(request: $crate::LoginRequest) -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Auth>::login(request).await

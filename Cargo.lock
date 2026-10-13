@@ -4119,6 +4119,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "itchio"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.3.4",
+ "pdk",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "url",
+ "wasi-fetch",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4368,7 +4382,7 @@ dependencies = [
  "pdk",
  "serde",
  "serde_json",
- "thiserror 2.0.21",
+ "url",
  "wasi-fetch",
 ]
 
@@ -9543,6 +9557,7 @@ name = "webview-helper"
 version = "0.1.0"
 dependencies = [
  "muda",
+ "serde_json",
  "tao",
  "wry",
 ]
