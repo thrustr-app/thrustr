@@ -9,20 +9,14 @@
 use super::state::InputState;
 use gpui::*;
 use std::ops::Range;
+use theme::ThemeExt;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub const CURSOR_WIDTH: f32 = 1.0;
 const MARKED_TEXT_UNDERLINE_THICKNESS: f32 = 1.0;
 
-/// A text field element that renders editable text with cursor and selection support.
-///
-/// This element handles:
-/// - Text rendering with proper font styling
-/// - Cursor positioning and visibility
-/// - Text selection highlighting
-/// - Automatic scrolling to keep cursor visible
-/// - Placeholder text when empty
-/// - Marked text (IME composition) with underlines
+/// Paints the text of an [`InputState`] with its cursor, selection, placeholder
+/// and IME composition underline.
 pub struct TextElement {
     state: Entity<InputState>,
 }
@@ -49,9 +43,17 @@ impl IntoElement for TextElement {
 }
 
 impl TextElement {
-    fn prepare_display_text(&self, state: &InputState, text_color: Hsla) -> (SharedString, Hsla) {
+    fn prepare_display_text(
+        &self,
+        state: &InputState,
+        text_color: Hsla,
+        cx: &App,
+    ) -> (SharedString, Hsla) {
         if state.value.is_empty() {
-            return (state.placeholder.clone(), state.placeholder_color);
+            let color = state
+                .placeholder_color
+                .unwrap_or_else(|| cx.theme().colors.field.placeholder);
+            return (state.placeholder.clone(), color);
         }
 
         if !state.masked {
@@ -74,7 +76,6 @@ impl TextElement {
         marked_range: Option<Range<usize>>,
     ) -> Vec<TextRun> {
         if let Some(marked_range) = marked_range {
-            // Ensure marked_range doesn't exceed display_text bounds
             let display_len = display_text.len();
             if marked_range.start >= display_len || marked_range.end > display_len {
                 return vec![base_run];
@@ -148,7 +149,7 @@ impl Element for TextElement {
         let state = self.state.read(cx);
         let style = window.text_style();
 
-        let (display_text, text_color) = self.prepare_display_text(state, style.color);
+        let (display_text, text_color) = self.prepare_display_text(state, style.color, cx);
 
         let base_run = TextRun {
             len: display_text.len(),

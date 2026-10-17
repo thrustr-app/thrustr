@@ -80,6 +80,10 @@ impl Icon {
         self
     }
 
+    pub(crate) fn path(&self) -> SharedString {
+        self.path.clone()
+    }
+
     pub(crate) fn length(size: Size) -> Rems {
         match size {
             Size::Small => rems(1.),

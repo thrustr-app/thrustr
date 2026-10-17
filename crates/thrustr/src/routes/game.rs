@@ -19,8 +19,8 @@ use event::Topic;
 use gpui::{
     AnyElement, App, AppContext, BoxShadow, ClickEvent, Context, Div, Entity, FontWeight, Hsla,
     ImageSource, IntoElement, ObjectFit, ParentElement, PathPromptOptions, Rems, Render, Resource,
-    RetainAllImageCache, SharedString, Styled, StyledImage, Task, Window, black, div, img,
-    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rems,
+    RetainAllImageCache, SharedString, Styled, StyledImage, Subscription, Task, Window, black, div,
+    img, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rems,
 };
 use std::{
     path::{Path, PathBuf},
@@ -29,8 +29,8 @@ use std::{
 use theme::{Theme, ThemeExt};
 use tracing::error;
 use ui::{
-    Alert, Button, Dialog, Icon, InputEvent, Meter, PortalContext, Select, WithField, WithFocus,
-    WithRadius, WithSize, WithVariant, input,
+    Alert, Button, Dialog, Icon, Input, InputEvent, InputState, Meter, PortalContext, Select,
+    WithField, WithRadius, WithSize, WithVariant,
 };
 
 // FIXME: gpui gradients only take two stops, so this is a workaround to simulate
@@ -110,7 +110,7 @@ impl Game {
             return;
         };
         let title: SharedString = format!("Install {}", self.name).into();
-        let install_dialog = cx.new(|cx| InstallDialog::new(self, source_id, cx));
+        let install_dialog = cx.new(|cx| InstallDialog::new(self, source_id, window, cx));
         window.open_dialog(cx, move |dialog, _, cx| {
             dialog
                 .w(rems(36.))
@@ -145,7 +145,6 @@ impl Game {
             .children(fade)
             .child(
                 Button::icon("back-button", Icon::arrow())
-                    .auto_focus()
                     .variant_outline()
                     .size_sm()
                     .radius_pill()
@@ -257,7 +256,7 @@ struct InstallDialog {
     details: Option<GameVersionDetails>,
     details_loading: bool,
     details_failed: bool,
-    install_dir: SharedString,
+    install_dir: Entity<InputState>,
     install_target: Option<Result<InstallTarget, InstallTargetError>>,
     storage_labels: StorageLabels,
     loading: bool,
@@ -267,6 +266,7 @@ struct InstallDialog {
     _browse_task: Option<Task<()>>,
     _install_target_task: Option<Task<()>>,
     _components_task: Task<()>,
+    _install_dir_subscription: Subscription,
 }
 
 #[derive(Default)]
@@ -278,7 +278,7 @@ struct StorageLabels {
 }
 
 impl InstallDialog {
-    fn new(game: &Game, source_id: &str, cx: &mut Context<Self>) -> Self {
+    fn new(game: &Game, source_id: &str, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let game_id = game.id;
         let storefront = cx.component_registry().storefront(source_id);
         let load_task = cx.spawn_and_update(
@@ -310,6 +310,18 @@ impl InstallDialog {
             },
         );
 
+        let install_dir = cx.new(|cx| {
+            let dir = paths::default_install_dir().to_string_lossy().into_owned();
+            InputState::new(window, cx).with_value(dir)
+        });
+        let _install_dir_subscription =
+            cx.subscribe(&install_dir, |this, _, event: &InputEvent, cx| {
+                if *event == InputEvent::Input {
+                    this.update_install_target(cx);
+                    cx.notify();
+                }
+            });
+
         let mut this = Self {
             game_id,
             storefront,
@@ -321,10 +333,7 @@ impl InstallDialog {
             details: None,
             details_loading: false,
             details_failed: false,
-            install_dir: paths::default_install_dir()
-                .to_string_lossy()
-                .into_owned()
-                .into(),
+            install_dir,
             install_target: None,
             storage_labels: StorageLabels::default(),
             loading: true,
@@ -337,6 +346,7 @@ impl InstallDialog {
                 &[Topic::ComponentRegistered, Topic::ComponentState],
                 |_, cx| cx.notify(),
             ),
+            _install_dir_subscription,
         };
         this.update_install_target(cx);
         this
@@ -373,7 +383,7 @@ impl InstallDialog {
     }
 
     fn update_install_target(&mut self, cx: &mut Context<Self>) {
-        let dir = PathBuf::from(self.install_dir.as_ref());
+        let dir = PathBuf::from(self.install_dir.read(cx).value().as_ref());
         let name = self.name.clone();
         self._install_target_task = Some(cx.spawn_and_update(
             async move { InstallTarget::resolve(&dir, &name) },
@@ -418,7 +428,9 @@ impl InstallDialog {
         self._browse_task = Some(cx.spawn_and_update(paths, |this, result, cx| match result {
             Ok(Ok(Some(paths))) => {
                 if let Some(path) = paths.into_iter().next() {
-                    this.install_dir = path.to_string_lossy().into_owned().into();
+                    let dir = path.to_string_lossy().into_owned();
+                    this.install_dir
+                        .update(cx, |input, cx| input.set_value(dir, cx));
                     this.update_install_target(cx);
                 }
             }
@@ -486,11 +498,10 @@ impl InstallDialog {
                 })),
             )
             .child(
-                input("install-dir")
+                Input::new(&self.install_dir)
                     .size_lg()
                     .w_full()
                     .label("Install location")
-                    .value(self.install_dir.clone())
                     .map(|input| match &self.install_target {
                         Some(Ok(target)) => {
                             input.description(target.dir.to_string_lossy().into_owned())
@@ -503,12 +514,7 @@ impl InstallDialog {
                             .size_lg()
                             .variant_field()
                             .on_click(cx.listener(Self::browse_install_dir)),
-                    )
-                    .on_input(cx.listener(|this, event: &InputEvent, _, cx| {
-                        this.install_dir = event.value.clone();
-                        this.update_install_target(cx);
-                        cx.notify();
-                    })),
+                    ),
             )
             .children(self.render_storage(cx))
     }

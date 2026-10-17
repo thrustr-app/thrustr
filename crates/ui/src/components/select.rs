@@ -1,39 +1,22 @@
 use crate::{
-    FieldProps, FocusProps, Icon, Size, Tab, TabPrev, WithField, WithFocus, WithScrollbar, WithSize,
+    FieldProps, FocusProps, Icon, SCROLLBAR_WIDTH, Size, Tab, TabPrev, WithField, WithFocus,
+    WithScrollbar, WithSize,
+    components::menu::{
+        self, Cancel, Confirm, MENU_MAX_HEIGHT, MENU_PADDING, SelectFirst, SelectLast, SelectNext,
+        SelectNextPage, SelectPrev, SelectPrevPage, Step,
+    },
 };
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, Bounds, ClickEvent, Context, ElementId, Entity,
-    FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyBinding, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Refineable, Rems, RenderOnce,
-    ScrollHandle, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Subscription,
-    Window, actions, anchored, canvas, deferred, div, ease_out_quint, point,
-    prelude::FluentBuilder, px, relative, rems,
+    AnyElement, App, Bounds, ClickEvent, Context, ElementId, Entity, FocusHandle, FontWeight,
+    InteractiveElement, IntoElement, KeyBinding, MouseButton, MouseDownEvent, MouseMoveEvent,
+    ParentElement, Pixels, Point, Refineable, RenderOnce, ScrollHandle, SharedString,
+    StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Window, div,
+    prelude::FluentBuilder, relative, rems,
 };
-use std::{rc::Rc, time::Duration};
+use std::rc::Rc;
 use theme::ThemeExt;
 
 const CONTEXT: &str = "select";
-
-const BORDER: Pixels = px(1.);
-const MENU_GAP: Rems = rems(0.25);
-const MENU_PADDING: Rems = rems(0.25);
-const MENU_MAX_HEIGHT: Rems = rems(16.);
-const MENU_SLIDE: Pixels = px(6.);
-const MENU_OPEN_DURATION: Duration = Duration::from_millis(150);
-
-actions!(
-    select,
-    [
-        SelectPrev,
-        SelectNext,
-        SelectFirst,
-        SelectLast,
-        SelectPrevPage,
-        SelectNextPage,
-        Confirm,
-        Cancel
-    ]
-);
 
 pub(super) fn init(cx: &mut App) {
     cx.bind_keys([
@@ -138,15 +121,6 @@ impl<T: PartialEq + 'static> Select<T> {
     }
 }
 
-fn item_py(size: Size) -> Rems {
-    match size {
-        Size::Small => rems(0.25),
-        Size::Medium => rems(0.375),
-        Size::Large => rems(0.5),
-        Size::ExtraLarge => rems(0.625),
-    }
-}
-
 impl<T: PartialEq + 'static> Styled for Select<T> {
     fn style(&mut self) -> &mut StyleRefinement {
         &mut self.style
@@ -174,9 +148,7 @@ impl<T: PartialEq + 'static> WithField for Select<T> {
 
 impl<T: PartialEq + 'static> RenderOnce for Select<T> {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window.use_keyed_state(self.id.clone(), cx, |window, cx| {
-            SelectState::new(self.focus.auto_focus, window, cx)
-        });
+        let state = window.use_keyed_state(self.id.clone(), cx, SelectState::new);
 
         let empty = !self.loading && self.items.is_empty();
         let empty_placeholder = self.empty_placeholder.filter(|_| empty);
@@ -186,7 +158,9 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
             state.update(cx, |state, cx| state.close(cx));
         }
 
-        let focus_handle = self.focus.configure(state.read(cx).focus_handle.clone());
+        let focus_handle = self
+            .focus
+            .configure(state.read(cx).focus_handle.clone(), window, cx);
         let highlighted = state.read(cx).highlighted;
 
         let selected = self
@@ -336,11 +310,8 @@ struct SelectState {
 }
 
 impl SelectState {
-    fn new(auto_focus: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
-        if auto_focus {
-            focus_handle.focus(window, cx);
-        }
         let _blur = cx.on_blur(&focus_handle, window, |_, window, cx| {
             cx.defer_in(window, |this, _, cx| this.close(cx));
         });
@@ -488,16 +459,9 @@ impl<T: 'static> Menu<T> {
 
     fn track_trigger_bounds(&self) -> impl IntoElement {
         let state = self.state.clone();
-        canvas(
-            move |bounds, _, cx| {
-                // The canvas covers the padding box, so grow it over the border.
-                let bounds = bounds.dilate(BORDER);
-                state.update(cx, |state, cx| state.set_trigger_bounds(bounds, cx));
-            },
-            |_, _, _, _| {},
-        )
-        .absolute()
-        .inset_0()
+        menu::track_bounds(move |bounds, cx| {
+            state.update(cx, |state, cx| state.set_trigger_bounds(bounds, cx));
+        })
     }
 
     fn render(
@@ -513,107 +477,47 @@ impl<T: 'static> Menu<T> {
             let state = self.state.read(cx);
             (state.trigger_bounds.size.width, state.scroll_handle.clone())
         };
-        let gap = MENU_GAP.to_pixels(window.rem_size());
-        let item_padding_x = rems(size.field_px().0 - MENU_PADDING.0);
 
         let items = self.options.items.iter().enumerate().map(|(ix, item)| {
-            div()
-                .flex()
-                .items_center()
-                .gap(rems(0.5))
-                .px(item_padding_x)
-                .py(item_py(size))
-                .rounded(theme.radius.sm)
-                .cursor_pointer()
-                .when(ix == highlighted, |item| {
-                    item.bg(theme.colors.popover.highlight)
-                })
-                .on_mouse_move(
-                    self.listener(move |menu, _: &MouseMoveEvent, _, cx| menu.highlight(ix, cx)),
-                )
-                .on_mouse_down(
-                    MouseButton::Left,
-                    self.listener(move |menu, _: &MouseDownEvent, _, cx| menu.highlight(ix, cx)),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .child(render_item(item, window, cx)),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .size(Icon::length(Size::Small))
-                        .when(self.options.selected == Some(ix), |slot| {
-                            slot.child(Icon::check().size_sm().color(theme.colors.accent))
-                        }),
-                )
+            let content = render_item(item, window, cx);
+            menu::item(
+                content,
+                size,
+                ix == highlighted,
+                self.options.selected == Some(ix),
+                &theme,
+            )
+            .on_mouse_move(
+                self.listener(move |menu, _: &MouseMoveEvent, _, cx| menu.highlight(ix, cx)),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                self.listener(move |menu, _: &MouseDownEvent, _, cx| menu.highlight(ix, cx)),
+            )
         });
 
-        let menu =
+        let scrollable = scroll_handle.max_offset().y > Pixels::ZERO;
+
+        let content =
             div()
-                .relative()
-                .w(width)
-                .occlude()
-                .rounded(theme.radius.md)
-                .border_1()
-                .border_color(theme.colors.popover.border)
-                .bg(theme.colors.popover.background)
-                .shadow_md()
-                .on_mouse_down_out(self.listener(|menu, event: &MouseDownEvent, _, cx| {
-                    menu.dismiss(event.position, cx)
-                }))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .max_h(MENU_MAX_HEIGHT)
-                        .p(MENU_PADDING)
-                        .children(items)
-                        .overflow_y_scrollbar()
-                        .handle(&scroll_handle)
-                        .on_click(self.listener(|menu, _: &ClickEvent, window, cx| {
-                            menu.choose_highlighted(window, cx)
-                        })),
-                )
-                .with_animation(
-                    "menu",
-                    Animation::new(MENU_OPEN_DURATION).with_easing(ease_out_quint()),
-                    |menu, delta| menu.opacity(delta).top(MENU_SLIDE * (delta - 1.)),
-                );
+                .flex()
+                .flex_col()
+                .max_h(MENU_MAX_HEIGHT)
+                .p(MENU_PADDING)
+                .when(scrollable, |content| content.pr(SCROLLBAR_WIDTH))
+                .children(items)
+                .overflow_y_scrollbar()
+                .handle(&scroll_handle)
+                .on_click(self.listener(|menu, _: &ClickEvent, window, cx| {
+                    menu.choose_highlighted(window, cx)
+                }));
 
-        div().absolute().top_full().left(-BORDER).child(deferred(
-            anchored()
-                .offset(point(px(0.), BORDER + gap))
-                .snap_to_window_with_margin(gap)
-                .child(menu),
-        ))
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Step {
-    Prev,
-    Next,
-    First,
-    Last,
-    PrevPage,
-    NextPage,
-}
-
-impl Step {
-    fn target(self, current: Option<usize>, count: usize, page: usize) -> usize {
-        let last = count - 1;
-        let current = current.map(|ix| ix.min(last));
-
-        match self {
-            Self::First => 0,
-            Self::Last => last,
-            Self::Prev => current.map_or(last, |ix| ix.saturating_sub(1)),
-            Self::Next => current.map_or(0, |ix| (ix + 1).min(last)),
-            Self::PrevPage => current.map_or(last, |ix| ix.saturating_sub(page)),
-            Self::NextPage => current.map_or(0, |ix| ix.saturating_add(page).min(last)),
-        }
+        menu::popover(
+            width,
+            content,
+            self.listener(|menu, event: &MouseDownEvent, _, cx| menu.dismiss(event.position, cx)),
+            window,
+            cx,
+        )
     }
 }

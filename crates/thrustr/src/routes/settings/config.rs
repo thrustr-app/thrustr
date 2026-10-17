@@ -14,13 +14,13 @@ use event::Topic;
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Div, Entity, FontWeight, Image, ImageSource,
     InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled,
-    Task, Window, div, img, prelude::FluentBuilder, relative, rems,
+    Subscription, Task, Window, div, img, prelude::FluentBuilder, relative, rems,
 };
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithField, WithFocus,
-    WithRadius, WithScrollbar, WithSize, WithVariant, input,
+    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, InputState, PortalContext, WithField,
+    WithFocus, WithRadius, WithScrollbar, WithSize, WithVariant,
 };
 
 type Values = HashMap<SharedString, SharedString>;
@@ -28,25 +28,50 @@ type Values = HashMap<SharedString, SharedString>;
 struct Field {
     id: SharedString,
     label: SharedString,
-    placeholder: Option<SharedString>,
+    state: Entity<InputState>,
 }
 
 impl Field {
-    fn input<T: 'static>(
+    fn new(
+        field: &TextField,
+        value: Option<&SharedString>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let value = value.cloned().unwrap_or_default();
+        let placeholder = field.placeholder.clone().unwrap_or_default();
+        Field {
+            label: if field.required {
+                format!("{} *", field.label).into()
+            } else {
+                field.label.clone().into()
+            },
+            state: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .with_value(value)
+                    .with_placeholder(placeholder)
+            }),
+            id: field.id.clone().into(),
+        }
+    }
+
+    fn input(&self) -> Input {
+        Input::new(&self.state).label(self.label.clone())
+    }
+
+    fn bind<T: 'static>(
         &self,
-        values: &Values,
         values_mut: fn(&mut T) -> &mut Values,
         cx: &mut Context<T>,
-    ) -> Input {
+    ) -> Subscription {
         let id = self.id.clone();
-        input(self.id.clone())
-            .label(self.label.clone())
-            .when_some(self.placeholder.clone(), Input::placeholder)
-            .value(values.get(&self.id).cloned().unwrap_or_default())
-            .on_input(cx.listener(move |this, event: &InputEvent, _, cx| {
-                values_mut(this).insert(id.clone(), event.value.clone());
+        cx.subscribe(&self.state, move |this, state, event, cx| {
+            if *event == InputEvent::Input {
+                let value = state.read(cx).value().clone();
+                values_mut(this).insert(id.clone(), value);
                 cx.notify();
-            }))
+            }
+        })
     }
 }
 
@@ -87,10 +112,11 @@ pub struct Config {
     status_error: Option<SharedString>,
     scroll_handle: ScrollHandle,
     _tasks: Vec<Task<()>>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl Config {
-    pub fn new(component: ComponentHandle, cx: &mut Context<Self>) -> Self {
+    pub fn new(component: ComponentHandle, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let icon = cx.component_icon(component.id());
 
         let auth = component.auth().map(|handle| AuthState {
@@ -114,10 +140,16 @@ impl Config {
         };
         let values_loaded = local_error.is_none();
 
-        let sections = config
+        let sections: Vec<Section> = config
             .iter()
             .flat_map(|c| &c.schema().sections)
-            .map(Into::into)
+            .map(|section| Section::new(section, &values, window, cx))
+            .collect();
+        let _subscriptions = sections
+            .iter()
+            .flat_map(|s| &s.elements)
+            .flat_map(Element::fields)
+            .map(|field| field.bind(|this: &mut Self| &mut this.values, cx))
             .collect();
 
         let _tasks = vec![cx.listen_any(
@@ -139,6 +171,7 @@ impl Config {
             status_error,
             scroll_handle: ScrollHandle::new(),
             _tasks,
+            _subscriptions,
         };
 
         page.load_login_method(cx);
@@ -229,8 +262,9 @@ impl Config {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let login_dialog =
-            cx.new(|_| LoginDialog::new(auth, login_form, &self.name, self.icon.clone()));
+        let login_dialog = cx.new(|cx| {
+            LoginDialog::new(auth, login_form, &self.name, self.icon.clone(), window, cx)
+        });
         window.open_dialog(cx, move |dialog, _, cx| {
             LoginDialog::build(&login_dialog, dialog, cx)
         });
@@ -272,7 +306,6 @@ impl Config {
         &self,
         status: &Status,
         can_configure: bool,
-        autofocus_back: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme();
@@ -294,7 +327,6 @@ impl Config {
                             .variant_outline()
                             .size_sm()
                             .radius_pill()
-                            .when(autofocus_back, |this| this.auto_focus())
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
                     .child(
@@ -397,7 +429,7 @@ impl Config {
     ) -> Div {
         let theme = cx.theme();
         let elements = section.elements.iter().map(|element| match element {
-            Element::Field(f) => self.render_field(f, can_configure, autofocus_field, cx),
+            Element::Field(f) => self.render_field(f, can_configure, autofocus_field),
             Element::Hbox(fields) => div()
                 .flex()
                 .flex_wrap()
@@ -405,7 +437,7 @@ impl Config {
                 .children(
                     fields
                         .iter()
-                        .map(|f| self.render_field(f, can_configure, autofocus_field, cx)),
+                        .map(|f| self.render_field(f, can_configure, autofocus_field)),
                 )
                 .into_any_element(),
         });
@@ -427,10 +459,9 @@ impl Config {
         field: &Field,
         can_configure: bool,
         autofocus_field: Option<&SharedString>,
-        cx: &mut Context<Self>,
     ) -> AnyElement {
         field
-            .input(&self.values, |this| &mut this.values, cx)
+            .input()
             .w(rems(20.))
             .when(!can_configure, Input::disabled)
             .when(autofocus_field == Some(&field.id), |this| this.auto_focus())
@@ -457,7 +488,7 @@ impl Render for Config {
             .flex()
             .flex_col()
             .gap(rems(2.))
-            .child(self.render_header(&status, can_configure, autofocus_field.is_none(), cx))
+            .child(self.render_header(&status, can_configure, cx))
             .child(self.render_body(can_configure, autofocus_field, cx))
     }
 }
@@ -482,11 +513,26 @@ struct LoginDialog {
     values: Values,
     submitting: bool,
     submit_error: Option<SharedString>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl LoginDialog {
-    fn new(auth: AuthHandle, form: LoginForm, name: &str, icon: Option<Arc<Image>>) -> Self {
-        let fields = form.text_fields().map(Into::into).collect();
+    fn new(
+        auth: AuthHandle,
+        form: LoginForm,
+        name: &str,
+        icon: Option<Arc<Image>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let fields: Vec<Field> = form
+            .text_fields()
+            .map(|field| Field::new(field, None, window, cx))
+            .collect();
+        let _subscriptions = fields
+            .iter()
+            .map(|field| field.bind(|this: &mut Self| &mut this.values, cx))
+            .collect();
 
         Self {
             auth,
@@ -494,9 +540,10 @@ impl LoginDialog {
             title: format!("Log in to {name}").into(),
             icon,
             fields,
-            values: HashMap::new(),
+            values: Values::new(),
             submitting: false,
             submit_error: None,
+            _subscriptions,
         }
     }
 
@@ -573,9 +620,9 @@ impl LoginDialog {
 }
 
 impl Render for LoginDialog {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let fields = self.fields.iter().enumerate().map(|(i, f)| {
-            f.input(&self.values, |this| &mut this.values, cx)
+            f.input()
                 .size_lg()
                 .w_full()
                 .when(i == 0, |this| this.auto_focus())
@@ -586,36 +633,31 @@ impl Render for LoginDialog {
     }
 }
 
-impl From<&ConfigSection> for Section {
-    fn from(section: &ConfigSection) -> Self {
+impl Section {
+    fn new(section: &ConfigSection, values: &Values, window: &mut Window, cx: &mut App) -> Self {
         Section {
             name: section.name.to_uppercase().into(),
-            elements: section.elements.iter().map(Into::into).collect(),
+            elements: section
+                .elements
+                .iter()
+                .map(|element| Element::new(element, values, window, cx))
+                .collect(),
         }
     }
 }
 
-impl From<&FormElement> for Element {
-    fn from(element: &FormElement) -> Self {
+impl Element {
+    fn new(element: &FormElement, values: &Values, window: &mut Window, cx: &mut App) -> Self {
         match element {
-            FormElement::Text(field) => Element::Field(field.into()),
-            FormElement::Hbox { .. } => {
-                Element::Hbox(element.text_fields().map(Into::into).collect())
+            FormElement::Text(field) => {
+                Element::Field(Field::new(field, values.get(field.id.as_str()), window, cx))
             }
-        }
-    }
-}
-
-impl From<&TextField> for Field {
-    fn from(field: &TextField) -> Self {
-        Field {
-            id: field.id.clone().into(),
-            label: if field.required {
-                format!("{} *", field.label).into()
-            } else {
-                field.label.clone().into()
-            },
-            placeholder: field.placeholder.clone().map(Into::into),
+            FormElement::Hbox { .. } => Element::Hbox(
+                element
+                    .text_fields()
+                    .map(|field| Field::new(field, values.get(field.id.as_str()), window, cx))
+                    .collect(),
+            ),
         }
     }
 }

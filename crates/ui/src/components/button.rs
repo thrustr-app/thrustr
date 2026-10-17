@@ -192,16 +192,10 @@ impl WithFocus for Button {
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let focus_handle = window
-            .use_keyed_state(self.id.clone(), cx, |window, cx| {
-                let focus_handle = cx.focus_handle();
-                if self.focus.auto_focus {
-                    focus_handle.focus(window, cx);
-                }
-                focus_handle
-            })
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
             .read(cx)
             .clone();
-        let focus_handle = self.focus.configure(focus_handle);
+        let focus_handle = self.focus.configure(focus_handle, window, cx);
 
         let theme = cx.theme();
         let palette = self.palette(&theme);
