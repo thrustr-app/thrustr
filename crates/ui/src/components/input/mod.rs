@@ -12,10 +12,9 @@
 
 use crate::{
     FieldProps, FocusProps, Icon, Radius, Size, WithField, WithFocus, WithRadius, WithSize,
-    components::input::state::InputState,
 };
 use gpui::{
-    App, AppContext, CursorStyle, Div, ElementId, Entity, Focusable, FontWeight, Hsla,
+    App, AppContext, CursorStyle, Div, ElementId, Entity, FocusHandle, Focusable, FontWeight,
     InteractiveElement, Interactivity, IntoElement, MouseButton, ParentElement, Refineable,
     RenderOnce, SharedString, Stateful, StatefulInteractiveElement, StyleRefinement, Styled,
     Window, div, prelude::FluentBuilder, rems,
@@ -24,64 +23,24 @@ use gpui::{
 mod actions;
 mod cursor;
 mod element;
-mod events;
 mod history;
 mod state;
 mod text_ops;
 
+pub(crate) use actions::Backspace;
 pub(super) use actions::init;
-pub use events::*;
+pub use state::{InputEvent, InputState};
 use theme::ThemeExt;
 
-/// Context identifier for text input key bindings
 const CONTEXT: &str = "input";
 
-pub fn input(id: impl Into<ElementId>) -> Input {
-    let id: ElementId = (id.into(), "input").into();
-    Input {
-        id: id.clone(),
-        base: div()
-            .flex()
-            .justify_center()
-            .items_center()
-            .id(id)
-            .cursor(CursorStyle::IBeam),
-        style: StyleRefinement::default(),
-        disabled: false,
-        value: None,
-        on_input: None,
-        on_change: None,
-        placeholder: None,
-        placeholder_color: None,
-        selection_color: None,
-        masked: false,
-        mask: None,
-        max_length: None,
-        leading_icon: None,
-        clear_button: false,
-        focus: FocusProps::default(),
-        field: FieldProps::default(),
-        radius: Radius::default(),
-        size: Size::default(),
-    }
-}
-
-#[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct Input {
     id: ElementId,
+    state: Entity<InputState>,
     base: Stateful<Div>,
     style: StyleRefinement,
     disabled: bool,
-    value: Option<SharedString>,
-    on_input: Option<Box<dyn Fn(&InputEvent, &mut Window, &mut App) + 'static>>,
-    on_change: Option<Box<dyn Fn(&ChangeEvent, &mut Window, &mut App) + 'static>>,
-    placeholder: Option<SharedString>,
-    placeholder_color: Option<Hsla>,
-    selection_color: Option<Hsla>,
-    masked: bool,
-    mask: Option<SharedString>,
-    max_length: Option<usize>,
     leading_icon: Option<Icon>,
     clear_button: bool,
     focus: FocusProps,
@@ -91,55 +50,26 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn value(mut self, value: impl Into<SharedString>) -> Self {
-        self.value = Some(value.into());
-        self
-    }
-
-    pub fn on_input(
-        mut self,
-        callback: impl Fn(&InputEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_input = Some(Box::new(callback));
-        self
-    }
-
-    pub fn on_change(
-        mut self,
-        callback: impl Fn(&ChangeEvent, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_change = Some(Box::new(callback));
-        self
-    }
-
-    pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
-        self.placeholder = Some(placeholder.into());
-        self
-    }
-
-    pub fn placeholder_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.placeholder_color = Some(color.into());
-        self
-    }
-
-    pub fn selection_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.selection_color = Some(color.into());
-        self
-    }
-
-    pub fn masked(mut self) -> Self {
-        self.masked = true;
-        self
-    }
-
-    pub fn mask(mut self, mask: impl Into<SharedString>) -> Self {
-        self.mask = Some(mask.into());
-        self
-    }
-
-    pub fn max_length(mut self, max_length: usize) -> Self {
-        self.max_length = Some(max_length);
-        self
+    pub fn new(state: &Entity<InputState>) -> Self {
+        let id: ElementId = ("input", state.entity_id()).into();
+        Self {
+            id: id.clone(),
+            state: state.clone(),
+            base: div()
+                .flex()
+                .justify_center()
+                .items_center()
+                .id(id)
+                .cursor(CursorStyle::IBeam),
+            style: StyleRefinement::default(),
+            disabled: false,
+            leading_icon: None,
+            clear_button: false,
+            focus: FocusProps::default(),
+            field: FieldProps::default(),
+            radius: Radius::default(),
+            size: Size::default(),
+        }
     }
 
     pub fn disabled(mut self) -> Self {
@@ -200,31 +130,8 @@ impl StatefulInteractiveElement for Input {}
 
 impl RenderOnce for Input {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window.use_keyed_state(self.id.clone(), cx, |window, cx| {
-            let state = InputState::new(window, cx);
-            if self.focus.auto_focus {
-                state.focus_handle(cx).focus(window, cx);
-            }
-            state
-        });
-
-        let focus_handle = self.focus.configure(state.focus_handle(cx));
-
-        let placeholder_color = self
-            .placeholder_color
-            .or(Some(cx.theme().colors.field.placeholder));
-
-        state.update(cx, |state, _cx| {
-            state.set_value(self.value);
-            state.on_input = self.on_input;
-            state.on_change = self.on_change;
-            state.set_placeholder(self.placeholder);
-            state.set_placeholder_color(placeholder_color);
-            state.set_selection_color(self.selection_color);
-            state.set_masked(self.masked);
-            state.set_mask(self.mask);
-            state.max_length = self.max_length;
-        });
+        let state = self.state;
+        let focus_handle = self.focus.configure(state.focus_handle(cx), window, cx);
 
         let has_value = !state.read(cx).value.is_empty();
 
@@ -257,54 +164,11 @@ impl RenderOnce for Input {
             .when_some(self.leading_icon, |input, icon| {
                 input.child(icon.size_sm().color(theme.colors.secondary))
             })
-            .when(!self.disabled, |this| {
-                this.key_context(CONTEXT)
-                    .track_focus(&focus_handle)
-                    .on_action(window.listener_for(&state, InputState::backspace))
-                    .on_action(window.listener_for(&state, InputState::delete))
-                    .on_action(window.listener_for(&state, InputState::left))
-                    .on_action(window.listener_for(&state, InputState::right))
-                    .on_action(window.listener_for(&state, InputState::select_left))
-                    .on_action(window.listener_for(&state, InputState::select_right))
-                    .on_action(window.listener_for(&state, InputState::select_all))
-                    .on_action(window.listener_for(&state, InputState::home))
-                    .on_action(window.listener_for(&state, InputState::end))
-                    .on_action(window.listener_for(&state, InputState::show_character_palette))
-                    .on_action(window.listener_for(&state, InputState::paste))
-                    .on_action(window.listener_for(&state, InputState::cut))
-                    .on_action(window.listener_for(&state, InputState::copy))
-                    .on_action(window.listener_for(&state, InputState::delete_word_left))
-                    .on_action(window.listener_for(&state, InputState::delete_word_right))
-                    .on_action(window.listener_for(&state, InputState::delete_to_beginning))
-                    .on_action(window.listener_for(&state, InputState::delete_to_end))
-                    .on_action(window.listener_for(&state, InputState::word_left))
-                    .on_action(window.listener_for(&state, InputState::word_right))
-                    .on_action(window.listener_for(&state, InputState::select_word_left))
-                    .on_action(window.listener_for(&state, InputState::select_word_right))
-                    .on_action(window.listener_for(&state, InputState::select_to_beginning))
-                    .on_action(window.listener_for(&state, InputState::select_to_end))
-                    .on_action(window.listener_for(&state, InputState::undo))
-                    .on_action(window.listener_for(&state, InputState::redo))
-                    .on_action(window.listener_for(&state, InputState::enter))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        window.listener_for(&state, InputState::on_mouse_down),
-                    )
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        window.listener_for(&state, InputState::on_mouse_up),
-                    )
-                    .on_mouse_up_out(
-                        MouseButton::Left,
-                        window.listener_for(&state, InputState::on_mouse_up),
-                    )
-                    .on_mouse_move(window.listener_for(&state, InputState::on_mouse_move))
-            })
-            .on_scroll_wheel(window.listener_for(&state, InputState::on_scroll_wheel))
+            .map(|input| editable(input, &state, &focus_handle, !self.disabled, window))
             .focus(|input| input.border_1().border_color(focus_border_color))
             .when(self.disabled, |button| button.opacity(0.6))
             .child(state.clone())
-            .when(self.clear_button && has_value, |input| {
+            .when(self.clear_button && has_value && !self.disabled, |input| {
                 let state = state.clone();
                 input.child(
                     div()
@@ -320,11 +184,68 @@ impl RenderOnce for Input {
 
         input.style().refine(&self.style);
 
-        let container = self
-            .field
-            .wrap(self.id.clone(), input, Some(focus_handle.clone()));
+        let container = self.field.wrap(
+            self.id.clone(),
+            input,
+            (!self.disabled).then(|| focus_handle.clone()),
+        );
 
         self.focus
             .attach_reveal(container, &focus_handle, (self.id, "reveal"), window, cx)
     }
+}
+
+pub(crate) fn editable<E: InteractiveElement>(
+    element: E,
+    state: &Entity<InputState>,
+    focus_handle: &FocusHandle,
+    interactive: bool,
+    window: &Window,
+) -> E {
+    let element = element.on_scroll_wheel(window.listener_for(state, InputState::on_scroll_wheel));
+    if !interactive {
+        return element;
+    }
+    element
+        .key_context(CONTEXT)
+        .track_focus(focus_handle)
+        .on_action(window.listener_for(state, InputState::backspace))
+        .on_action(window.listener_for(state, InputState::delete))
+        .on_action(window.listener_for(state, InputState::left))
+        .on_action(window.listener_for(state, InputState::right))
+        .on_action(window.listener_for(state, InputState::select_left))
+        .on_action(window.listener_for(state, InputState::select_right))
+        .on_action(window.listener_for(state, InputState::select_all))
+        .on_action(window.listener_for(state, InputState::home))
+        .on_action(window.listener_for(state, InputState::end))
+        .on_action(window.listener_for(state, InputState::show_character_palette))
+        .on_action(window.listener_for(state, InputState::paste))
+        .on_action(window.listener_for(state, InputState::cut))
+        .on_action(window.listener_for(state, InputState::copy))
+        .on_action(window.listener_for(state, InputState::delete_word_left))
+        .on_action(window.listener_for(state, InputState::delete_word_right))
+        .on_action(window.listener_for(state, InputState::delete_to_beginning))
+        .on_action(window.listener_for(state, InputState::delete_to_end))
+        .on_action(window.listener_for(state, InputState::word_left))
+        .on_action(window.listener_for(state, InputState::word_right))
+        .on_action(window.listener_for(state, InputState::select_word_left))
+        .on_action(window.listener_for(state, InputState::select_word_right))
+        .on_action(window.listener_for(state, InputState::select_to_beginning))
+        .on_action(window.listener_for(state, InputState::select_to_end))
+        .on_action(window.listener_for(state, InputState::undo))
+        .on_action(window.listener_for(state, InputState::redo))
+        .on_action(window.listener_for(state, InputState::enter))
+        .on_mouse_down(
+            MouseButton::Left,
+            window.listener_for(state, InputState::on_mouse_down),
+        )
+        .on_mouse_up(
+            MouseButton::Left,
+            window.listener_for(state, InputState::on_mouse_up),
+        )
+        .on_mouse_up_out(
+            MouseButton::Left,
+            window.listener_for(state, InputState::on_mouse_up),
+        )
+        .on_mouse_move(window.listener_for(state, InputState::on_mouse_move))
 }

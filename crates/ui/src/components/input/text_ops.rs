@@ -141,20 +141,6 @@ impl TextOps {
         }
     }
 
-    /// Snap a byte offset to the closest grapheme boundary at or before it
-    ///
-    /// Offsets past the end of the text are clamped to `text.len()`.
-    pub fn snap_to_grapheme_boundary(text: &str, offset: usize) -> usize {
-        if offset >= text.len() {
-            return text.len();
-        }
-        text.grapheme_indices(true)
-            .take_while(|(i, _)| *i <= offset)
-            .last()
-            .map(|(i, _)| i)
-            .unwrap_or(0)
-    }
-
     /// Convert a grapheme offset to a byte offset
     pub fn grapheme_offset_to_byte_offset(text: &str, grapheme_offset: usize) -> usize {
         text.grapheme_indices(true)
@@ -209,32 +195,6 @@ impl TextOps {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `expected[i]` is the snapped result for byte offset `i` including
-    /// one past the end of `text`.
-    #[track_caller]
-    fn check_snap(text: &str, expected: &[usize]) {
-        let actual: Vec<usize> = (0..=text.len() + 1)
-            .map(|offset| TextOps::snap_to_grapheme_boundary(text, offset))
-            .collect();
-        assert_eq!(actual, expected, "snapping every offset of {text:?}");
-    }
-
-    #[test]
-    fn snap_clamps_offsets_past_end() {
-        check_snap("abc", &[0, 1, 2, 3, 3]);
-        check_snap("", &[0, 0]);
-    }
-
-    #[test]
-    fn snap_moves_offsets_inside_multibyte_char_to_start() {
-        check_snap("日本", &[0, 0, 0, 3, 3, 3, 6, 6]);
-    }
-
-    #[test]
-    fn snap_keeps_combining_marks_with_base() {
-        check_snap("e\u{301}x", &[0, 0, 0, 3, 4, 4]);
-    }
 
     /// `fixture` is the text annotated with `|` at the cursor and `[` and `]`
     /// at the expected previous and next word boundaries.

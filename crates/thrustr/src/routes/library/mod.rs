@@ -25,9 +25,9 @@ use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
-    Activate, GRID_CONTEXT, GridDir, Icon, ListScrollbar, SCROLLBAR_WIDTH, ScrollbarState,
-    Scrubber, SelectDown, SelectLeft, SelectRight, SelectUp, WithRadius, WithSize, grid_step,
-    input, scrubber_position,
+    Activate, GRID_CONTEXT, GridDir, Icon, Input, InputEvent, InputState, ListScrollbar,
+    SCROLLBAR_WIDTH, ScrollbarState, Scrubber, SelectDown, SelectLeft, SelectRight, SelectUp,
+    WithRadius, WithSize, grid_step, scrubber_position,
 };
 
 mod cache;
@@ -94,11 +94,12 @@ pub struct Library {
     scrollbar: Entity<ScrollbarState>,
     chunks: Rc<ChunkCache>,
     loading_chunks: HashMap<usize, Task<()>>,
-    search_query: SharedString,
+    search: Entity<InputState>,
     _search_debounce: Option<Task<()>>,
     image_cache: Entity<LruImageCache>,
     focus_handle: FocusHandle,
     _focus_subscription: Subscription,
+    _search_subscription: Subscription,
     _refresh_task: Option<Task<()>>,
     _tasks: Vec<Task<()>>,
 }
@@ -125,6 +126,17 @@ impl Route for Library {
             }
         });
 
+        let search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .with_value(state.search_query.clone())
+                .with_placeholder("Search library")
+        });
+        let search_subscription = cx.subscribe(&search, |this, _, event, cx| {
+            if *event == InputEvent::Input {
+                this.restart_search(cx);
+            }
+        });
+
         let scroll_handle = UniformListScrollHandle::new();
         let scrollbar = cx.new(|_| ScrollbarState::for_uniform_list(&scroll_handle));
 
@@ -142,11 +154,12 @@ impl Route for Library {
             scrollbar,
             chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
             loading_chunks: HashMap::new(),
-            search_query: state.search_query,
+            search,
             _search_debounce: None,
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             focus_handle,
             _focus_subscription: focus_subscription,
+            _search_subscription: search_subscription,
             _refresh_task: None,
             _tasks: Vec::new(),
         };
@@ -182,35 +195,26 @@ impl Route for Library {
         page
     }
 
-    fn header(&self, this: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
-        let library = this.downgrade();
+    fn header(&self, _: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
         Some(
-            input("library-search")
-                .placeholder("Search library")
-                .value(self.search_query.clone())
+            Input::new(&self.search)
                 .leading_icon(Icon::search())
                 .radius_pill()
                 .size_lg()
                 .clear_button()
                 .w(rems(28.))
-                .on_input(move |event, _, cx| {
-                    let query = event.value.clone();
-                    library
-                        .update(cx, |library, cx| library.set_query(query, cx))
-                        .ok();
-                })
                 .into_any_element(),
         )
     }
 
-    fn save_state(&self, next: &Page, _cx: &App) -> Option<LibraryState> {
+    fn save_state(&self, next: &Page, cx: &App) -> Option<LibraryState> {
         let opened = match next {
             Page::Game(id) => Some(*id),
             _ => None,
         };
 
         Some(LibraryState {
-            search_query: self.search_query.clone(),
+            search_query: self.search.read(cx).value().clone(),
             anchor: self.pending_anchor.or_else(|| self.view_anchor(opened)),
             selected: opened
                 .or_else(|| self.selected_id())
@@ -284,7 +288,7 @@ impl Library {
     fn refresh_games(&mut self, cx: &mut Context<Self>) {
         let game_service = cx.game_service();
 
-        let query = self.search_query.clone();
+        let query = self.search.read(cx).value().clone();
         self._refresh_task = Some(cx.spawn_and_update(
             async move { game_service.list_index(Some(&query)) },
             |library, result, _| match result {
@@ -325,12 +329,7 @@ impl Library {
         ));
     }
 
-    fn set_query(&mut self, query: SharedString, cx: &mut Context<Self>) {
-        if query == self.search_query {
-            return;
-        }
-        self.search_query = query;
-
+    fn restart_search(&mut self, cx: &mut Context<Self>) {
         self._search_debounce = Some(cx.spawn(async move |library, cx| {
             cx.background_executor().timer(SEARCH_DEBOUNCE).await;
             library

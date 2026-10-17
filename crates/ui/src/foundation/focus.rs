@@ -6,7 +6,7 @@ use std::ops::Range;
 
 /// Keyboard-focus behavior shared by focusable components.
 pub struct FocusProps {
-    pub(crate) auto_focus: bool,
+    auto_focus: bool,
     tab_index: isize,
     tab_stop: bool,
     reveal_in: Option<ScrollHandle>,
@@ -24,8 +24,18 @@ impl Default for FocusProps {
 }
 
 impl FocusProps {
-    /// Apply the configured tab order to `handle`.
-    pub(crate) fn configure(&self, handle: FocusHandle) -> FocusHandle {
+    /// Apply the configured tab order and auto-focus to `handle`.
+    pub(crate) fn configure(
+        &self,
+        handle: FocusHandle,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> FocusHandle {
+        let auto_focused = window.use_keyed_state(&handle, cx, |_, _| false);
+        if self.auto_focus && !*auto_focused.read(cx) {
+            auto_focused.update(cx, |auto_focused, _| *auto_focused = true);
+            handle.focus(window, cx);
+        }
         handle.tab_stop(self.tab_stop).tab_index(self.tab_index)
     }
 
@@ -70,7 +80,7 @@ pub trait WithFocus: Sized {
     #[doc(hidden)]
     fn focus_props(&mut self) -> &mut FocusProps;
 
-    /// Focus this element when it is first created.
+    /// Focus this element the first time it renders with auto-focus enabled.
     fn auto_focus(mut self) -> Self {
         self.focus_props().auto_focus = true;
         self

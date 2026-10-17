@@ -5,6 +5,7 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+serde_json.workspace = true
 tao = "0.37"
 wry = "0.56"
 

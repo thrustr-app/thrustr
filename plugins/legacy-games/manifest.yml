@@ -1,13 +1,12 @@
 plugin:
   id: legacy-games
   name: Legacy Games
-  version: "0.0.1"
+  version: "0.1.0"
   authors:
     - Thrustr
   description: Plugin to interact with Legacy Games.
   allowed-hosts:
-    - api.legacygames.com
-    - cdn.legacygames.com
+    - "*.legacygames.com"
 
 auth:
   elements:

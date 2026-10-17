@@ -20,8 +20,7 @@ impl From<AuthOperation> for Operation {
 #[async_trait]
 pub trait Auth: Send + Sync {
     fn login_form(&self) -> Option<&LoginForm>;
-    async fn login_flow(&self) -> Result<Option<AuthFlow>, Error>;
-    async fn logout_flow(&self) -> Result<Option<AuthFlow>, Error>;
+    async fn login_flow(&self) -> Result<Option<LoginFlow>, Error>;
     async fn login(&self, request: LoginRequest) -> Result<(), Error>;
     async fn logout(&self) -> Result<(), Error>;
 }
@@ -34,7 +33,7 @@ pub enum LoginRequest {
 
 #[derive(Debug, Clone)]
 pub enum LoginMethod {
-    Flow(AuthFlow),
+    Flow(LoginFlow),
     Form(LoginForm),
 }
 
@@ -50,7 +49,7 @@ impl Form for LoginForm {
 }
 
 #[derive(Debug, Clone)]
-pub struct AuthFlow {
+pub struct LoginFlow {
     pub url: String,
     pub target: String,
 }

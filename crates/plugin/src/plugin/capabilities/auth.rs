@@ -1,11 +1,11 @@
 use crate::plugin::{PluginRuntime, guest_call};
 use crate::wit::exports::thrustr::plugin::auth::{
-    self, AuthFlow as PluginAuthFlow, LoginFlow, LoginForm as PluginLoginForm,
+    self, LoginCallback, LoginFlow as PluginLoginFlow, LoginForm as PluginLoginForm,
     LoginRequest as PluginLoginRequest,
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use domain::component::{Auth, AuthFlow, Error, LoginForm, LoginRequest};
+use domain::component::{Auth, Error, LoginFlow, LoginForm, LoginRequest};
 use std::sync::Arc;
 
 pub struct PluginAuth {
@@ -42,17 +42,9 @@ impl Auth for PluginAuth {
         self.form.as_ref()
     }
 
-    async fn login_flow(&self) -> Result<Option<AuthFlow>, Error> {
+    async fn login_flow(&self) -> Result<Option<LoginFlow>, Error> {
         let flow = guest_call!(self.runtime, self.indices, |auth, accessor| {
             auth.call_get_login_flow(accessor)
-        })?;
-
-        Ok(flow.map(Into::into))
-    }
-
-    async fn logout_flow(&self) -> Result<Option<AuthFlow>, Error> {
-        let flow = guest_call!(self.runtime, self.indices, |auth, accessor| {
-            auth.call_get_logout_flow(accessor)
         })?;
 
         Ok(flow.map(Into::into))
@@ -71,9 +63,9 @@ impl Auth for PluginAuth {
     }
 }
 
-impl From<PluginAuthFlow> for AuthFlow {
-    fn from(value: PluginAuthFlow) -> Self {
-        AuthFlow {
+impl From<PluginLoginFlow> for LoginFlow {
+    fn from(value: PluginLoginFlow) -> Self {
+        LoginFlow {
             url: value.url,
             target: value.target,
         }
@@ -83,7 +75,9 @@ impl From<PluginAuthFlow> for AuthFlow {
 impl From<LoginRequest> for PluginLoginRequest {
     fn from(value: LoginRequest) -> Self {
         match value {
-            LoginRequest::Flow { url, body } => PluginLoginRequest::Flow(LoginFlow { url, body }),
+            LoginRequest::Flow { url, body } => {
+                PluginLoginRequest::Flow(LoginCallback { url, body })
+            }
             LoginRequest::Form { fields } => PluginLoginRequest::Form(PluginLoginForm { fields }),
         }
     }

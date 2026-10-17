@@ -3,12 +3,12 @@ package thrustr:plugin@0.1.0;
 interface auth {
     use types.{error};
 
-    record auth-flow {
+    record login-flow {
         url: string,
         target: string,
     }
 
-    record login-flow {
+    record login-callback {
         url: string,
         body: string,
     }
@@ -18,12 +18,11 @@ interface auth {
     }
 
     variant login-request {
-        flow(login-flow),
+        flow(login-callback),
         form(login-form),
     }
 
-    get-login-flow: async func() -> result<option<auth-flow>, error>;
-    get-logout-flow: async func() -> result<option<auth-flow>, error>;
+    get-login-flow: async func() -> result<option<login-flow>, error>;
     login: async func(request: login-request) -> result<_, error>;
     logout: async func() -> result<_, error>;
 }

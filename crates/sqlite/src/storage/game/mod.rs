@@ -5,11 +5,14 @@ use crate::schema::{artwork, games};
 use anyhow::Result;
 use diesel::{
     BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
-    RunQueryDsl, SelectableHelper, SqliteConnection,
-    sql_types::{BigInt, Text},
+    QueryResult, RunQueryDsl, SelectableHelper, SqliteConnection,
+    dsl::not,
+    sql_types::{BigInt, Bool, Text},
 };
 use domain::artwork::{Artwork, ArtworkKind};
-use domain::game::{self, Game, GameId, GameIndex, GameListItem, GameRepository, NewGame};
+use domain::game::{
+    self, Game, GameId, GameIndex, GameListItem, GameRepository, NewGame, SyncSummary,
+};
 use std::collections::HashMap;
 use tracing::warn;
 
@@ -40,30 +43,26 @@ impl GameRepository for SqliteStorage {
         })
     }
 
-    fn insert_many(&self, games: &[NewGame]) -> Result<usize> {
-        use crate::schema::games::dsl;
+    fn sync(&self, source_id: &str, games: &[NewGame]) -> Result<SyncSummary> {
+        debug_assert!(games.iter().all(|game| game.source.id == source_id));
+
+        let lookup_ids: Vec<&str> = games
+            .iter()
+            .map(|game| game.source.lookup_id.as_str())
+            .collect();
+        let lookup_ids = serde_json::to_string(&lookup_ids)?;
 
         let mut conn = self.conn()?;
         conn.transaction(|conn| {
-            let mut inserted = 0;
-            for chunk in games.chunks(CHUNK_SIZE) {
-                let rows: Vec<NewGameRow> = chunk.iter().map(NewGameRow::from).collect();
+            let inserted = insert_new(conn, games)?;
+            let changed = update_removed(conn, source_id, &lookup_ids)?;
+            let removed = changed.iter().filter(|&&removed| removed).count();
 
-                // Extract words before insert consumes them to avoid folding them again.
-                // For ignored/duplicate rows, we don't check if words are already in the vocabulary
-                // as identifying them is more expensive than just inserting-or-ignoring them.
-                let words = search::vocab_words(rows.iter().map(|row| row.sort_name.as_str()));
-
-                let added = diesel::insert_or_ignore_into(dsl::games)
-                    .values(rows)
-                    .execute(conn)?;
-                inserted += added;
-
-                if added > 0 {
-                    search::index_vocab(conn, words)?;
-                }
-            }
-            Ok(inserted)
+            Ok(SyncSummary {
+                inserted,
+                restored: changed.len() - removed,
+                removed,
+            })
         })
     }
 
@@ -72,7 +71,7 @@ impl GameRepository for SqliteStorage {
 
         let id = to_row_id(id);
         let mut conn = self.conn()?;
-        let row: Option<(GameRow, Option<ArtworkRow>)> = with_cover()
+        let row: Option<(GameRow, Option<ArtworkRow>)> = visible_with_cover()
             .filter(dsl::id.eq(id))
             .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
             .first(&mut conn)
@@ -107,7 +106,7 @@ impl GameRepository for SqliteStorage {
         let mut by_id: HashMap<i64, GameListItem> = HashMap::with_capacity(ids.len());
         for chunk in ids.chunks(CHUNK_SIZE) {
             let row_ids: Vec<i64> = chunk.iter().map(|&id| to_row_id(id)).collect();
-            let rows: Vec<(GameRow, Option<ArtworkRow>)> = with_cover()
+            let rows: Vec<(GameRow, Option<ArtworkRow>)> = visible_with_cover()
                 .filter(dsl::id.eq_any(row_ids))
                 .select((GameRow::as_select(), Option::<ArtworkRow>::as_select()))
                 .load(&mut conn)?;
@@ -139,6 +138,7 @@ impl GameRepository for SqliteStorage {
                     .eq(dsl::id)
                     .and(artwork::kind.eq(kind.as_ref()))),
             )
+            .filter(not(dsl::removed))
             // TODO: when per-kind source URLs exist, filter on that
             .filter(dsl::cover_url.is_not_null())
             .filter(artwork::game_id.is_null())
@@ -155,6 +155,53 @@ impl GameRepository for SqliteStorage {
     }
 }
 
+fn insert_new(conn: &mut SqliteConnection, games: &[NewGame]) -> QueryResult<usize> {
+    let mut inserted = 0;
+    for chunk in games.chunks(CHUNK_SIZE) {
+        let rows: Vec<NewGameRow> = chunk.iter().map(NewGameRow::from).collect();
+
+        // Extract words before insert consumes them to avoid folding them again.
+        // For ignored/duplicate rows, we don't check if words are already in the vocabulary
+        // as identifying them is more expensive than just inserting-or-ignoring them.
+        let words = search::vocab_words(rows.iter().map(|row| row.sort_name.as_str()));
+
+        let added = diesel::insert_or_ignore_into(games::table)
+            .values(rows)
+            .execute(conn)?;
+        inserted += added;
+
+        if added > 0 {
+            search::index_vocab(conn, words)?;
+        }
+    }
+    Ok(inserted)
+}
+
+fn update_removed(
+    conn: &mut SqliteConnection,
+    source_id: &str,
+    lookup_ids: &str,
+) -> QueryResult<Vec<bool>> {
+    #[derive(diesel::QueryableByName)]
+    struct ChangedRow {
+        #[diesel(sql_type = Bool)]
+        removed: bool,
+    }
+
+    let rows = diesel::sql_query(
+        "UPDATE games \
+         SET removed = NOT removed \
+         WHERE source_id = ? \
+           AND removed = (lookup_id IN (SELECT value FROM json_each(?))) \
+         RETURNING removed",
+    )
+    .bind::<Text, _>(source_id)
+    .bind::<Text, _>(lookup_ids)
+    .load::<ChangedRow>(conn)?;
+
+    Ok(rows.into_iter().map(|row| row.removed).collect())
+}
+
 fn browse(conn: &mut SqliteConnection) -> Result<GameIndex> {
     #[derive(diesel::QueryableByName)]
     struct BrowseRow {
@@ -167,6 +214,7 @@ fn browse(conn: &mut SqliteConnection) -> Result<GameIndex> {
     let rows = diesel::sql_query(
         "SELECT id, sort_name \
          FROM games \
+         WHERE removed = FALSE \
          ORDER BY (sort_name GLOB '[a-z]*'), sort_name, id",
     )
     .load::<BrowseRow>(conn)?;
@@ -196,8 +244,9 @@ fn cover(game_id: i64, row: Option<ArtworkRow>) -> Option<Artwork> {
 }
 
 #[diesel::dsl::auto_type]
-fn with_cover() -> _ {
+fn visible_with_cover() -> _ {
     let cover: &'static str = ArtworkKind::Cover.as_ref();
     games::table
         .left_join(artwork::table.on(artwork::game_id.eq(games::id).and(artwork::kind.eq(cover))))
+        .filter(not(games::removed))
 }

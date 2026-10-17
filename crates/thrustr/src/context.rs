@@ -2,6 +2,7 @@ use event::Topic;
 use futures::future;
 use gpui::{AppContext, Context, Task, Window};
 use std::future::Future;
+use tokio::sync::watch::Receiver;
 
 /// Extension trait for common task spawning operations.
 pub trait SpawnTaskExt<T: 'static> {
@@ -84,6 +85,14 @@ pub trait EventListenerExt<T: 'static> {
         topics: &[Topic],
         handler: impl Fn(&mut T, &mut Context<T>) + 'static,
     ) -> Task<()>;
+
+    /// Like [`EventListenerExt::listen_any`], but the handler also receives the window.
+    fn listen_any_in(
+        &mut self,
+        window: &Window,
+        topics: &[Topic],
+        handler: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
+    ) -> Task<()>;
 }
 
 impl<'a, T: 'static> EventListenerExt<T> for Context<'a, T> {
@@ -100,19 +109,39 @@ impl<'a, T: 'static> EventListenerExt<T> for Context<'a, T> {
         topics: &[Topic],
         handler: impl Fn(&mut T, &mut Context<T>) + 'static,
     ) -> Task<()> {
-        let mut receivers: Vec<_> = topics.iter().map(|&topic| event::listen(topic)).collect();
+        let mut receivers = listen_all(topics);
         self.spawn(async move |entity, cx| {
-            if receivers.is_empty() {
-                return;
-            }
-            loop {
-                let changed = receivers.iter_mut().map(|r| Box::pin(r.changed()));
-                let (result, ..) = future::select_all(changed).await;
-                if result.is_err() {
-                    break;
-                }
+            while next_change(&mut receivers).await {
                 let _ = entity.update(cx, &handler);
             }
         })
     }
+
+    fn listen_any_in(
+        &mut self,
+        window: &Window,
+        topics: &[Topic],
+        handler: impl Fn(&mut T, &mut Window, &mut Context<T>) + 'static,
+    ) -> Task<()> {
+        let mut receivers = listen_all(topics);
+        self.spawn_in(window, async move |entity, cx| {
+            while next_change(&mut receivers).await {
+                let _ = entity.update_in(cx, |this, window, cx| handler(this, window, cx));
+            }
+        })
+    }
+}
+
+fn listen_all(topics: &[Topic]) -> Vec<Receiver<()>> {
+    topics.iter().map(|&topic| event::listen(topic)).collect()
+}
+
+/// Waits for any of `receivers` to change, returning `false` once one closes.
+async fn next_change(receivers: &mut [Receiver<()>]) -> bool {
+    if receivers.is_empty() {
+        return false;
+    }
+    let changed = receivers.iter_mut().map(|r| Box::pin(r.changed()));
+    let (result, ..) = future::select_all(changed).await;
+    result.is_ok()
 }

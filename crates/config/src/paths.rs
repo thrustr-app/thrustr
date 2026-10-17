@@ -14,7 +14,7 @@ pub fn data_dir() -> &'static Path {
 }
 
 pub fn db_path() -> PathBuf {
-    data_dir().join("database").join(DB_NAME)
+    data_dir().join(DB_NAME)
 }
 
 pub fn logs_dir() -> PathBuf {

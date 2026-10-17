@@ -1,0 +1,9 @@
+plugin:
+  id: itchio
+  name: itch.io
+  version: "0.1.0"
+  authors:
+    - Thrustr
+  description: Plugin to interact with itch.io.
+  allowed-hosts:
+    - api.itch.io
