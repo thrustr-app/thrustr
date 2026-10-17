@@ -145,11 +145,25 @@ impl GameIndex {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SyncSummary {
+    pub inserted: usize,
+    pub restored: usize,
+    pub removed: usize,
+}
+
+impl SyncSummary {
+    pub fn changed(&self) -> bool {
+        *self != Self::default()
+    }
+}
+
 pub trait GameRepository: Send + Sync {
     /// `None` if the game already exists.
     fn insert(&self, game: &NewGame) -> Result<Option<Game>>;
 
-    fn insert_many(&self, games: &[NewGame]) -> Result<usize>;
+    /// Inserts `games` and marks missing ones as removed.
+    fn sync(&self, source_id: &str, games: &[NewGame]) -> Result<SyncSummary>;
 
     fn get(&self, id: GameId) -> Result<Option<Game>>;
 

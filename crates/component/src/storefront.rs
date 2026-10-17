@@ -5,7 +5,7 @@ use crate::{
 use dashmap::DashMap;
 use domain::{
     component::{Storefront, StorefrontOperation},
-    game::{Game, GameId, GameVersion, GameVersionDetails, NewGame},
+    game::{Game, GameId, GameVersion, GameVersionDetails, NewGame, SyncSummary},
 };
 use event::Topic;
 use runtime::clock::Moment;
@@ -44,24 +44,27 @@ impl StorefrontHandle {
         };
 
         let listed = games.len();
-        let inserted = match games.is_empty() {
-            true => 0,
-            false => self.store_games(games).await?,
-        };
+        let summary = self.store_games(games).await?;
         permit.finish(Ok(())).await?;
 
         info!(
             component = self.component.id(),
-            listed, inserted, "games synced"
+            listed,
+            inserted = summary.inserted,
+            restored = summary.restored,
+            removed = summary.removed,
+            "games synced"
         );
 
-        if inserted == 0 {
+        if !summary.changed() {
             return Ok(());
         }
 
         event::emit(Topic::Games);
 
-        self.component.context().artwork_service.trigger_backfill();
+        if summary.inserted > 0 || summary.restored > 0 {
+            self.component.context().artwork_service.trigger_backfill();
+        }
 
         Ok(())
     }
@@ -129,20 +132,21 @@ impl StorefrontHandle {
         Ok(game)
     }
 
-    async fn store_games(&self, games: Vec<NewGame>) -> Result<usize> {
+    async fn store_games(&self, games: Vec<NewGame>) -> Result<SyncSummary> {
         let repository = self.component.context().game_repository.clone();
-        let inserted = self
+        let source_id = self.component.id().to_owned();
+        let summary = self
             .component
             .context()
             .tokio_handle
-            .spawn_blocking(move || repository.insert_many(&games))
+            .spawn_blocking(move || repository.sync(&source_id, &games))
             .await
             .map_err(anyhow::Error::from)?
             .inspect_err(
                 |e| warn!(component = self.component.id(), error = %e, "storing games failed"),
             )?;
 
-        Ok(inserted)
+        Ok(summary)
     }
 }
 

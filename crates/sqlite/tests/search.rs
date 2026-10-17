@@ -21,7 +21,7 @@ fn library(names: &[&str]) -> (TempDir, SqliteStorage) {
             description: None,
         })
         .collect();
-    storage.insert_many(&games).unwrap();
+    storage.sync("test", &games).unwrap();
 
     (dir, storage)
 }

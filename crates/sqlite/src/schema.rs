@@ -10,6 +10,7 @@ diesel::table! {
         cover_url -> Nullable<Text>,
         summary -> Nullable<Text>,
         description -> Nullable<Text>,
+        removed -> Bool,
     }
 }
 
