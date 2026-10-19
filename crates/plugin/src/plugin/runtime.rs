@@ -1,7 +1,7 @@
 use crate::plugin::{PluginCache, PluginState};
 use crate::wit::{export_name, thrustr::plugin::types::Error as PluginError};
 use component::ComponentLink;
-use domain::component::{ComponentStorage, Error as ComponentError};
+use domain::component::{ComponentStorage, ConfigSchema, Error as ComponentError};
 use reqwest::Client;
 use runtime::TokioHandle;
 use std::sync::Arc;
@@ -23,6 +23,7 @@ pub struct PluginRuntime {
     pub http_client: Client,
     pub link: ComponentLink,
     pub cache: Arc<PluginCache>,
+    pub config_schema: Option<Arc<ConfigSchema>>,
 }
 
 impl PluginRuntime {
@@ -62,6 +63,7 @@ impl PluginRuntime {
                     runtime.allowed_hosts.clone(),
                     runtime.link.clone(),
                     runtime.cache.clone(),
+                    runtime.config_schema.clone(),
                 );
                 let mut store = Store::new(&runtime.engine, state);
 

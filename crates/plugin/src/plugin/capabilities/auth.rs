@@ -78,7 +78,12 @@ impl From<LoginRequest> for PluginLoginRequest {
             LoginRequest::Flow { url, body } => {
                 PluginLoginRequest::Flow(LoginCallback { url, body })
             }
-            LoginRequest::Form { fields } => PluginLoginRequest::Form(PluginLoginForm { fields }),
+            LoginRequest::Form { fields } => PluginLoginRequest::Form(PluginLoginForm {
+                fields: fields
+                    .into_iter()
+                    .map(|(id, value)| (id, value.into()))
+                    .collect(),
+            }),
         }
     }
 }

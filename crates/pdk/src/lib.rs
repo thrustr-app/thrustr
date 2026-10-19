@@ -65,20 +65,42 @@ pub use wit::auth::exports::thrustr::plugin::auth::{
     LoginCallback, LoginFlow, LoginForm, LoginRequest,
 };
 pub use wit::plugin::thrustr::plugin::types::{
-    Error, Game, GameVersion, GameVersionDetails, Platform,
+    Error, FieldValue, Game, GameVersion, GameVersionDetails, Platform,
 };
 
 impl Error {
+    /// Credentials are missing, expired or rejected. Deactivates the plugin
+    /// until the user logs in again.
     pub fn auth(message: impl Into<String>) -> Self {
         Error::Auth(message.into())
     }
 
+    /// The user's configuration is invalid, e.g. a path that doesn't exist.
+    /// Deactivates the plugin until the user saves its configuration again.
     pub fn config(message: impl Into<String>) -> Self {
         Error::Config(message.into())
     }
 
+    /// Anything else, such as network failures or bugs. The plugin stays
+    /// active.
     pub fn other(message: impl Into<String>) -> Self {
         Error::Other(message.into())
+    }
+}
+
+impl FieldValue {
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            FieldValue::Text(text) => Some(text),
+            FieldValue::List(_) => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&[String]> {
+        match self {
+            FieldValue::Text(_) => None,
+            FieldValue::List(values) => Some(values),
+        }
     }
 }
 
@@ -118,7 +140,7 @@ pub trait Auth: Plugin + __private::Exported<__private::Auth> {
 
 #[allow(unused_variables)]
 pub trait Config: Plugin + __private::Exported<__private::Config> {
-    fn validate(fields: BTreeMap<String, String>) -> impl Future<Output = Result<(), Error>> {
+    fn validate(fields: BTreeMap<String, FieldValue>) -> impl Future<Output = Result<(), Error>> {
         async { Ok(()) }
     }
 }
@@ -192,8 +214,8 @@ macro_rules! __export {
 
             impl $crate::wit::config::exports::thrustr::plugin::config::Guest for Guest {
                 async fn validate(
-                    fields: ::std::collections::BTreeMap<String, String>,
-                ) -> Result<(), $crate::Error> {
+                    fields: ::std::collections::BTreeMap<String, $crate::FieldValue>,
+                ) -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Config>::validate(fields).await
                 }
             }

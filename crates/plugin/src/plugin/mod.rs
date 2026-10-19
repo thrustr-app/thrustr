@@ -1,9 +1,9 @@
 use crate::wit::exports::thrustr::plugin::base;
-use crate::wit::thrustr::plugin::types::Error as PluginError;
+use crate::wit::thrustr::plugin::types::{Error as PluginError, FieldValue as PluginFieldValue};
 use async_trait::async_trait;
 use domain::component::{
-    Auth, Component, Config, Error as ComponentError, Image, Metadata, Origin, Scheduler,
-    Storefront,
+    Auth, Component, Config, Error as ComponentError, FieldValue, Image, Metadata, Origin,
+    Scheduler, Storefront,
 };
 use std::sync::Arc;
 
@@ -74,6 +74,15 @@ impl From<PluginError> for ComponentError {
             PluginError::Auth(msg) => ComponentError::Auth(msg),
             PluginError::Config(msg) => ComponentError::Config(msg),
             PluginError::Other(msg) => ComponentError::Other(msg),
+        }
+    }
+}
+
+impl From<FieldValue> for PluginFieldValue {
+    fn from(value: FieldValue) -> Self {
+        match value {
+            FieldValue::Text(text) => PluginFieldValue::Text(text),
+            FieldValue::List(values) => PluginFieldValue::List(values),
         }
     }
 }

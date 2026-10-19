@@ -2,8 +2,8 @@ use pdk::Error;
 use serde::{
     Deserialize, Deserializer,
     de::{
-        self, DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor,
-        value::SeqAccessDeserializer,
+        self, DeserializeOwned, IgnoredAny, IntoDeserializer, MapAccess, SeqAccess, Visitor,
+        value::{SeqAccessDeserializer, StrDeserializer},
     },
 };
 use std::{fmt, marker::PhantomData};
@@ -99,14 +99,27 @@ pub struct OwnedGame {
     pub still_cover_url: Option<String>,
 }
 
-#[derive(Deserialize, Default, PartialEq, Eq)]
+#[derive(Deserialize, Default, PartialEq, Eq, Hash, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum Classification {
     #[default]
     Game,
     Tool,
+    Assets,
+    GameMod,
+    PhysicalGame,
+    Soundtrack,
+    Comic,
+    Book,
     #[serde(other)]
     Other,
+}
+
+impl Classification {
+    pub fn parse(value: &str) -> Self {
+        let deserializer: StrDeserializer<'_, de::value::Error> = value.into_deserializer();
+        Self::deserialize(deserializer).unwrap_or(Self::Other)
+    }
 }
 
 fn list_or_empty_object<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>

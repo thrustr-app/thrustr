@@ -1,7 +1,7 @@
 package thrustr:plugin@0.1.0;
 
 interface auth {
-    use types.{error};
+    use types.{error, field-value};
 
     record login-flow {
         url: string,
@@ -14,7 +14,7 @@ interface auth {
     }
 
     record login-form {
-        fields: map<string, string>,
+        fields: map<string, field-value>,
     }
 
     variant login-request {

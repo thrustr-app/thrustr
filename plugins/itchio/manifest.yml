@@ -7,3 +7,26 @@ plugin:
   description: Plugin to interact with itch.io.
   allowed-hosts:
     - api.itch.io
+
+config:
+  sections:
+    - name: Library
+      elements:
+        - type: combobox
+          id: classifications
+          label: Project types
+          description: Only projects of these types are imported into the library.
+          placeholder: Select project types
+          multiple: true
+          required: true
+          default: [game]
+          options:
+            - { value: game, label: Games }
+            - { value: tool, label: Tools }
+            - { value: assets, label: Assets }
+            - { value: game_mod, label: Game mods }
+            - { value: physical_game, label: Physical games }
+            - { value: soundtrack, label: Soundtracks }
+            - { value: comic, label: Comics }
+            - { value: book, label: Books }
+            - { value: other, label: Other }

@@ -1,5 +1,6 @@
 use crate::schema::{component_config, component_data};
 use diesel::prelude::*;
+use serde_json::Value;
 
 #[derive(Insertable)]
 #[diesel(table_name = component_data)]
@@ -15,5 +16,5 @@ pub struct NewComponentDataRow<'a> {
 pub struct NewComponentConfigRow<'a> {
     pub component_id: &'a str,
     pub field_id: &'a str,
-    pub value: &'a str,
+    pub value: Value,
 }

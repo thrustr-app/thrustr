@@ -24,7 +24,7 @@ CREATE TABLE component_data (
 CREATE TABLE component_config (
   component_id TEXT NOT NULL,
   field_id TEXT NOT NULL,
-  value TEXT NOT NULL,
+  value JSON NOT NULL,
   PRIMARY KEY (component_id, field_id)
 ) WITHOUT ROWID;
 

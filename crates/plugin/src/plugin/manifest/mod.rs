@@ -3,10 +3,14 @@ use semver::Version;
 use serde::Deserialize;
 use std::sync::Arc;
 
+mod form;
+
 #[derive(Deserialize, Debug)]
 pub struct PluginManifest {
     pub plugin: PluginInfo,
+    #[serde(default, deserialize_with = "form::login_form")]
     pub auth: Option<LoginForm>,
+    #[serde(default, deserialize_with = "form::config_schema")]
     pub config: Option<ConfigSchema>,
 }
 

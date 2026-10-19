@@ -2,13 +2,13 @@ use crate::plugin::{PluginRuntime, guest_call};
 use crate::wit::exports::thrustr::plugin::config;
 use anyhow::bail;
 use async_trait::async_trait;
-use domain::component::{Config, ConfigSchema, Error};
+use domain::component::{Config, ConfigSchema, Error, FieldValue};
 use std::{collections::HashMap, sync::Arc};
 
 pub struct PluginConfig {
     runtime: Arc<PluginRuntime>,
     indices: config::GuestIndices,
-    schema: ConfigSchema,
+    schema: Arc<ConfigSchema>,
 }
 
 impl PluginConfig {
@@ -16,7 +16,7 @@ impl PluginConfig {
     // schema alone is present, since `validate` already defaults to Ok(()).
     pub fn resolve(
         runtime: &Arc<PluginRuntime>,
-        schema: Option<ConfigSchema>,
+        schema: Option<Arc<ConfigSchema>>,
     ) -> anyhow::Result<Option<Self>> {
         let indices = runtime.export("config", config::GuestIndices::new)?;
         Ok(pair(indices, schema)?.map(|(indices, schema)| Self {
@@ -44,7 +44,11 @@ impl Config for PluginConfig {
         &self.schema
     }
 
-    async fn validate(&self, fields: HashMap<String, String>) -> Result<(), Error> {
+    async fn validate(&self, fields: HashMap<String, FieldValue>) -> Result<(), Error> {
+        let fields = fields
+            .into_iter()
+            .map(|(id, value)| (id, value.into()))
+            .collect();
         guest_call!(self.runtime, self.indices, |config, accessor| {
             config.call_validate(accessor, fields)
         })

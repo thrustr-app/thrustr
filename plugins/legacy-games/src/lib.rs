@@ -1,8 +1,8 @@
 use crate::api::Product;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use pdk::{
-    Auth, Error, Game, GameVersion, GameVersionDetails, LoginRequest, Platform, Plugin, Storefront,
-    kv_store::KvStore,
+    Auth, Error, FieldValue, Game, GameVersion, GameVersionDetails, LoginRequest, Platform, Plugin,
+    Storefront, kv_store::KvStore,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -41,10 +41,15 @@ impl Auth for LegacyGames {
         let email = form
             .fields
             .get("email")
-            .ok_or(Error::auth("email is mandatory"))?
-            .clone();
+            .and_then(FieldValue::as_text)
+            .ok_or_else(|| Error::auth("email is mandatory"))?
+            .to_owned();
 
-        let password = form.fields.get("password").filter(|p| !p.is_empty());
+        let password = form
+            .fields
+            .get("password")
+            .and_then(FieldValue::as_text)
+            .filter(|p| !p.is_empty());
 
         let account = match password {
             Some(password) => {

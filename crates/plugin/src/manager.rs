@@ -86,6 +86,8 @@ impl PluginManager {
             })
             .await??;
 
+        let config_schema = config_schema.map(Arc::new);
+
         let runtime = Arc::new(PluginRuntime {
             id: info.id.clone(),
             allowed_hosts: info.allowed_hosts.clone(),
@@ -96,6 +98,7 @@ impl PluginManager {
             http_client: self.http_client.clone(),
             link,
             cache: Arc::new(PluginCache::new()),
+            config_schema: config_schema.clone(),
         });
 
         let base = base::GuestIndices::new(&runtime.pre).map_err(|e| {

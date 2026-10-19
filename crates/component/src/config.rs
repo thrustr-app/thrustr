@@ -2,7 +2,7 @@ use crate::{
     ComponentHandle,
     handle::{Permit, Result},
 };
-use domain::component::{Config, ConfigOperation, ConfigSchema, Form};
+use domain::component::{Config, ConfigOperation, ConfigSchema, FieldValue, Form};
 use std::{collections::HashMap, sync::Arc};
 use tracing::{info, warn};
 
@@ -25,16 +25,17 @@ impl ConfigHandle {
         self.config.schema()
     }
 
-    pub fn values(&self) -> Result<HashMap<String, String>> {
-        Ok(self
+    pub fn values(&self) -> Result<HashMap<String, FieldValue>> {
+        let stored = self
             .component
             .context()
             .component_storage
-            .get_config_values(self.component.id())?)
+            .get_config_values(self.component.id())?;
+        Ok(self.schema().resolve(stored))
     }
 
-    pub async fn save(&self, mut fields: HashMap<String, String>) -> Result<()> {
-        self.schema().check(&mut fields)?;
+    pub async fn save(&self, mut fields: HashMap<String, FieldValue>) -> Result<()> {
+        self.schema().retain_valid(&mut fields)?;
         let permit = Permit::begin(&self.component, ConfigOperation::Save)?;
 
         let result = self.config.validate(fields.clone()).await;

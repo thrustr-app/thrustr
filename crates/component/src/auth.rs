@@ -58,7 +58,7 @@ impl LoginPermit {
     pub async fn login(self, mut request: LoginRequest) -> Result<()> {
         if let LoginRequest::Form { fields } = &mut request {
             let form = self.auth.login_form().ok_or(OperationError::NoLoginForm)?;
-            form.check(fields)?;
+            form.retain_valid(fields)?;
         }
 
         let result = self.auth.login(request).await;

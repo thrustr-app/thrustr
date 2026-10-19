@@ -1,6 +1,7 @@
-use crate::component::{Error, Form, FormElement, Operation};
+use crate::component::{
+    Error, FieldValue, Form, FormElement, InvalidFormError, Operation, form::unique_ids,
+};
 use async_trait::async_trait;
-use serde::Deserialize;
 use std::collections::HashMap;
 use strum::Display;
 
@@ -28,7 +29,7 @@ pub trait Auth: Send + Sync {
 #[derive(Debug, Clone)]
 pub enum LoginRequest {
     Flow { url: String, body: String },
-    Form { fields: HashMap<String, String> },
+    Form { fields: HashMap<String, FieldValue> },
 }
 
 #[derive(Debug, Clone)]
@@ -37,9 +38,16 @@ pub enum LoginMethod {
     Form(LoginForm),
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct LoginForm {
-    pub elements: Vec<FormElement>,
+    elements: Vec<FormElement>,
+}
+
+impl LoginForm {
+    pub fn new(elements: Vec<FormElement>) -> Result<Self, InvalidFormError> {
+        unique_ids(elements.as_slice())?;
+        Ok(Self { elements })
+    }
 }
 
 impl Form for LoginForm {

@@ -1,7 +1,7 @@
 use api::Classification;
 use pdk::{
-    Auth, Error, Game, GameVersion, GameVersionDetails, LoginFlow, LoginRequest, Plugin,
-    Storefront, kv_store::KvStore,
+    Auth, Config, Error, Game, GameVersion, GameVersionDetails, LoginFlow, LoginRequest, Plugin,
+    Storefront, config::Config as ConfigStore, kv_store::KvStore,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -11,6 +11,7 @@ mod oauth;
 type Result<T> = std::result::Result<T, Error>;
 
 const API_KEY: &str = "api_key";
+const CLASSIFICATIONS: &str = "classifications";
 
 pub struct Itchio;
 
@@ -44,8 +45,12 @@ impl Auth for Itchio {
 }
 
 #[pdk::export]
+impl Config for Itchio {}
+
+#[pdk::export]
 impl Storefront for Itchio {
     async fn list_games() -> Result<Vec<Game>> {
+        let classifications = classifications()?;
         let keys = api::owned_keys(&api_key()?).await?;
 
         let mut seen = HashSet::new();
@@ -53,7 +58,7 @@ impl Storefront for Itchio {
         Ok(keys
             .into_iter()
             .filter_map(|key| key.game)
-            .filter(|game| matches!(game.classification, Classification::Game))
+            .filter(|game| classifications.contains(&game.classification))
             .filter(|game| seen.insert(game.id))
             .map(|game| Game {
                 name: game.title,
@@ -77,6 +82,13 @@ impl Storefront for Itchio {
 
 fn api_key() -> Result<String> {
     KvStore::get(API_KEY)?.ok_or(Error::auth("not logged in"))
+}
+
+fn classifications() -> Result<HashSet<Classification>> {
+    Ok(ConfigStore::get_list(CLASSIFICATIONS)?
+        .iter()
+        .map(|value| Classification::parse(value))
+        .collect())
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {

@@ -32,7 +32,11 @@ impl KvStore {
         kv_store::delete(key)
     }
 
-    pub fn list(prefix: Option<&str>) -> Result<Vec<String>, Error> {
+    pub fn list() -> Result<Vec<String>, Error> {
+        kv_store::list("")
+    }
+
+    pub fn list_with_prefix(prefix: &str) -> Result<Vec<String>, Error> {
         kv_store::list(prefix)
     }
 }

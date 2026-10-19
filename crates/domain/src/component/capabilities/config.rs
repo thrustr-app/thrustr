@@ -1,6 +1,7 @@
-use crate::component::{Error, Form, FormElement, Operation};
+use crate::component::{
+    Error, FieldValue, Form, FormElement, InvalidFormError, Operation, form::unique_ids,
+};
 use async_trait::async_trait;
-use serde::Deserialize;
 use std::collections::HashMap;
 use strum::Display;
 
@@ -20,15 +21,27 @@ impl From<ConfigOperation> for Operation {
 #[async_trait]
 pub trait Config: Send + Sync {
     fn schema(&self) -> &ConfigSchema;
-    async fn validate(&self, fields: HashMap<String, String>) -> Result<(), Error>;
+    async fn validate(&self, fields: HashMap<String, FieldValue>) -> Result<(), Error>;
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ConfigSchema {
-    pub sections: Vec<ConfigSection>,
+    sections: Vec<ConfigSection>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+impl ConfigSchema {
+    pub fn new(sections: Vec<ConfigSection>) -> Result<Self, InvalidFormError> {
+        let schema = Self { sections };
+        unique_ids(&schema)?;
+        Ok(schema)
+    }
+
+    pub fn sections(&self) -> &[ConfigSection] {
+        &self.sections
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct ConfigSection {
     pub name: String,
     pub elements: Vec<FormElement>,
@@ -45,25 +58,39 @@ impl Form for ConfigSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::component::form::tests::{optional, required};
+    use crate::component::form::tests::{optional, required, t};
 
-    #[test]
-    fn fields_are_collected_from_every_section() {
-        let config = ConfigSchema {
-            sections: [vec![optional("region")], vec![required("port")]]
+    fn schema<const N: usize>(
+        sections: [Vec<FormElement>; N],
+    ) -> Result<ConfigSchema, InvalidFormError> {
+        ConfigSchema::new(
+            sections
                 .into_iter()
                 .map(|elements| ConfigSection {
                     name: "section".to_owned(),
                     elements,
                 })
                 .collect(),
-        };
+        )
+    }
 
-        let mut values = HashMap::from([("region".to_owned(), "eu".to_owned())]);
-        assert_eq!(config.check(&mut values).unwrap_err().id, "port");
+    #[test]
+    fn field_ids_are_unique() {
+        assert_eq!(
+            schema([vec![optional("port")], vec![required("port")]]).unwrap_err(),
+            InvalidFormError::DuplicateField("port".to_owned())
+        );
+    }
 
-        values.insert("port".to_owned(), "8080".to_owned());
-        assert_eq!(config.check(&mut values), Ok(()));
+    #[test]
+    fn fields_are_collected_from_every_section() {
+        let config = schema([vec![optional("region")], vec![required("port")]]).unwrap();
+
+        let mut values = HashMap::from([("region".to_owned(), t("eu"))]);
+        assert_eq!(config.retain_valid(&mut values).unwrap_err().id, "port");
+
+        values.insert("port".to_owned(), t("8080"));
+        assert_eq!(config.retain_valid(&mut values), Ok(()));
         assert_eq!(values.len(), 2);
     }
 }
