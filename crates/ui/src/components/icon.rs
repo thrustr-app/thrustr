@@ -37,6 +37,7 @@ icon_constructors! {
     menu => "icons/menu.svg",
     minimize => "icons/minimize.svg",
     plugin => "icons/plugin.svg",
+    refresh => "icons/refresh.svg",
     restore => "icons/restore.svg",
     search => "icons/search.svg",
     settings => "icons/settings.svg",

@@ -1224,6 +1224,7 @@ dependencies = [
  "dashmap",
  "domain",
  "event",
+ "futures",
  "runtime",
  "strum",
  "thiserror 2.0.21",

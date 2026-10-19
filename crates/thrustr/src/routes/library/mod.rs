@@ -2,19 +2,19 @@ use super::{ROUTE_PADDING, Route, cover_path};
 use crate::{
     adapters::ColorExt,
     context::{EventListenerExt, SpawnTaskExt},
-    globals::{ArtworkServiceExt, GameServiceExt},
+    globals::{ArtworkServiceExt, ComponentRegistryExt, GameServiceExt},
     navigation::{NavigatorExt, Page},
 };
 use artwork::ArtworkReady;
 use cache::{LruImageCache, lru_image_cache};
 use card::{GameCard, GameEntry};
-use domain::{game::GameId, section_index::SectionIndex};
+use domain::{component::StorefrontOperation, game::GameId, section_index::SectionIndex};
 use event::Topic;
 use gpui::{
     AnyElement, App, AppContext, Context, Div, Entity, FocusHandle, InteractiveElement,
     IntoElement, ParentElement, Pixels, Point, Rems, Render, Resource, ScrollHandle,
     ScrollStrategy, SharedString, Styled, Subscription, Task, UniformListScrollHandle, Window,
-    container_query, div, px, rems, uniform_list,
+    container_query, div, prelude::FluentBuilder, px, rems, uniform_list,
 };
 use grid::{GridDims, GridMetrics};
 use lru::LruCache;
@@ -25,9 +25,9 @@ use theme::ThemeExt;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
-    Activate, GRID_CONTEXT, GridDir, Icon, Input, InputEvent, InputState, ListScrollbar,
+    Activate, Button, GRID_CONTEXT, GridDir, Icon, Input, InputEvent, InputState, ListScrollbar,
     SCROLLBAR_WIDTH, ScrollbarState, Scrubber, SelectDown, SelectLeft, SelectRight, SelectUp,
-    WithRadius, WithSize, grid_step, scrubber_position,
+    WithRadius, WithSize, WithVariant, grid_step, scrubber_position,
 };
 
 mod cache;
@@ -96,6 +96,8 @@ pub struct Library {
     loading_chunks: HashMap<usize, Task<()>>,
     search: Entity<InputState>,
     _search_debounce: Option<Task<()>>,
+    syncing: bool,
+    can_sync: bool,
     image_cache: Entity<LruImageCache>,
     focus_handle: FocusHandle,
     _focus_subscription: Subscription,
@@ -156,6 +158,8 @@ impl Route for Library {
             loading_chunks: HashMap::new(),
             search,
             _search_debounce: None,
+            syncing: false,
+            can_sync: false,
             image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
             focus_handle,
             _focus_subscription: focus_subscription,
@@ -168,7 +172,17 @@ impl Route for Library {
         page._tasks.push(task);
 
         // To refresh the component icons used by game cards.
-        let task = cx.listen(Topic::ComponentRegistered, |_, cx| cx.notify());
+        let task = cx.listen(Topic::ComponentRegistered, |this, cx| {
+            this.refresh_sync_state(cx);
+            cx.notify();
+        });
+        page._tasks.push(task);
+
+        let task = cx.listen(Topic::ComponentState, |this, cx| {
+            if this.refresh_sync_state(cx) {
+                cx.notify();
+            }
+        });
         page._tasks.push(task);
 
         let mut artwork_rx = cx.artwork_service().subscribe();
@@ -187,6 +201,7 @@ impl Route for Library {
         });
         page._tasks.push(artwork_task);
 
+        page.refresh_sync_state(cx);
         page.refresh_games(cx);
 
         if page.is_restoring() {
@@ -197,12 +212,33 @@ impl Route for Library {
 
     fn header(&self, _: &Entity<Self>, _cx: &App) -> Option<AnyElement> {
         Some(
-            Input::new(&self.search)
-                .leading_icon(Icon::search())
-                .radius_pill()
-                .size_lg()
-                .clear_button()
-                .w(rems(28.))
+            div()
+                .flex()
+                .items_center()
+                .gap(rems(0.5))
+                .child(
+                    Input::new(&self.search)
+                        .leading_icon(Icon::search())
+                        .radius_pill()
+                        .size_lg()
+                        .clear_button()
+                        .w(rems(28.)),
+                )
+                .child(
+                    Button::icon(
+                        "sync-storefronts",
+                        Icon::refresh().when(self.syncing, Icon::spin),
+                    )
+                    .variant_field()
+                    .radius_pill()
+                    .size_lg()
+                    .when(!self.can_sync, Button::disabled)
+                    .on_click(|_, _, cx| {
+                        let registry = cx.component_registry();
+                        cx.background_spawn(async move { registry.sync_storefronts().await })
+                            .detach();
+                    }),
+                )
                 .into_any_element(),
         )
     }
@@ -224,6 +260,22 @@ impl Route for Library {
 }
 
 impl Library {
+    /// Returns whether the sync state changed.
+    fn refresh_sync_state(&mut self, cx: &App) -> bool {
+        let storefronts = cx.storefronts();
+        let syncing = storefronts
+            .iter()
+            .any(|s| s.component().is_running(StorefrontOperation::Sync));
+        let can_sync = storefronts
+            .iter()
+            .any(|s| s.component().can(StorefrontOperation::Sync));
+
+        let changed = (syncing, can_sync) != (self.syncing, self.can_sync);
+        self.syncing = syncing;
+        self.can_sync = can_sync;
+        changed
+    }
+
     fn cols(&self) -> usize {
         self.num_cols.get().max(1)
     }
