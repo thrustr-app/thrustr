@@ -11,9 +11,10 @@ use gpui::{
 };
 use std::mem;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ComboboxEvent {
-    Change,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComboboxEvent<T> {
+    /// The selected values, in selection order.
+    Change(Vec<T>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -23,16 +24,15 @@ pub enum SelectionMode {
     Multiple,
 }
 
-pub struct ComboboxState {
+pub struct ComboboxState<T> {
     pub(super) input: Entity<InputState>,
     pub(super) list: UniformListScrollHandle,
     pub(super) scrollbar: Entity<ScrollbarState>,
     pub(super) bounds: Bounds<Pixels>,
-    pub(super) items: Vec<SharedString>,
-    /// Lowercased `items`.
+    pub(super) items: Vec<(T, SharedString)>,
+    /// Lowercased `items` labels.
     keys: Vec<String>,
-    pub(super) values: Vec<SharedString>,
-    selected: Vec<usize>,
+    pub(super) selected: Vec<usize>,
     placeholder: SharedString,
     /// Lowercased search text.
     query: String,
@@ -50,9 +50,9 @@ pub struct ComboboxState {
     _subscriptions: [Subscription; 2],
 }
 
-impl EventEmitter<ComboboxEvent> for ComboboxState {}
+impl<T: 'static> EventEmitter<ComboboxEvent<T>> for ComboboxState<T> {}
 
-impl ComboboxState {
+impl<T: Clone + PartialEq + 'static> ComboboxState<T> {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self::new_with_mode(SelectionMode::Single, window, cx)
     }
@@ -87,7 +87,6 @@ impl ComboboxState {
             bounds: Bounds::default(),
             items: Vec::new(),
             keys: Vec::new(),
-            values: Vec::new(),
             selected: Vec::new(),
             placeholder: SharedString::default(),
             query: String::new(),
@@ -107,40 +106,31 @@ impl ComboboxState {
         self.mode
     }
 
-    pub fn value(&self) -> Option<&SharedString> {
-        self.values.first()
+    pub fn value(&self) -> Option<&T> {
+        self.values().next()
     }
 
-    pub fn values(&self) -> &[SharedString] {
-        &self.values
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.selected.iter().map(|&ix| &self.items[ix].0)
     }
 
-    pub fn with_value(self, value: impl Into<SharedString>) -> Self {
+    pub fn with_value(self, value: T) -> Self {
         self.with_values([value])
     }
 
-    /// Only the first value is kept in single mode.
-    pub fn with_values(
-        mut self,
-        values: impl IntoIterator<Item = impl Into<SharedString>>,
-    ) -> Self {
-        self.replace_values(values.into_iter().map(Into::into));
+    pub fn with_values(mut self, values: impl IntoIterator<Item = T>) -> Self {
+        self.replace_values(values);
         self
     }
 
     /// Replace the value without emitting a [`ComboboxEvent`].
-    pub fn set_value(&mut self, value: impl Into<SharedString>, cx: &mut Context<Self>) {
+    pub fn set_value(&mut self, value: T, cx: &mut Context<Self>) {
         self.set_values([value], cx);
     }
 
-    /// Replace the values without emitting a [`ComboboxEvent`]. Only the first
-    /// value is kept in single mode.
-    pub fn set_values(
-        &mut self,
-        values: impl IntoIterator<Item = impl Into<SharedString>>,
-        cx: &mut Context<Self>,
-    ) {
-        self.replace_values(values.into_iter().map(Into::into));
+    /// Replace the values without emitting a [`ComboboxEvent`].
+    pub fn set_values(&mut self, values: impl IntoIterator<Item = T>, cx: &mut Context<Self>) {
+        self.replace_values(values);
         cx.notify();
     }
 
@@ -150,18 +140,23 @@ impl ComboboxState {
         cx.notify();
     }
 
-    pub fn items(&self) -> &[SharedString] {
+    pub fn items(&self) -> &[(T, SharedString)] {
         &self.items
     }
 
-    pub fn with_items(mut self, items: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
+    /// Items as `(value, label)` pairs.
+    pub fn with_items(
+        mut self,
+        items: impl IntoIterator<Item = (T, impl Into<SharedString>)>,
+    ) -> Self {
         self.replace_items(items);
         self
     }
 
+    /// Items as `(value, label)` pairs.
     pub fn set_items(
         &mut self,
-        items: impl IntoIterator<Item = impl Into<SharedString>>,
+        items: impl IntoIterator<Item = (T, impl Into<SharedString>)>,
         cx: &mut Context<Self>,
     ) {
         self.replace_items(items);
@@ -192,45 +187,50 @@ impl ComboboxState {
         self.selected.contains(&item_ix)
     }
 
-    fn replace_items(&mut self, items: impl IntoIterator<Item = impl Into<SharedString>>) {
+    fn replace_items(&mut self, items: impl IntoIterator<Item = (T, impl Into<SharedString>)>) {
+        let values: Vec<T> = self.values().cloned().collect();
         self.items.clear();
-        self.items.extend(items.into_iter().map(Into::into));
+        self.items.extend(
+            items
+                .into_iter()
+                .map(|(value, label)| (value, label.into())),
+        );
         self.keys.clear();
         self.keys
-            .extend(self.items.iter().map(|item| item.to_lowercase()));
+            .extend(self.items.iter().map(|(_, label)| label.to_lowercase()));
         self.refilter();
         self.highlighted = self
             .highlighted
             .filter(|_| !self.matches.is_empty())
             .map(|ix| ix.min(self.matches.len() - 1));
-        self.reselect();
+        self.replace_values(values);
     }
 
-    fn replace_values(&mut self, values: impl IntoIterator<Item = SharedString>) {
-        self.values.clear();
-        self.values.extend(values);
+    fn replace_values(&mut self, values: impl IntoIterator<Item = T>) {
+        self.selected.clear();
+        for value in values {
+            if let Some(ix) = self.items.iter().position(|(item, _)| *item == value)
+                && !self.selected.contains(&ix)
+            {
+                self.selected.push(ix);
+            }
+        }
         self.values_changed();
     }
 
     fn values_changed(&mut self) {
         if !self.is_multiple() {
-            self.values.truncate(1);
+            self.selected.truncate(1);
         }
-        self.reselect();
         self.input_dirty = true;
+    }
+
+    fn emit_change(&self, cx: &mut Context<Self>) {
+        cx.emit(ComboboxEvent::Change(self.values().cloned().collect()));
     }
 
     pub(super) fn is_multiple(&self) -> bool {
         self.mode == SelectionMode::Multiple
-    }
-
-    fn reselect(&mut self) {
-        self.selected.clear();
-        self.selected.extend(
-            self.values
-                .iter()
-                .filter_map(|value| self.items.iter().position(|item| item == value)),
-        );
     }
 
     pub(super) fn prepare(&mut self, interactive: bool, cx: &mut Context<Self>) {
@@ -244,9 +244,13 @@ impl ComboboxState {
         }
         let text = (!self.filtering).then(|| match self.is_multiple() {
             true => SharedString::default(),
-            false => self.values.first().cloned().unwrap_or_default(),
+            false => self
+                .selected
+                .first()
+                .map(|&ix| self.items[ix].1.clone())
+                .unwrap_or_default(),
         });
-        let placeholder = match self.is_multiple() && !self.values.is_empty() {
+        let placeholder = match self.is_multiple() && !self.selected.is_empty() {
             true => SharedString::default(),
             false => self.placeholder.clone(),
         };
@@ -287,9 +291,9 @@ impl ComboboxState {
     }
 
     fn search(&mut self, text: &str, cx: &mut Context<Self>) {
-        if text.is_empty() && !self.is_multiple() && !self.values.is_empty() {
+        if text.is_empty() && !self.is_multiple() && !self.selected.is_empty() {
             self.replace_values([]);
-            cx.emit(ComboboxEvent::Change);
+            self.emit_change(cx);
         }
         self.filtering = true;
         self.query.clear();
@@ -396,24 +400,25 @@ impl ComboboxState {
         let Some(&item_ix) = self.matches.get(ix) else {
             return;
         };
-        let item = self.items[item_ix].clone();
 
         if self.is_multiple() {
-            match self.values.iter().position(|value| *value == item) {
+            match self.selected.iter().position(|&ix| ix == item_ix) {
                 Some(pos) => {
-                    self.values.remove(pos);
+                    self.selected.remove(pos);
                 }
-                None => self.values.push(item),
+                None => self.selected.push(item_ix),
             }
             self.values_changed();
-            cx.emit(ComboboxEvent::Change);
+            self.emit_change(cx);
             self.stop_filtering();
             // Unfiltered now so the row is the item index.
             self.reveal(item_ix, cx);
         } else {
-            if self.values.first() != Some(&item) {
-                self.replace_values([item]);
-                cx.emit(ComboboxEvent::Change);
+            if self.selected.first() != Some(&item_ix) {
+                self.selected.clear();
+                self.selected.push(item_ix);
+                self.values_changed();
+                self.emit_change(cx);
             }
             self.close(cx);
         }
@@ -421,10 +426,10 @@ impl ComboboxState {
     }
 
     pub(super) fn remove(&mut self, pos: usize, cx: &mut Context<Self>) {
-        if pos < self.values.len() {
-            self.values.remove(pos);
+        if pos < self.selected.len() {
+            self.selected.remove(pos);
             self.values_changed();
-            cx.emit(ComboboxEvent::Change);
+            self.emit_change(cx);
             cx.notify();
         }
     }
@@ -487,14 +492,15 @@ impl ComboboxState {
     }
 
     pub(super) fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
-        if self.is_multiple() && !self.values.is_empty() && self.input.read(cx).value().is_empty() {
+        if self.is_multiple() && !self.selected.is_empty() && self.input.read(cx).value().is_empty()
+        {
             cx.stop_propagation();
-            self.remove(self.values.len() - 1, cx);
+            self.remove(self.selected.len() - 1, cx);
         }
     }
 }
 
-impl Focusable for ComboboxState {
+impl<T: 'static> Focusable for ComboboxState<T> {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         self.input.focus_handle(cx)
     }

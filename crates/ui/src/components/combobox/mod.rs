@@ -42,9 +42,9 @@ pub(super) fn init(cx: &mut App) {
 }
 
 #[derive(IntoElement)]
-pub struct Combobox {
+pub struct Combobox<T: Clone + PartialEq + 'static> {
     id: ElementId,
-    state: Entity<ComboboxState>,
+    state: Entity<ComboboxState<T>>,
     style: StyleRefinement,
     size: Size,
     empty_placeholder: Option<SharedString>,
@@ -53,8 +53,8 @@ pub struct Combobox {
     disabled: bool,
 }
 
-impl Combobox {
-    pub fn new(state: &Entity<ComboboxState>) -> Self {
+impl<T: Clone + PartialEq + 'static> Combobox<T> {
+    pub fn new(state: &Entity<ComboboxState<T>>) -> Self {
         Self {
             id: ("combobox", state.entity_id()).into(),
             state: state.clone(),
@@ -78,32 +78,32 @@ impl Combobox {
     }
 }
 
-impl Styled for Combobox {
+impl<T: Clone + PartialEq + 'static> Styled for Combobox<T> {
     fn style(&mut self) -> &mut StyleRefinement {
         &mut self.style
     }
 }
 
-impl WithSize for Combobox {
+impl<T: Clone + PartialEq + 'static> WithSize for Combobox<T> {
     fn size(mut self, size: Size) -> Self {
         self.size = size;
         self
     }
 }
 
-impl WithFocus for Combobox {
+impl<T: Clone + PartialEq + 'static> WithFocus for Combobox<T> {
     fn focus_props(&mut self) -> &mut FocusProps {
         &mut self.focus
     }
 }
 
-impl WithField for Combobox {
+impl<T: Clone + PartialEq + 'static> WithField for Combobox<T> {
     fn field_props(&mut self) -> &mut FieldProps {
         &mut self.field
     }
 }
 
-impl RenderOnce for Combobox {
+impl<T: Clone + PartialEq + 'static> RenderOnce for Combobox<T> {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = self.state;
         let theme = cx.theme();
@@ -237,8 +237,8 @@ fn chip_height(size: Size) -> Rems {
     }
 }
 
-fn render_chips(
-    state: &Entity<ComboboxState>,
+fn render_chips<T: Clone + PartialEq + 'static>(
+    state: &Entity<ComboboxState<T>>,
     size: Size,
     interactive: bool,
     theme: &Theme,
@@ -251,8 +251,8 @@ fn render_chips(
         (size.control_height().to_pixels(rem_size) - chip_height.to_pixels(rem_size)) / 2. - BORDER;
     let chip_radius = (theme.radius.md.to_pixels(rem_size) - BORDER - inset).max(px(4.));
 
-    let values = &state.read(cx).values;
-    let chips = values.iter().enumerate().map(|(pos, value)| {
+    let current = state.read(cx);
+    let chips = current.selected.iter().enumerate().map(|(pos, &item_ix)| {
         let remove = div()
             .id(("remove", pos))
             .group(REMOVE_GROUP)
@@ -294,11 +294,16 @@ fn render_chips(
             .text_size(theme.text.sm)
             .line_height(relative(1.))
             .font_weight(FontWeight::MEDIUM)
-            .child(div().min_w_0().truncate().child(value.clone()))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(current.items[item_ix].1.clone()),
+            )
             .child(remove)
     });
 
-    let padding_left = match values.is_empty() {
+    let padding_left = match current.selected.is_empty() {
         true => size.field_px().to_pixels(rem_size),
         false => inset,
     };
@@ -315,8 +320,8 @@ fn render_chips(
         .children(chips)
 }
 
-fn render_menu(
-    state: &Entity<ComboboxState>,
+fn render_menu<T: Clone + PartialEq + 'static>(
+    state: &Entity<ComboboxState<T>>,
     size: Size,
     empty_placeholder: Option<SharedString>,
     window: &Window,
@@ -340,7 +345,7 @@ fn render_menu(
                 .map(|ix| {
                     let item_ix = current.matches[ix];
                     menu::item(
-                        div().truncate().child(current.items[item_ix].clone()),
+                        div().truncate().child(current.items[item_ix].1.clone()),
                         size,
                         current.highlighted == Some(ix),
                         current.is_selected(item_ix),

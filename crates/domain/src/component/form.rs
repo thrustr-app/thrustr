@@ -245,10 +245,6 @@ impl ComboboxField {
         self.options.iter().find(|option| option.value == value)
     }
 
-    pub fn option_by_label(&self, label: &str) -> Option<&ComboboxOption> {
-        self.options.iter().find(|option| option.label == label)
-    }
-
     /// The field value for `values`, keeping only declared options. Single
     /// mode takes the first one as text.
     pub fn value(&self, values: impl IntoIterator<Item = String>) -> FieldValue {

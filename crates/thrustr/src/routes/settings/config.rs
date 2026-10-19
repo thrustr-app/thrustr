@@ -36,7 +36,7 @@ struct Field {
 
 enum Control {
     Input(Entity<InputState>),
-    Combobox(Entity<ComboboxState>, Arc<ComboboxField>),
+    Combobox(Entity<ComboboxState<String>>, Arc<ComboboxField>),
 }
 
 impl Field {
@@ -61,17 +61,15 @@ impl Field {
                     true => SelectionMode::Multiple,
                     false => SelectionMode::Single,
                 };
-                let values = value.cloned().map(FieldValue::into_list);
-                let selected: Vec<SharedString> = values
+                let items = field
+                    .options()
                     .iter()
-                    .flatten()
-                    .filter_map(|value| field.option(value))
-                    .map(|option| option.label.clone().into())
-                    .collect();
+                    .map(|option| (option.value.clone(), option.label.clone()));
+                let values = value.cloned().map(FieldValue::into_list);
                 let state = cx.new(|cx| {
                     ComboboxState::new_with_mode(mode, window, cx)
-                        .with_items(field.options().iter().map(|option| option.label.clone()))
-                        .with_values(selected)
+                        .with_items(items)
+                        .with_values(values.into_iter().flatten())
                         .with_placeholder(placeholder)
                 });
                 Control::Combobox(state, Arc::new(field.clone()))
@@ -116,16 +114,9 @@ impl Field {
             }),
             Control::Combobox(state, field) => {
                 let field = field.clone();
-                cx.subscribe(state, move |this, state, event, cx| match event {
-                    ComboboxEvent::Change => {
-                        let value = field.value(
-                            state
-                                .read(cx)
-                                .values()
-                                .iter()
-                                .filter_map(|label| field.option_by_label(label))
-                                .map(|option| option.value.clone()),
-                        );
+                cx.subscribe(state, move |this, _, event, cx| match event {
+                    ComboboxEvent::Change(values) => {
+                        let value = field.value(values.iter().cloned());
                         values_mut(this).insert(id.to_string(), value);
                         cx.notify();
                     }
@@ -138,7 +129,7 @@ impl Field {
 #[allow(clippy::large_enum_variant)]
 enum FieldControl {
     Input(Input),
-    Combobox(Combobox),
+    Combobox(Combobox<String>),
 }
 
 impl FieldControl {
