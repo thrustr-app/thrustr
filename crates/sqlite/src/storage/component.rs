@@ -4,9 +4,8 @@ use crate::{
 };
 use anyhow::Result;
 use diesel::{
-    BoolExpressionMethods, Connection, EscapeExpressionMethods, ExpressionMethods,
-    OptionalExtension, QueryDsl, QueryResult, RunQueryDsl, SqliteConnection, TextExpressionMethods,
-    upsert::excluded,
+    BoolExpressionMethods, EscapeExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl,
+    QueryResult, RunQueryDsl, SqliteConnection, TextExpressionMethods, upsert::excluded,
 };
 use domain::component::{ComponentStorage, FieldValue};
 use serde_json::Value;
@@ -20,16 +19,15 @@ impl ComponentStorage for SqliteStorage {
     fn get_data(&self, component_id: &str, key: &str) -> Result<Option<Vec<u8>>> {
         use crate::schema::component_data::dsl;
 
-        let mut conn = self.conn()?;
         let now = unix_millis(SystemTime::now());
-        let result = dsl::component_data
-            .find((component_id, key))
-            .filter(dsl::expires_at.is_null().or(dsl::expires_at.gt(now)))
-            .select(dsl::value)
-            .first::<Vec<u8>>(&mut conn)
-            .optional()?;
-
-        Ok(result)
+        self.read(|conn| {
+            Ok(dsl::component_data
+                .find((component_id, key))
+                .filter(dsl::expires_at.is_null().or(dsl::expires_at.gt(now)))
+                .select(dsl::value)
+                .first::<Vec<u8>>(conn)
+                .optional()?)
+        })
     }
 
     fn set_data(
@@ -41,32 +39,32 @@ impl ComponentStorage for SqliteStorage {
     ) -> Result<()> {
         use crate::schema::component_data::dsl;
 
-        let mut conn = self.conn()?;
-        diesel::insert_into(dsl::component_data)
-            .values(NewComponentDataRow {
-                component_id,
-                key,
-                value: data,
-                expires_at: expires_at.map(unix_millis),
-            })
-            .on_conflict((dsl::component_id, dsl::key))
-            .do_update()
-            .set((
-                dsl::value.eq(excluded(dsl::value)),
-                dsl::expires_at.eq(excluded(dsl::expires_at)),
-            ))
-            .execute(&mut conn)?;
-
-        Ok(())
+        self.write(|conn| {
+            diesel::insert_into(dsl::component_data)
+                .values(NewComponentDataRow {
+                    component_id,
+                    key,
+                    value: data,
+                    expires_at: expires_at.map(unix_millis),
+                })
+                .on_conflict((dsl::component_id, dsl::key))
+                .do_update()
+                .set((
+                    dsl::value.eq(excluded(dsl::value)),
+                    dsl::expires_at.eq(excluded(dsl::expires_at)),
+                ))
+                .execute(conn)?;
+            Ok(())
+        })
     }
 
     fn delete_data(&self, component_id: &str, key: &str) -> Result<()> {
         use crate::schema::component_data::dsl;
 
-        let mut conn = self.conn()?;
-        diesel::delete(dsl::component_data.find((component_id, key))).execute(&mut conn)?;
-
-        Ok(())
+        self.write(|conn| {
+            diesel::delete(dsl::component_data.find((component_id, key))).execute(conn)?;
+            Ok(())
+        })
     }
 
     fn list_data(&self, component_id: &str, prefix: &str) -> Result<Vec<String>> {
@@ -77,36 +75,41 @@ impl ComponentStorage for SqliteStorage {
             .replace('%', "\\%")
             .replace('_', "\\_");
 
-        let mut conn = self.conn()?;
         let now = unix_millis(SystemTime::now());
-        Ok(dsl::component_data
-            .filter(dsl::component_id.eq(component_id))
-            .filter(dsl::expires_at.is_null().or(dsl::expires_at.gt(now)))
-            .filter(dsl::key.like(format!("{escaped}%")).escape('\\'))
-            .select(dsl::key)
-            .load::<String>(&mut conn)?)
+        self.read(|conn| {
+            Ok(dsl::component_data
+                .filter(dsl::component_id.eq(component_id))
+                .filter(dsl::expires_at.is_null().or(dsl::expires_at.gt(now)))
+                .filter(dsl::key.like(format!("{escaped}%")).escape('\\'))
+                .select(dsl::key)
+                .load::<String>(conn)?)
+        })
     }
 
     fn get_config_value(&self, component_id: &str, field_id: &str) -> Result<Option<FieldValue>> {
         use crate::schema::component_config::dsl;
 
-        let mut conn = self.conn()?;
-        let value = dsl::component_config
-            .find((component_id, field_id))
-            .select(dsl::value)
-            .first::<Value>(&mut conn)
-            .optional()?;
+        let value = self.read(|conn| {
+            Ok(dsl::component_config
+                .find((component_id, field_id))
+                .select(dsl::value)
+                .first::<Value>(conn)
+                .optional()?)
+        })?;
 
         Ok(value.and_then(|value| config_value(component_id, field_id, value)))
     }
 
     fn get_config_values(&self, component_id: &str) -> Result<HashMap<String, FieldValue>> {
         use crate::schema::component_config::dsl;
-        let mut conn = self.conn()?;
-        Ok(dsl::component_config
-            .select((dsl::field_id, dsl::value))
-            .filter(dsl::component_id.eq(component_id))
-            .load::<(String, Value)>(&mut conn)?
+        let rows = self.read(|conn| {
+            Ok(dsl::component_config
+                .select((dsl::field_id, dsl::value))
+                .filter(dsl::component_id.eq(component_id))
+                .load::<(String, Value)>(conn)?)
+        })?;
+
+        Ok(rows
             .into_iter()
             .filter_map(|(field_id, value)| {
                 let value = config_value(component_id, &field_id, value)?;
@@ -120,10 +123,9 @@ impl ComponentStorage for SqliteStorage {
         component_id: &str,
         fields: &HashMap<String, FieldValue>,
     ) -> Result<()> {
-        let mut conn = self.conn()?;
         // TODO: this should probably delete the whole config first
         // so old fields are not kept around.
-        conn.transaction(|conn| {
+        self.write(|conn| {
             for (field_id, value) in fields {
                 upsert_config_value(conn, component_id, field_id, value)?;
             }

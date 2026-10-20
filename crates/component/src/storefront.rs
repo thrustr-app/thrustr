@@ -51,6 +51,7 @@ impl StorefrontHandle {
             component = self.component.id(),
             listed,
             inserted = summary.inserted,
+            updated = summary.updated,
             restored = summary.restored,
             removed = summary.removed,
             "games synced"

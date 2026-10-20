@@ -3,6 +3,7 @@ pub enum Platform {
     Windows,
     Linux,
     Macos,
+    Other,
 }
 
 impl Platform {

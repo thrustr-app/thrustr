@@ -97,6 +97,7 @@ impl From<types::Platform> for Platform {
             types::Platform::Windows => Platform::Windows,
             types::Platform::Linux => Platform::Linux,
             types::Platform::Macos => Platform::Macos,
+            types::Platform::Other => Platform::Other,
         }
     }
 }

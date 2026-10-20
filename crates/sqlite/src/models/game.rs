@@ -26,6 +26,8 @@ pub struct GameRow {
 #[derive(Insertable, Debug)]
 #[diesel(table_name = games)]
 #[diesel(check_for_backend(Sqlite))]
+// So batch inserts use a single statement instead of one per row.
+#[diesel(treat_none_as_default_value = false)]
 pub struct NewGameRow<'a> {
     pub name: &'a str,
     pub sort_name: String,

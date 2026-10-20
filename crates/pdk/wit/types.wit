@@ -24,6 +24,7 @@ interface types {
         windows,
         linux,
         macos,
+        other,
     }
 
     record game {

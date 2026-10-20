@@ -74,7 +74,7 @@ VALUES
 END;
 
 CREATE TRIGGER games_fts_after_update AFTER
-UPDATE OF search_text ON games BEGIN
+UPDATE OF search_text ON games WHEN old.search_text IS NOT new.search_text BEGIN
 INSERT INTO
   games_fts (games_fts, rowid, search_text)
 VALUES

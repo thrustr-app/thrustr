@@ -50,15 +50,16 @@ impl ColorExt for Color {
 }
 
 pub trait PlatformExt {
-    fn icon(self) -> Icon;
+    fn icon(self) -> Option<Icon>;
 }
 
 impl PlatformExt for Platform {
-    fn icon(self) -> Icon {
+    fn icon(self) -> Option<Icon> {
         match self {
-            Platform::Windows => Icon::windows(),
-            Platform::Linux => Icon::linux(),
-            Platform::Macos => Icon::apple(),
+            Platform::Windows => Some(Icon::windows()),
+            Platform::Linux => Some(Icon::linux()),
+            Platform::Macos => Some(Icon::apple()),
+            Platform::Other => None,
         }
     }
 }

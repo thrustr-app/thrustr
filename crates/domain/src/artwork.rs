@@ -1,8 +1,8 @@
 use crate::game::GameId;
 use anyhow::Result;
-use strum::{AsRefStr, Display, EnumString};
+use strum::{AsRefStr, Display, EnumString, IntoStaticStr};
 
-#[derive(AsRefStr, Display, EnumString, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(AsRefStr, Display, EnumString, IntoStaticStr, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[strum(serialize_all = "lowercase")]
 pub enum ArtworkKind {
     Cover,

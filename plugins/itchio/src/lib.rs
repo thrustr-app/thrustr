@@ -1,10 +1,10 @@
-use api::Classification;
+use api::{Classification, Storage, UploadTrait};
 use futures::future;
 use pdk::{
     Auth, ComboboxOption, Config, Error, Game, GameVersion, GameVersionDetails, LoginFlow,
-    LoginRequest, Plugin, Storefront, config::Config as ConfigStore, kv_store::KvStore,
+    LoginRequest, Platform, Plugin, Storefront, config::Config as ConfigStore, kv_store::KvStore,
 };
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 mod api;
 mod oauth;
@@ -14,6 +14,7 @@ type Result<T> = std::result::Result<T, Error>;
 const API_KEY: &str = "api_key";
 const CLASSIFICATIONS: &str = "classifications";
 const COLLECTIONS: &str = "collections";
+const DOWNLOAD_KEY_ID: &str = "download_key_id";
 
 pub struct Itchio;
 
@@ -79,16 +80,22 @@ impl Storefront for Itchio {
 
         let mut seen = HashSet::new();
 
-        Ok(keys
+        let owned = keys
             .into_iter()
-            .filter_map(|key| key.game)
-            .chain(collections.into_iter().flatten())
-            .filter(|game| classifications.contains(&game.classification))
-            .filter(|game| seen.insert(game.id))
-            .map(|game| Game {
+            .filter_map(|key| Some((key.game?, Some(key.id))));
+        let collected = collections.into_iter().flatten().map(|game| (game, None));
+
+        Ok(owned
+            .chain(collected)
+            .filter(|(game, _)| classifications.contains(&game.classification))
+            .filter(|(game, _)| seen.insert(game.id))
+            .map(|(game, download_key_id)| Game {
                 name: game.title,
                 lookup_id: game.id.to_string(),
-                external_ids: BTreeMap::new(),
+                external_ids: download_key_id
+                    .map(|id| (DOWNLOAD_KEY_ID.to_string(), id.to_string()))
+                    .into_iter()
+                    .collect(),
                 cover_url: non_empty(game.still_cover_url).or(non_empty(game.cover_url)),
                 summary: non_empty(game.short_text),
                 description: None,
@@ -96,8 +103,41 @@ impl Storefront for Itchio {
             .collect())
     }
 
-    async fn list_game_versions(_game: Game) -> Result<Vec<GameVersion>> {
-        Err(Error::other("not implemented"))
+    async fn list_game_versions(game: Game) -> Result<Vec<GameVersion>> {
+        let download_key_id = game.external_ids.get(DOWNLOAD_KEY_ID).map(String::as_str);
+        let uploads = api::uploads(&api_key()?, &game.lookup_id, download_key_id).await?;
+
+        Ok(uploads
+            .into_iter()
+            .filter(|upload| {
+                upload.storage != Storage::External
+                    && !upload.traits.contains(&UploadTrait::Preorder)
+            })
+            .flat_map(|upload| {
+                let id = upload.id.to_string();
+                let name = non_empty(upload.display_name).unwrap_or(upload.filename);
+
+                let mut platforms: Vec<_> = upload
+                    .traits
+                    .into_iter()
+                    .filter_map(|upload_trait| match upload_trait {
+                        UploadTrait::PWindows => Some(Platform::Windows),
+                        UploadTrait::PLinux => Some(Platform::Linux),
+                        UploadTrait::POsx => Some(Platform::Macos),
+                        UploadTrait::Preorder | UploadTrait::Other => None,
+                    })
+                    .collect();
+                if platforms.is_empty() {
+                    platforms.push(Platform::Other);
+                }
+
+                platforms.into_iter().map(move |platform| GameVersion {
+                    id: id.clone(),
+                    pretty_name: Some(name.clone()),
+                    platform,
+                })
+            })
+            .collect())
     }
 
     async fn game_version_details(_game: Game, _version_id: String) -> Result<GameVersionDetails> {

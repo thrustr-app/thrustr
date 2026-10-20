@@ -295,7 +295,7 @@ impl InstallDialog {
                     Ok(versions) => {
                         this.versions = versions
                             .into_iter()
-                            .filter(|v| v.platform == Platform::CURRENT)
+                            .filter(|v| matches!(v.platform, Platform::CURRENT | Platform::Other))
                             .map(|v| VersionOption {
                                 label: v.pretty_name.unwrap_or_else(|| v.id.clone()).into(),
                                 id: v.id.into(),
@@ -471,12 +471,11 @@ impl InstallDialog {
                         .flex()
                         .items_center()
                         .gap(rems(0.5))
-                        .child(
+                        .children(
                             version
                                 .platform
                                 .icon()
-                                .size_sm()
-                                .color(cx.theme().colors.primary),
+                                .map(|icon| icon.size_sm().color(cx.theme().colors.primary)),
                         )
                         .child(div().min_w_0().child(version.label.clone()))
                 })

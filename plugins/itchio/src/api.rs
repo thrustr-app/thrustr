@@ -71,6 +71,22 @@ pub async fn collection_games(api_key: &str, collection_id: u64) -> Result<Vec<G
     Ok(games)
 }
 
+pub async fn uploads(
+    api_key: &str,
+    game_id: &str,
+    download_key_id: Option<&str>,
+) -> Result<Vec<Upload>, Error> {
+    let mut path = format!("/games/{game_id}/uploads");
+    if let Some(download_key_id) = download_key_id {
+        path.push_str(&format!("?download_key_id={download_key_id}"));
+    }
+
+    let request = get(&path).header("Authorization", api_key);
+    send::<UploadsResponse>(request)
+        .await
+        .map(|response| response.uploads)
+}
+
 pub fn get(path: &str) -> RequestBuilder {
     request(Client::new().get(&format!("{BASE_URL}{path}")))
 }
@@ -141,6 +157,7 @@ struct CollectionGame {
 
 #[derive(Deserialize)]
 pub struct OwnedKey {
+    pub id: u64,
     pub game: Option<Game>,
 }
 
@@ -153,6 +170,44 @@ pub struct Game {
     pub short_text: Option<String>,
     pub cover_url: Option<String>,
     pub still_cover_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UploadsResponse {
+    #[serde(deserialize_with = "list_or_empty_object")]
+    uploads: Vec<Upload>,
+}
+
+#[derive(Deserialize)]
+pub struct Upload {
+    pub id: u64,
+    #[serde(default)]
+    pub filename: String,
+    pub display_name: Option<String>,
+    pub storage: Storage,
+    #[serde(default, deserialize_with = "list_or_empty_object")]
+    pub traits: Vec<UploadTrait>,
+}
+
+#[derive(Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Storage {
+    Hosted,
+    Build,
+    External,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UploadTrait {
+    PWindows,
+    PLinux,
+    POsx,
+    Preorder,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Deserialize, Default, PartialEq, Eq, Hash, Clone, Copy)]

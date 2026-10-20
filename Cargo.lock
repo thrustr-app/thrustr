@@ -7534,6 +7534,7 @@ dependencies = [
  "diesel_migrations",
  "domain",
  "libsqlite3-sys",
+ "parking_lot",
  "serde_json",
  "tempfile",
  "tracing",
