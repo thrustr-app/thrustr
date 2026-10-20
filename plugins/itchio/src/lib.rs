@@ -1,7 +1,7 @@
 use api::Classification;
 use pdk::{
-    Auth, Config, Error, Game, GameVersion, GameVersionDetails, LoginFlow, LoginRequest, Plugin,
-    Storefront, config::Config as ConfigStore, kv_store::KvStore,
+    Auth, ComboboxOption, Config, Error, Game, GameVersion, GameVersionDetails, LoginFlow,
+    LoginRequest, Plugin, Storefront, config::Config as ConfigStore, kv_store::KvStore,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -45,7 +45,19 @@ impl Auth for Itchio {
 }
 
 #[pdk::export]
-impl Config for Itchio {}
+impl Config for Itchio {
+    #[options("collections")]
+    async fn collections() -> Result<Vec<ComboboxOption>> {
+        let collections = api::collections(&api_key()?).await?;
+        Ok(collections
+            .into_iter()
+            .map(|collection| ComboboxOption {
+                value: collection.id.to_string(),
+                label: collection.title,
+            })
+            .collect())
+    }
+}
 
 #[pdk::export]
 impl Storefront for Itchio {

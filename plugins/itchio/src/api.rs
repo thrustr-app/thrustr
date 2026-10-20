@@ -38,6 +38,13 @@ pub async fn owned_keys(api_key: &str) -> Result<Vec<OwnedKey>, Error> {
     Ok(keys)
 }
 
+pub async fn collections(api_key: &str) -> Result<Vec<Collection>, Error> {
+    let request = get("/profile/collections").header("Authorization", api_key);
+    send::<CollectionsResponse>(request)
+        .await
+        .map(|response| response.collections)
+}
+
 pub fn get(path: &str) -> RequestBuilder {
     request(Client::new().get(&format!("{BASE_URL}{path}")))
 }
@@ -81,6 +88,18 @@ struct OwnedKeysPage {
     per_page: usize,
     #[serde(deserialize_with = "list_or_empty_object")]
     owned_keys: Vec<OwnedKey>,
+}
+
+#[derive(Deserialize)]
+struct CollectionsResponse {
+    #[serde(deserialize_with = "list_or_empty_object")]
+    collections: Vec<Collection>,
+}
+
+#[derive(Deserialize)]
+pub struct Collection {
+    pub id: u64,
+    pub title: String,
 }
 
 #[derive(Deserialize)]

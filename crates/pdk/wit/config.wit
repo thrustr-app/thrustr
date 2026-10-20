@@ -9,7 +9,14 @@ interface config-store {
 interface config {
     use types.{error, field-value};
 
+    record combobox-option {
+        value: string,
+        label: string,
+    }
+
     validate: async func(fields: map<string, field-value>) -> result<_, error>;
+
+    options: async func(field-id: string) -> result<list<combobox-option>, error>;
 }
 
 world config-capability {

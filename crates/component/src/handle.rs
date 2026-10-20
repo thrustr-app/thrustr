@@ -395,6 +395,9 @@ pub enum OperationError {
     #[error(transparent)]
     MissingField(#[from] MissingFieldError),
 
+    #[error("`{0}` has no dynamic options")]
+    NoDynamicOptions(String),
+
     #[error("component has no login form")]
     NoLoginForm,
 

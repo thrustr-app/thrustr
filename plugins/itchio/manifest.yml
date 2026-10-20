@@ -15,7 +15,7 @@ config:
         - type: combobox
           id: classifications
           label: Project types
-          description: Only projects of these types are imported into the library.
+          description: Only projects of these types will be imported into the library.
           placeholder: Select project types
           multiple: true
           required: true
@@ -30,3 +30,12 @@ config:
             - { value: comic, label: Comics }
             - { value: book, label: Books }
             - { value: other, label: Other }
+
+        - type: combobox
+          id: collections
+          label: Collections
+          description: In addition to purchased games, the selected collections will be imported too. Note that you won't be able to install paid games that you don't own.
+          placeholder: Select collections
+          multiple: true
+          required: false
+          options: dynamic

@@ -1,4 +1,4 @@
-use crate::scheduler;
+use crate::{config, scheduler};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Error, ItemImpl};
@@ -25,9 +25,10 @@ pub(crate) fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
         .clone();
     let ty = item.self_ty.clone();
 
-    let item = match capability == "Scheduler" {
-        true => scheduler::expand(item),
-        false => quote! { #item },
+    let item = match capability.to_string().as_str() {
+        "Config" => config::expand(item),
+        "Scheduler" => scheduler::expand(item),
+        _ => quote! { #item },
     };
 
     Ok(quote! {

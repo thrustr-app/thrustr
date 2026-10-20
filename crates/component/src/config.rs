@@ -1,8 +1,10 @@
 use crate::{
     ComponentHandle,
-    handle::{Permit, Result},
+    handle::{OperationError, Permit, Result},
 };
-use domain::component::{Config, ConfigOperation, ConfigSchema, FieldValue, Form};
+use domain::component::{
+    ComboboxOption, Config, ConfigOperation, ConfigSchema, Error, Field, FieldValue, Form,
+};
 use std::{collections::HashMap, sync::Arc};
 use tracing::{info, warn};
 
@@ -32,6 +34,26 @@ impl ConfigHandle {
             .component_storage
             .get_config_values(self.component.id())?;
         Ok(self.schema().resolve(stored))
+    }
+
+    pub async fn options(&self, field_id: &str) -> Result<Vec<ComboboxOption>> {
+        let field = match self.schema().field(field_id) {
+            Some(Field::Combobox(field)) if field.is_dynamic() => field,
+            _ => return Err(OperationError::NoDynamicOptions(field_id.to_owned())),
+        };
+        let permit = Permit::begin(&self.component, ConfigOperation::LoadOptions)?;
+
+        let result = self.config.options(field_id).await.and_then(|options| {
+            field
+                .check_dynamic_options(&options)
+                .map(|()| options)
+                .map_err(|e| Error::Other(format!("invalid options: {e}")))
+        });
+
+        permit
+            .finish(result.as_ref().map(drop).map_err(Clone::clone))
+            .await?;
+        result.map_err(Into::into)
     }
 
     pub async fn save(&self, mut fields: HashMap<String, FieldValue>) -> Result<()> {

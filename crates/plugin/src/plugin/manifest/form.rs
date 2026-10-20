@@ -1,6 +1,7 @@
 use anyhow::{Error, ensure};
 use domain::component::{
-    ComboboxField, ComboboxOption, ConfigSchema, ConfigSection, FormElement, LoginForm, TextField,
+    ComboboxField, ComboboxOption, ComboboxOptions, ConfigSchema, ConfigSection, FormElement,
+    LoginForm, TextField,
 };
 use serde::{Deserialize, Deserializer, de::Error as _};
 
@@ -124,9 +125,22 @@ struct ComboboxFieldDef {
     required: bool,
     #[serde(default)]
     multiple: bool,
-    options: Vec<ComboboxOptionDef>,
+    options: ComboboxOptionsDef,
     #[serde(default)]
     default: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged, expecting = "a list of options or `dynamic`")]
+enum ComboboxOptionsDef {
+    Static(Vec<ComboboxOptionDef>),
+    Dynamic(DynamicKeyword),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DynamicKeyword {
+    Dynamic,
 }
 
 #[derive(Deserialize)]
@@ -135,18 +149,28 @@ struct ComboboxOptionDef {
     label: String,
 }
 
+impl From<ComboboxOptionsDef> for ComboboxOptions {
+    fn from(def: ComboboxOptionsDef) -> Self {
+        match def {
+            ComboboxOptionsDef::Static(options) => Self::Static(
+                options
+                    .into_iter()
+                    .map(|option| ComboboxOption {
+                        value: option.value,
+                        label: option.label,
+                    })
+                    .collect(),
+            ),
+            ComboboxOptionsDef::Dynamic(DynamicKeyword::Dynamic) => Self::Dynamic,
+        }
+    }
+}
+
 impl TryFrom<ComboboxFieldDef> for ComboboxField {
     type Error = Error;
 
     fn try_from(def: ComboboxFieldDef) -> Result<Self, Self::Error> {
-        let options = def
-            .options
-            .into_iter()
-            .map(|option| ComboboxOption {
-                value: option.value,
-                label: option.label,
-            })
-            .collect();
+        let options = def.options.into();
         let mut field = match def.multiple {
             true => Self::multiple(def.id, def.label, options, def.default)?,
             false => {
@@ -170,7 +194,7 @@ impl TryFrom<ComboboxFieldDef> for ComboboxField {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use domain::component::{FieldValue, Form};
+    use domain::component::{Field, FieldValue, Form};
     use std::collections::HashMap;
 
     #[derive(Deserialize, Debug)]
@@ -217,6 +241,7 @@ mod tests {
                           multiple: true
                           default: [a]
                           options: [{ value: a, label: A }, { value: b, label: B }]
+                    - { type: combobox, id: tags, label: Tags, options: dynamic }
             ",
         )
         .unwrap();
@@ -226,6 +251,10 @@ mod tests {
 
         let config = manifest.config.unwrap();
         assert_eq!(config.sections()[0].name, "Library");
+        let Some(Field::Combobox(tags)) = config.field("tags") else {
+            panic!("`tags` should be a combobox");
+        };
+        assert!(tags.is_dynamic());
         assert_eq!(
             config.resolve(HashMap::new()),
             HashMap::from([
@@ -252,6 +281,18 @@ mod tests {
             "{auth: {elements: [{type: combobox, id: k, label: K, default: [a, b], \
              options: [{value: a, label: A}, {value: b, label: B}]}]}}",
             "`k` allows a single value but has many defaults",
+        );
+        check_error(
+            "{auth: {elements: [{type: combobox, id: k, label: K, options: other}]}}",
+            "a list of options or `dynamic`",
+        );
+        check_error(
+            "{auth: {elements: [{type: combobox, id: k, label: K, default: [a],              options: dynamic}]}}",
+            "`k` cannot have defaults when its options are dynamic",
+        );
+        check_error(
+            "{auth: {elements: [{type: combobox, id: k, label: K, options: dynamic}]}}",
+            "field `k` cannot have dynamic options",
         );
     }
 }

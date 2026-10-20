@@ -1,5 +1,6 @@
 use crate::component::{
-    Error, FieldValue, Form, FormElement, InvalidFormError, Operation, form::unique_ids,
+    ComboboxOption, Error, FieldValue, Form, FormElement, InvalidFormError, Operation,
+    form::unique_ids,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -10,6 +11,8 @@ use strum::Display;
 pub enum ConfigOperation {
     #[strum(to_string = "config")]
     Save,
+    #[strum(to_string = "config options")]
+    LoadOptions,
 }
 
 impl From<ConfigOperation> for Operation {
@@ -22,6 +25,8 @@ impl From<ConfigOperation> for Operation {
 pub trait Config: Send + Sync {
     fn schema(&self) -> &ConfigSchema;
     async fn validate(&self, fields: HashMap<String, FieldValue>) -> Result<(), Error>;
+    /// Options of a combobox field with dynamic options.
+    async fn options(&self, field_id: &str) -> Result<Vec<ComboboxOption>, Error>;
 }
 
 #[derive(Clone, Debug)]

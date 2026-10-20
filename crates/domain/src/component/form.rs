@@ -132,6 +132,10 @@ impl<'a> Field<'a> {
         }
     }
 
+    pub fn is_dynamic(self) -> bool {
+        matches!(self, Self::Combobox(field) if field.is_dynamic())
+    }
+
     pub fn default_value(self) -> Option<FieldValue> {
         match self {
             Self::Text(field) => field.default.clone().map(FieldValue::Text),
@@ -183,7 +187,7 @@ pub struct ComboboxField {
     pub placeholder: Option<String>,
     pub required: bool,
     multiple: bool,
-    options: Vec<ComboboxOption>,
+    options: ComboboxOptions,
     default: Vec<String>,
 }
 
@@ -191,7 +195,7 @@ impl ComboboxField {
     pub fn single(
         id: impl Into<String>,
         label: impl Into<String>,
-        options: Vec<ComboboxOption>,
+        options: ComboboxOptions,
         default: Option<String>,
     ) -> Result<Self, InvalidFormError> {
         Self::new(
@@ -206,7 +210,7 @@ impl ComboboxField {
     pub fn multiple(
         id: impl Into<String>,
         label: impl Into<String>,
-        options: Vec<ComboboxOption>,
+        options: ComboboxOptions,
         default: Vec<String>,
     ) -> Result<Self, InvalidFormError> {
         Self::new(id.into(), label.into(), options, true, default)
@@ -215,7 +219,7 @@ impl ComboboxField {
     fn new(
         id: String,
         label: String,
-        options: Vec<ComboboxOption>,
+        options: ComboboxOptions,
         multiple: bool,
         default: Vec<String>,
     ) -> Result<Self, InvalidFormError> {
@@ -237,54 +241,94 @@ impl ComboboxField {
         self.multiple
     }
 
-    pub fn options(&self) -> &[ComboboxOption] {
+    pub fn options(&self) -> &ComboboxOptions {
         &self.options
     }
 
-    pub fn option(&self, value: &str) -> Option<&ComboboxOption> {
-        self.options.iter().find(|option| option.value == value)
+    pub fn is_dynamic(&self) -> bool {
+        matches!(self.options, ComboboxOptions::Dynamic)
     }
 
-    /// The field value for `values`, keeping only declared options. Single
-    /// mode takes the first one as text.
+    /// The field value for `values`, keeping only declared options, or any
+    /// non-empty value when options are dynamic. Single mode takes the first
+    /// one as text.
     pub fn value(&self, values: impl IntoIterator<Item = String>) -> FieldValue {
         let mut values = values
             .into_iter()
-            .filter(|value| self.option(value).is_some());
+            .filter(|value| self.options.allows(value));
         match self.multiple {
             true => FieldValue::List(values.collect()),
             false => FieldValue::Text(values.next().unwrap_or_default()),
         }
     }
 
+    /// Checks options loaded for a field with dynamic options. Unlike
+    /// declared options, labels may repeat.
+    pub fn check_dynamic_options(
+        &self,
+        options: &[ComboboxOption],
+    ) -> Result<(), InvalidFormError> {
+        validate_values(options).map_err(|kind| self.error(kind))
+    }
+
     fn validate(&self) -> Result<(), InvalidFormError> {
-        let error = |kind| InvalidFormError::Combobox {
+        let result = match &self.options {
+            ComboboxOptions::Static(options) => validate_static(options, &self.default),
+            ComboboxOptions::Dynamic if self.default.is_empty() => Ok(()),
+            ComboboxOptions::Dynamic => Err(InvalidCombobox::DynamicDefault),
+        };
+        result.map_err(|kind| self.error(kind))
+    }
+
+    fn error(&self, kind: InvalidCombobox) -> InvalidFormError {
+        InvalidFormError::Combobox {
             id: self.id.clone(),
             kind,
-        };
-        let mut values = HashSet::new();
-        let mut labels = HashSet::new();
-        for option in &self.options {
-            if option.value.is_empty() {
-                return Err(error(InvalidCombobox::EmptyOption));
-            }
-            if !values.insert(&option.value) {
-                return Err(error(InvalidCombobox::DuplicateOption(
-                    option.value.clone(),
-                )));
-            }
-            if !labels.insert(&option.label) {
-                return Err(error(InvalidCombobox::DuplicateLabel(option.label.clone())));
-            }
         }
-        if let Some(value) = self
-            .default
-            .iter()
-            .find(|value| self.option(value).is_none())
-        {
-            return Err(error(InvalidCombobox::UnknownDefault(value.clone())));
+    }
+}
+
+fn validate_static(options: &[ComboboxOption], default: &[String]) -> Result<(), InvalidCombobox> {
+    validate_values(options)?;
+    let mut labels = HashSet::new();
+    if let Some(option) = options.iter().find(|option| !labels.insert(&option.label)) {
+        return Err(InvalidCombobox::DuplicateLabel(option.label.clone()));
+    }
+    match default
+        .iter()
+        .find(|value| !options.iter().any(|option| &option.value == *value))
+    {
+        Some(value) => Err(InvalidCombobox::UnknownDefault(value.clone())),
+        None => Ok(()),
+    }
+}
+
+fn validate_values(options: &[ComboboxOption]) -> Result<(), InvalidCombobox> {
+    let mut values = HashSet::new();
+    for option in options {
+        if option.value.is_empty() {
+            return Err(InvalidCombobox::EmptyOption);
         }
-        Ok(())
+        if !values.insert(&option.value) {
+            return Err(InvalidCombobox::DuplicateOption(option.value.clone()));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub enum ComboboxOptions {
+    Static(Vec<ComboboxOption>),
+    Dynamic,
+}
+
+impl ComboboxOptions {
+    /// Whether `value` can be selected.
+    fn allows(&self, value: &str) -> bool {
+        match self {
+            Self::Static(options) => options.iter().any(|option| option.value == value),
+            Self::Dynamic => !value.is_empty(),
+        }
     }
 }
 
@@ -336,6 +380,8 @@ pub struct MissingFieldError {
 pub enum InvalidFormError {
     #[error("duplicate field `{0}`")]
     DuplicateField(String),
+    #[error("field `{0}` cannot have dynamic options")]
+    DynamicFieldNotAllowed(String),
     #[error("`{id}` {kind}")]
     Combobox { id: String, kind: InvalidCombobox },
 }
@@ -350,6 +396,8 @@ pub enum InvalidCombobox {
     DuplicateLabel(String),
     #[error("default `{0}` is not an option")]
     UnknownDefault(String),
+    #[error("cannot have defaults when its options are dynamic")]
+    DynamicDefault,
 }
 
 #[cfg(test)]
@@ -383,26 +431,50 @@ pub(crate) mod tests {
         })
     }
 
-    fn options(values: &[&str]) -> Vec<ComboboxOption> {
-        values
-            .iter()
-            .map(|value| ComboboxOption {
-                value: value.to_string(),
-                label: value.to_uppercase(),
-            })
-            .collect()
+    fn option(value: &str, label: &str) -> ComboboxOption {
+        ComboboxOption {
+            value: value.to_owned(),
+            label: label.to_owned(),
+        }
     }
 
-    fn combobox(id: &str, multiple: bool, required: bool) -> FormElement {
-        let options = options(&["a", "b", "c"]);
-        let label = id.to_uppercase();
-        let mut field = match multiple {
-            true => ComboboxField::multiple(id, label, options, vec![]),
-            false => ComboboxField::single(id, label, options, None),
+    fn options(values: &[&str]) -> ComboboxOptions {
+        ComboboxOptions::Static(
+            values
+                .iter()
+                .map(|value| option(value, &value.to_uppercase()))
+                .collect(),
+        )
+    }
+
+    fn single(id: &str, options: ComboboxOptions) -> FormElement {
+        let field = ComboboxField::single(id, id.to_uppercase(), options, None);
+        FormElement::Combobox(field.unwrap())
+    }
+
+    fn multiple(id: &str, options: ComboboxOptions) -> FormElement {
+        let field = ComboboxField::multiple(id, id.to_uppercase(), options, vec![]);
+        FormElement::Combobox(field.unwrap())
+    }
+
+    fn require(mut element: FormElement) -> FormElement {
+        let FormElement::Combobox(field) = &mut element else {
+            unreachable!()
+        };
+        field.required = true;
+        element
+    }
+
+    fn with_default(mut element: FormElement, default: FieldValue) -> FormElement {
+        match &mut element {
+            FormElement::Text(field) => field.default = Some(default.as_text().unwrap().to_owned()),
+            FormElement::Combobox(field) => {
+                field.default = default.into_list();
+                field.validate().unwrap();
+            }
+            FormElement::Hbox { .. } => unreachable!(),
         }
-        .unwrap();
-        field.required = required;
-        FormElement::Combobox(field)
+        element
     }
 
     fn hbox<const N: usize>(elements: [FormElement; N]) -> FormElement {
@@ -416,6 +488,13 @@ pub(crate) mod tests {
             .iter()
             .map(|(id, value)| (id.to_string(), value.clone()))
             .collect()
+    }
+
+    fn combobox_error(id: &str, kind: InvalidCombobox) -> InvalidFormError {
+        InvalidFormError::Combobox {
+            id: id.to_owned(),
+            kind,
+        }
     }
 
     #[track_caller]
@@ -439,6 +518,26 @@ pub(crate) mod tests {
         expected: &[(&str, FieldValue)],
     ) {
         assert_eq!(elements.resolve(owned(stored)), owned(expected));
+    }
+
+    #[track_caller]
+    fn check_definition(
+        options: ComboboxOptions,
+        default: &[&str],
+        expected: Result<(), InvalidCombobox>,
+    ) {
+        let default = default.iter().map(|value| value.to_string()).collect();
+        let actual = ComboboxField::multiple("k", "K", options, default).map(drop);
+        assert_eq!(actual, expected.map_err(|kind| combobox_error("k", kind)));
+    }
+
+    #[track_caller]
+    fn check_loaded_options(options: &[ComboboxOption], expected: Result<(), InvalidCombobox>) {
+        let field = ComboboxField::multiple("k", "K", ComboboxOptions::Dynamic, vec![]).unwrap();
+        assert_eq!(
+            field.check_dynamic_options(options),
+            expected.map_err(|kind| combobox_error("k", kind))
+        );
     }
 
     #[test]
@@ -478,7 +577,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn nested_fields_are_flattened() {
+    fn fields_nested_in_hboxes_are_validated() {
         let elements = [
             optional("region"),
             hbox([optional("host"), hbox([required("port")])]),
@@ -509,7 +608,7 @@ pub(crate) mod tests {
 
     #[test]
     fn combobox_keeps_only_declared_options() {
-        let elements = [combobox("kinds", true, false)];
+        let elements = [multiple("kinds", options(&["a", "b", "c"]))];
 
         check(
             &elements,
@@ -525,24 +624,38 @@ pub(crate) mod tests {
 
     #[test]
     fn combobox_values_depend_on_mode() {
-        let single = [combobox("kind", false, false)];
-        let multiple = [combobox("kinds", true, false)];
+        let single = [single("kind", options(&["a", "b", "c"]))];
+        let multiple = [multiple("kinds", options(&["a", "b", "c"]))];
 
+        check(&single, &[("kind", t("b"))], Ok(&[("kind", t("b"))]));
+        check(&single, &[("kind", t(""))], Ok(&[("kind", t(""))]));
         check(
             &single,
             &[("kind", list(&["b", "c"]))],
             Ok(&[("kind", t("b"))]),
         );
+        check(&single, &[("kind", list(&[]))], Ok(&[("kind", t(""))]));
         check(
             &multiple,
             &[("kinds", t("b"))],
             Ok(&[("kinds", list(&["b"]))]),
         );
+        check(&multiple, &[("kinds", t(""))], Ok(&[("kinds", list(&[]))]));
+        check(
+            &multiple,
+            &[("kinds", list(&["b", "c"]))],
+            Ok(&[("kinds", list(&["b", "c"]))]),
+        );
+        check(
+            &multiple,
+            &[("kinds", list(&[]))],
+            Ok(&[("kinds", list(&[]))]),
+        );
     }
 
     #[test]
     fn required_combobox_needs_an_option() {
-        let elements = [combobox("kinds", true, true)];
+        let elements = [require(multiple("kinds", options(&["a", "b", "c"])))];
 
         check(
             &elements,
@@ -553,20 +666,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn resolve_fills_defaults_for_missing_values_only() {
-        let kinds = ComboboxField::multiple(
-            "kinds",
-            "Kinds",
-            options(&["a", "b"]),
-            vec!["a".to_owned(), "b".to_owned()],
-        );
-        let FormElement::Text(mut region) = optional("region") else {
-            unreachable!()
-        };
-        region.default = Some("eu".to_owned());
+    fn defaults_fill_only_missing_values() {
         let elements = [
-            FormElement::Combobox(kinds.unwrap()),
-            FormElement::Text(region),
+            with_default(multiple("kinds", options(&["a", "b"])), list(&["a", "b"])),
+            with_default(optional("region"), t("eu")),
         ];
 
         check_resolve(
@@ -595,42 +698,60 @@ pub(crate) mod tests {
 
     #[test]
     fn invalid_combobox_definitions_are_rejected() {
-        #[track_caller]
-        fn check(
-            options: Vec<ComboboxOption>,
-            default: &[&str],
-            expected: Result<(), InvalidCombobox>,
-        ) {
-            let default = default.iter().map(|value| value.to_string()).collect();
-            let actual = ComboboxField::multiple("k", "K", options, default).map(drop);
-            let expected = expected.map_err(|kind| InvalidFormError::Combobox {
-                id: "k".to_owned(),
-                kind,
-            });
-            assert_eq!(actual, expected);
-        }
-
-        let option = |value: &str, label: &str| ComboboxOption {
-            value: value.to_owned(),
-            label: label.to_owned(),
-        };
-
-        check(options(&["a", "b"]), &["a"], Ok(()));
-        check(options(&[""]), &[], Err(InvalidCombobox::EmptyOption));
-        check(
-            vec![option("a", "A"), option("a", "B")],
+        check_definition(options(&["a", "b"]), &["a"], Ok(()));
+        check_definition(options(&[""]), &[], Err(InvalidCombobox::EmptyOption));
+        check_definition(
+            ComboboxOptions::Static(vec![option("a", "A"), option("a", "B")]),
             &[],
             Err(InvalidCombobox::DuplicateOption("a".to_owned())),
         );
-        check(
-            vec![option("a", "A"), option("b", "A")],
+        check_definition(
+            ComboboxOptions::Static(vec![option("a", "A"), option("b", "A")]),
             &[],
             Err(InvalidCombobox::DuplicateLabel("A".to_owned())),
         );
-        check(
+        check_definition(
             options(&["a", "b"]),
             &["x"],
             Err(InvalidCombobox::UnknownDefault("x".to_owned())),
         );
+    }
+
+    #[test]
+    fn dynamic_combobox_keeps_any_value() {
+        let single = [require(single("kind", ComboboxOptions::Dynamic))];
+        let multiple = [multiple("kinds", ComboboxOptions::Dynamic)];
+
+        check(
+            &multiple,
+            &[("kinds", list(&["x", "", "y"]))],
+            Ok(&[("kinds", list(&["x", "y"]))]),
+        );
+        check(
+            &single,
+            &[("kind", list(&["", "x"]))],
+            Ok(&[("kind", t("x"))]),
+        );
+        check(&single, &[("kind", t(""))], Err("kind"));
+    }
+
+    #[test]
+    fn dynamic_combobox_has_no_defaults() {
+        check_definition(ComboboxOptions::Dynamic, &[], Ok(()));
+        check_definition(
+            ComboboxOptions::Dynamic,
+            &["a"],
+            Err(InvalidCombobox::DynamicDefault),
+        );
+    }
+
+    #[test]
+    fn loaded_options_need_unique_values() {
+        check_loaded_options(&[option("a", "A"), option("b", "A")], Ok(()));
+        check_loaded_options(
+            &[option("a", "A"), option("a", "B")],
+            Err(InvalidCombobox::DuplicateOption("a".to_owned())),
+        );
+        check_loaded_options(&[option("", "A")], Err(InvalidCombobox::EmptyOption));
     }
 }

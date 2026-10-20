@@ -46,7 +46,13 @@ pub struct LoginForm {
 impl LoginForm {
     pub fn new(elements: Vec<FormElement>) -> Result<Self, InvalidFormError> {
         unique_ids(elements.as_slice())?;
-        Ok(Self { elements })
+        let form = Self { elements };
+        if let Some(field) = form.fields().find(|field| field.is_dynamic()) {
+            return Err(InvalidFormError::DynamicFieldNotAllowed(
+                field.id().to_owned(),
+            ));
+        }
+        Ok(form)
     }
 }
 

@@ -64,6 +64,7 @@ pub use pdk_macros::export;
 pub use wit::auth::exports::thrustr::plugin::auth::{
     LoginCallback, LoginFlow, LoginForm, LoginRequest,
 };
+pub use wit::config::exports::thrustr::plugin::config::ComboboxOption;
 pub use wit::plugin::thrustr::plugin::types::{
     Error, FieldValue, Game, GameVersion, GameVersionDetails, Platform,
 };
@@ -108,6 +109,10 @@ impl FieldValue {
 pub mod __private {
     pub use crate::scheduler::{Task, cancel, decode, millis, schedule, task_arg};
 
+    pub fn no_options(field_id: &str) -> crate::Error {
+        crate::Error::other(format!("the plugin provides no options for `{field_id}`"))
+    }
+
     pub struct Plugin;
     pub struct Auth;
     pub struct Config;
@@ -143,6 +148,9 @@ pub trait Config: Plugin + __private::Exported<__private::Config> {
     fn validate(fields: BTreeMap<String, FieldValue>) -> impl Future<Output = Result<(), Error>> {
         async { Ok(()) }
     }
+
+    #[doc(hidden)]
+    fn options(field_id: String) -> impl Future<Output = Result<Vec<ComboboxOption>, Error>>;
 }
 
 pub trait Storefront: Plugin + __private::Exported<__private::Storefront> {
@@ -217,6 +225,11 @@ macro_rules! __export {
                     fields: ::std::collections::BTreeMap<String, $crate::FieldValue>,
                 ) -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Config>::validate(fields).await
+                }
+                async fn options(
+                    field_id: String,
+                ) -> std::result::Result<Vec<$crate::ComboboxOption>, $crate::Error> {
+                    <$ty as $crate::Config>::options(field_id).await
                 }
             }
 

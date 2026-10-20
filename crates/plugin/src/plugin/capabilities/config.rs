@@ -2,7 +2,7 @@ use crate::plugin::{PluginRuntime, guest_call};
 use crate::wit::exports::thrustr::plugin::config;
 use anyhow::bail;
 use async_trait::async_trait;
-use domain::component::{Config, ConfigSchema, Error, FieldValue};
+use domain::component::{ComboboxOption, Config, ConfigSchema, Error, FieldValue};
 use std::{collections::HashMap, sync::Arc};
 
 pub struct PluginConfig {
@@ -52,5 +52,19 @@ impl Config for PluginConfig {
         guest_call!(self.runtime, self.indices, |config, accessor| {
             config.call_validate(accessor, fields)
         })
+    }
+
+    async fn options(&self, field_id: &str) -> Result<Vec<ComboboxOption>, Error> {
+        let field_id = field_id.to_owned();
+        let options = guest_call!(self.runtime, self.indices, |config, accessor| {
+            config.call_options(accessor, field_id)
+        })?;
+        Ok(options
+            .into_iter()
+            .map(|option| ComboboxOption {
+                value: option.value,
+                label: option.label,
+            })
+            .collect())
     }
 }

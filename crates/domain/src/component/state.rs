@@ -300,7 +300,7 @@ impl Status {
                 self,
                 Self::Active | Self::Inactive(InactiveReason::Error(_))
             ),
-            Operation::Config(ConfigOperation::Save) => matches!(
+            Operation::Config(_) => matches!(
                 self,
                 Self::Active
                     | Self::Inactive(
@@ -345,9 +345,11 @@ impl Operation {
     fn is_reentrant(self) -> bool {
         matches!(
             self,
-            Self::Storefront(
-                StorefrontOperation::ListVersions | StorefrontOperation::VersionDetails
-            ) | Self::Scheduler(_)
+            Self::Config(ConfigOperation::LoadOptions)
+                | Self::Storefront(
+                    StorefrontOperation::ListVersions | StorefrontOperation::VersionDetails
+                )
+                | Self::Scheduler(_)
         )
     }
 }
@@ -395,11 +397,14 @@ mod tests {
     const LOGIN: Operation = Operation::Auth(AuthOperation::Login);
     const LOGOUT: Operation = Operation::Auth(AuthOperation::Logout);
     const CONFIG: Operation = Operation::Config(ConfigOperation::Save);
+    const OPTIONS: Operation = Operation::Config(ConfigOperation::LoadOptions);
     const SYNC: Operation = Operation::Storefront(StorefrontOperation::Sync);
     const VERSIONS: Operation = Operation::Storefront(StorefrontOperation::ListVersions);
     const DETAILS: Operation = Operation::Storefront(StorefrontOperation::VersionDetails);
     const TASK: Operation = Operation::Scheduler(SchedulerOperation::Run);
-    const OPERATIONS: [Operation; 7] = [LOGIN, LOGOUT, CONFIG, SYNC, VERSIONS, DETAILS, TASK];
+    const OPERATIONS: [Operation; 8] = [
+        LOGIN, LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, TASK,
+    ];
 
     const ALL: Capabilities = Capabilities {
         auth: true,
@@ -634,15 +639,15 @@ mod tests {
 
     #[test]
     fn status_determines_allowed_operations() {
-        check_allows(disabled(), &[CONFIG]);
+        check_allows(disabled(), &[CONFIG, OPTIONS]);
         check_allows(Status::Initializing, &[]);
         check_allows(
             Status::Active,
-            &[LOGOUT, CONFIG, SYNC, VERSIONS, DETAILS, TASK],
+            &[LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, TASK],
         );
-        check_allows(unauthenticated(), &[LOGIN, CONFIG]);
-        check_allows(failed(auth()), &[LOGIN, LOGOUT, CONFIG]);
-        check_allows(failed(config()), &[LOGOUT, CONFIG]);
+        check_allows(unauthenticated(), &[LOGIN, CONFIG, OPTIONS]);
+        check_allows(failed(auth()), &[LOGIN, LOGOUT, CONFIG, OPTIONS]);
+        check_allows(failed(config()), &[LOGOUT, CONFIG, OPTIONS]);
         check_allows(failed(other()), &[LOGOUT]);
     }
 
@@ -732,7 +737,7 @@ mod tests {
             CONFIG,
             Err(Rejection::Busy(LOGIN)),
         );
-        for operation in [LOGOUT, CONFIG, SYNC, VERSIONS, DETAILS, TASK] {
+        for operation in [LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, TASK] {
             check_start(
                 ALL,
                 Status::Active,
@@ -777,6 +782,8 @@ mod tests {
         check_start(ALL, Status::Active, &[SYNC], VERSIONS, Ok(()));
         check_start(ALL, Status::Active, &[VERSIONS], SYNC, Ok(()));
         check_start(ALL, Status::Active, &[VERSIONS], DETAILS, Ok(()));
+        check_start(ALL, Status::Active, &[CONFIG], OPTIONS, Ok(()));
+        check_start(ALL, Status::Active, &[OPTIONS], CONFIG, Ok(()));
     }
 
     #[test]
@@ -784,6 +791,7 @@ mod tests {
         check_start(ALL, Status::Active, &[TASK, TASK], TASK, Ok(()));
         check_start(ALL, Status::Active, &[VERSIONS, VERSIONS], VERSIONS, Ok(()));
         check_start(ALL, Status::Active, &[DETAILS, DETAILS], DETAILS, Ok(()));
+        check_start(ALL, unauthenticated(), &[OPTIONS, OPTIONS], OPTIONS, Ok(()));
     }
 
     #[test]
@@ -959,6 +967,21 @@ mod tests {
         for operation in [SYNC, VERSIONS, DETAILS, TASK] {
             check_finish(Status::Active, operation, Ok(()), Status::Active);
             check_finish(Status::Active, operation, Err(other()), Status::Active);
+        }
+    }
+
+    #[test]
+    fn loading_options_keeps_the_status() {
+        for status in [
+            disabled(),
+            unauthenticated(),
+            failed(auth()),
+            failed(config()),
+            Status::Active,
+        ] {
+            for result in [Ok(())].into_iter().chain(errors().map(Err)) {
+                check_finish(status.clone(), OPTIONS, result, status.clone());
+            }
         }
     }
 

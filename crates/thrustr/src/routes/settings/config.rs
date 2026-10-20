@@ -7,8 +7,9 @@ use crate::{
 };
 use component::{AuthHandle, ComponentHandle, ConfigHandle};
 use domain::component::{
-    AuthOperation, ComboboxField, ConfigOperation, ConfigSection, Field as FormField, FieldValue,
-    Form, FormElement, LoginFlow, LoginForm, LoginMethod, LoginRequest, Operation, Status,
+    AuthOperation, ComboboxField, ComboboxOption, ComboboxOptions, ConfigOperation, ConfigSection,
+    Field as FormField, FieldValue, Form, FormElement, LoginFlow, LoginForm, LoginMethod,
+    LoginRequest, Operation, Status,
 };
 use event::Topic;
 use gpui::{
@@ -27,191 +28,6 @@ use ui::{
 
 type Values = HashMap<String, FieldValue>;
 
-struct Field {
-    id: SharedString,
-    label: SharedString,
-    description: Option<SharedString>,
-    control: Control,
-}
-
-enum Control {
-    Input(Entity<InputState>),
-    Combobox(Entity<ComboboxState<String>>, Arc<ComboboxField>),
-}
-
-impl Field {
-    fn new(
-        field: FormField,
-        value: Option<&FieldValue>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Self {
-        let placeholder = SharedString::from(field.placeholder().unwrap_or_default().to_owned());
-        let control = match field {
-            FormField::Text(_) => {
-                let text = value.and_then(FieldValue::as_text).unwrap_or_default();
-                Control::Input(cx.new(|cx| {
-                    InputState::new(window, cx)
-                        .with_value(SharedString::from(text.to_owned()))
-                        .with_placeholder(placeholder)
-                }))
-            }
-            FormField::Combobox(field) => {
-                let mode = match field.is_multiple() {
-                    true => SelectionMode::Multiple,
-                    false => SelectionMode::Single,
-                };
-                let items = field
-                    .options()
-                    .iter()
-                    .map(|option| (option.value.clone(), option.label.clone()));
-                let values = value.cloned().map(FieldValue::into_list);
-                let state = cx.new(|cx| {
-                    ComboboxState::new_with_mode(mode, window, cx)
-                        .with_items(items)
-                        .with_values(values.into_iter().flatten())
-                        .with_placeholder(placeholder)
-                });
-                Control::Combobox(state, Arc::new(field.clone()))
-            }
-        };
-
-        Field {
-            label: if field.required() {
-                format!("{} *", field.label()).into()
-            } else {
-                field.label().to_owned().into()
-            },
-            id: field.id().to_owned().into(),
-            description: field.description().map(|text| text.to_owned().into()),
-            control,
-        }
-    }
-
-    fn control(&self) -> FieldControl {
-        let control = match &self.control {
-            Control::Input(state) => FieldControl::Input(Input::new(state)),
-            Control::Combobox(state, _) => FieldControl::Combobox(Combobox::new(state)),
-        };
-        control
-            .label(self.label.clone())
-            .when_some(self.description.clone(), WithField::description)
-    }
-
-    fn bind<T: 'static>(
-        &self,
-        values_mut: fn(&mut T) -> &mut Values,
-        cx: &mut Context<T>,
-    ) -> Subscription {
-        let id = self.id.clone();
-        match &self.control {
-            Control::Input(state) => cx.subscribe(state, move |this, state, event, cx| {
-                if *event == InputEvent::Input {
-                    let value = FieldValue::Text(state.read(cx).value().to_string());
-                    values_mut(this).insert(id.to_string(), value);
-                    cx.notify();
-                }
-            }),
-            Control::Combobox(state, field) => {
-                let field = field.clone();
-                cx.subscribe(state, move |this, _, event, cx| match event {
-                    ComboboxEvent::Change(values) => {
-                        let value = field.value(values.iter().cloned());
-                        values_mut(this).insert(id.to_string(), value);
-                        cx.notify();
-                    }
-                })
-            }
-        }
-    }
-}
-
-#[allow(clippy::large_enum_variant)]
-enum FieldControl {
-    Input(Input),
-    Combobox(Combobox<String>),
-}
-
-impl FieldControl {
-    fn disabled(self) -> Self {
-        match self {
-            Self::Input(input) => Self::Input(input.disabled()),
-            Self::Combobox(combobox) => Self::Combobox(combobox.disabled()),
-        }
-    }
-}
-
-impl Styled for FieldControl {
-    fn style(&mut self) -> &mut StyleRefinement {
-        match self {
-            Self::Input(input) => input.style(),
-            Self::Combobox(combobox) => combobox.style(),
-        }
-    }
-}
-
-impl WithSize for FieldControl {
-    fn size(self, size: Size) -> Self {
-        match self {
-            Self::Input(input) => Self::Input(WithSize::size(input, size)),
-            Self::Combobox(combobox) => Self::Combobox(WithSize::size(combobox, size)),
-        }
-    }
-}
-
-impl WithFocus for FieldControl {
-    fn focus_props(&mut self) -> &mut FocusProps {
-        match self {
-            Self::Input(input) => input.focus_props(),
-            Self::Combobox(combobox) => combobox.focus_props(),
-        }
-    }
-}
-
-impl WithField for FieldControl {
-    fn field_props(&mut self) -> &mut FieldProps {
-        match self {
-            Self::Input(input) => input.field_props(),
-            Self::Combobox(combobox) => combobox.field_props(),
-        }
-    }
-}
-
-impl IntoElement for FieldControl {
-    type Element = AnyElement;
-
-    fn into_element(self) -> Self::Element {
-        match self {
-            Self::Input(input) => input.into_any_element(),
-            Self::Combobox(combobox) => combobox.into_any_element(),
-        }
-    }
-}
-
-enum Element {
-    Field(Field),
-    Hbox(Vec<Field>),
-}
-
-impl Element {
-    fn fields(&self) -> &[Field] {
-        match self {
-            Element::Field(field) => std::slice::from_ref(field),
-            Element::Hbox(fields) => fields,
-        }
-    }
-}
-
-struct Section {
-    name: SharedString,
-    elements: Vec<Element>,
-}
-
-struct AuthState {
-    handle: AuthHandle,
-    method: Option<LoginMethod>,
-}
-
 pub struct Config {
     name: SharedString,
     icon: Option<Arc<Image>>,
@@ -226,6 +42,11 @@ pub struct Config {
     scroll_handle: ScrollHandle,
     _tasks: Vec<Task<()>>,
     _subscriptions: Vec<Subscription>,
+}
+
+struct AuthState {
+    handle: AuthHandle,
+    method: Option<LoginMethod>,
 }
 
 impl Config {
@@ -252,17 +73,18 @@ impl Config {
             .flat_map(|c| c.schema().sections())
             .map(|section| Section::new(section, &values, window, cx))
             .collect();
-        let _subscriptions = sections
-            .iter()
-            .flat_map(|s| &s.elements)
-            .flat_map(Element::fields)
-            .map(|field| field.bind(|this: &mut Self| &mut this.values, cx))
-            .collect();
 
-        let _tasks = vec![cx.listen_any(
+        let mut _tasks = vec![cx.listen_any(
             &[Topic::ComponentRegistered, Topic::ComponentState],
             Self::refresh_status_error,
         )];
+        let mut _subscriptions = Vec::new();
+        for field in sections.iter().flat_map(Section::fields) {
+            _subscriptions.push(field.bind(|this: &mut Self| &mut this.values, cx));
+            if let Some(config) = &config {
+                _tasks.extend(field.load_options(config, cx));
+            }
+        }
 
         let status_error = status_error(&component.status());
         let mut page = Self {
@@ -499,7 +321,7 @@ impl Config {
         &self,
         can_configure: bool,
         autofocus_field: Option<SharedString>,
-        cx: &mut Context<Self>,
+        cx: &App,
     ) -> impl IntoElement {
         let sections = self.sections.iter().map(|section| {
             self.render_section(section, can_configure, autofocus_field.as_ref(), cx)
@@ -532,11 +354,11 @@ impl Config {
         section: &Section,
         can_configure: bool,
         autofocus_field: Option<&SharedString>,
-        cx: &mut Context<Self>,
+        cx: &App,
     ) -> Div {
         let theme = cx.theme();
         let elements = section.elements.iter().map(|element| match element {
-            Element::Field(f) => self.render_field(f, can_configure, autofocus_field),
+            Element::Field(f) => self.render_field(f, can_configure, autofocus_field, cx),
             Element::Hbox(fields) => div()
                 .flex()
                 .flex_wrap()
@@ -544,7 +366,7 @@ impl Config {
                 .children(
                     fields
                         .iter()
-                        .map(|f| self.render_field(f, can_configure, autofocus_field)),
+                        .map(|f| self.render_field(f, can_configure, autofocus_field, cx)),
                 )
                 .into_any_element(),
         });
@@ -566,10 +388,19 @@ impl Config {
         field: &Field,
         can_configure: bool,
         autofocus_field: Option<&SharedString>,
+        cx: &App,
     ) -> AnyElement {
         field
             .control()
             .w(rems(20.))
+            .map(|control| match field.dynamic(cx) {
+                Some(DynamicOptions::Loading) => control.disabled(),
+                Some(DynamicOptions::Failed(error)) => control.error(error.clone()),
+                Some(DynamicOptions::Loaded { stale: true, .. }) => {
+                    control.description("Some selected values are no longer available.")
+                }
+                Some(DynamicOptions::Loaded { .. }) | None => control,
+            })
             .when(!can_configure, FieldControl::disabled)
             .when(autofocus_field == Some(&field.id), |this| this.auto_focus())
             .reveal_on_focus(&self.scroll_handle)
@@ -584,8 +415,7 @@ impl Render for Config {
         let autofocus_field = self
             .sections
             .iter()
-            .flat_map(|s| &s.elements)
-            .flat_map(Element::fields)
+            .flat_map(Section::fields)
             .next()
             .filter(|_| can_configure)
             .map(|f| f.id.clone());
@@ -733,6 +563,11 @@ impl Render for LoginDialog {
     }
 }
 
+struct Section {
+    name: SharedString,
+    elements: Vec<Element>,
+}
+
 impl Section {
     fn new(section: &ConfigSection, values: &Values, window: &mut Window, cx: &mut App) -> Self {
         Section {
@@ -744,18 +579,300 @@ impl Section {
                 .collect(),
         }
     }
+
+    fn fields(&self) -> impl Iterator<Item = &Field> {
+        self.elements.iter().flat_map(Element::fields)
+    }
+}
+
+enum Element {
+    Field(Field),
+    Hbox(Vec<Field>),
 }
 
 impl Element {
     fn new(element: &FormElement, values: &Values, window: &mut Window, cx: &mut App) -> Self {
-        let mut fields = element
-            .fields()
-            .map(|field| Field::new(field, values.get(field.id()), window, cx));
+        let mut field = |field: FormField| Field::new(field, values.get(field.id()), window, cx);
         match element {
-            FormElement::Hbox { .. } => Element::Hbox(fields.collect()),
-            FormElement::Text(_) | FormElement::Combobox(_) => {
-                Element::Field(fields.next().expect("a field element has one field"))
+            FormElement::Text(text) => Element::Field(field(FormField::Text(text))),
+            FormElement::Combobox(combobox) => Element::Field(field(FormField::Combobox(combobox))),
+            FormElement::Hbox { .. } => Element::Hbox(element.fields().map(field).collect()),
+        }
+    }
+
+    fn fields(&self) -> &[Field] {
+        match self {
+            Element::Field(field) => std::slice::from_ref(field),
+            Element::Hbox(fields) => fields,
+        }
+    }
+}
+
+struct Field {
+    id: SharedString,
+    label: SharedString,
+    description: Option<SharedString>,
+    control: Control,
+}
+
+impl Field {
+    fn new(
+        field: FormField,
+        value: Option<&FieldValue>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let placeholder = SharedString::from(field.placeholder().unwrap_or_default().to_owned());
+        let control = match field {
+            FormField::Text(_) => {
+                let text = value.and_then(FieldValue::as_text).unwrap_or_default();
+                Control::Input(cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .with_value(SharedString::from(text.to_owned()))
+                        .with_placeholder(placeholder)
+                }))
             }
+            FormField::Combobox(field) => {
+                let mode = match field.is_multiple() {
+                    true => SelectionMode::Multiple,
+                    false => SelectionMode::Single,
+                };
+                let values = value
+                    .cloned()
+                    .map(FieldValue::into_list)
+                    .unwrap_or_default();
+                let items: Vec<_> = match field.options() {
+                    ComboboxOptions::Static(options) => options.iter().map(item).collect(),
+                    // Selected values are shown as they are until the options load.
+                    ComboboxOptions::Dynamic => values
+                        .iter()
+                        .map(|value| (value.clone(), value.clone()))
+                        .collect(),
+                };
+                let state = cx.new(|cx| {
+                    ComboboxState::new_with_mode(mode, window, cx)
+                        .with_items(items)
+                        .with_values(values)
+                        .with_placeholder(placeholder)
+                });
+                Control::Combobox {
+                    state,
+                    field: Arc::new(field.clone()),
+                    dynamic: field
+                        .is_dynamic()
+                        .then(|| cx.new(|_| DynamicOptions::Loading)),
+                }
+            }
+        };
+
+        Field {
+            label: if field.required() {
+                format!("{} *", field.label()).into()
+            } else {
+                field.label().to_owned().into()
+            },
+            id: field.id().to_owned().into(),
+            description: field.description().map(|text| text.to_owned().into()),
+            control,
+        }
+    }
+
+    fn control(&self) -> FieldControl {
+        let control = match &self.control {
+            Control::Input(state) => FieldControl::Input(Input::new(state)),
+            Control::Combobox { state, .. } => FieldControl::Combobox(Combobox::new(state)),
+        };
+        control
+            .label(self.label.clone())
+            .when_some(self.description.clone(), WithField::description)
+    }
+
+    fn bind<T: 'static>(
+        &self,
+        values_mut: fn(&mut T) -> &mut Values,
+        cx: &mut Context<T>,
+    ) -> Subscription {
+        let id = self.id.clone();
+        match &self.control {
+            Control::Input(state) => cx.subscribe(state, move |this, state, event, cx| {
+                if *event == InputEvent::Input {
+                    let value = FieldValue::Text(state.read(cx).value().to_string());
+                    values_mut(this).insert(id.to_string(), value);
+                    cx.notify();
+                }
+            }),
+            Control::Combobox {
+                state,
+                field,
+                dynamic,
+            } => {
+                let (field, dynamic) = (field.clone(), dynamic.clone());
+                cx.subscribe(state, move |this, state, event, cx| match event {
+                    ComboboxEvent::Change(values) => {
+                        let value = field.value(values.iter().cloned());
+                        values_mut(this).insert(id.to_string(), value);
+                        // Drops unavailable values from the list once deselected.
+                        if let Some(dynamic) = &dynamic {
+                            dynamic.update(cx, |dynamic, cx| {
+                                if let DynamicOptions::Loaded { stale: true, .. } = dynamic {
+                                    dynamic.refresh(&state, cx);
+                                }
+                            });
+                        }
+                        cx.notify();
+                    }
+                })
+            }
+        }
+    }
+
+    fn dynamic<'a>(&self, cx: &'a App) -> Option<&'a DynamicOptions> {
+        match &self.control {
+            Control::Combobox { dynamic, .. } => dynamic.as_ref().map(|dynamic| dynamic.read(cx)),
+            Control::Input(_) => None,
+        }
+    }
+
+    fn load_options<T: 'static>(
+        &self,
+        config: &ConfigHandle,
+        cx: &mut Context<T>,
+    ) -> Option<Task<()>> {
+        let Control::Combobox {
+            state,
+            dynamic: Some(dynamic),
+            ..
+        } = &self.control
+        else {
+            return None;
+        };
+        let (config, id) = (config.clone(), self.id.clone());
+        let (state, dynamic) = (state.clone(), dynamic.clone());
+        Some(cx.spawn_and_update(
+            async move { config.options(&id).await },
+            move |_, result, cx| {
+                dynamic.update(cx, |dynamic, cx| {
+                    *dynamic = match result {
+                        Ok(options) => DynamicOptions::Loaded {
+                            options,
+                            stale: false,
+                        },
+                        Err(err) => DynamicOptions::Failed(err.to_string().into()),
+                    };
+                    dynamic.refresh(&state, cx);
+                });
+            },
+        ))
+    }
+}
+
+enum Control {
+    Input(Entity<InputState>),
+    Combobox {
+        state: Entity<ComboboxState<String>>,
+        field: Arc<ComboboxField>,
+        dynamic: Option<Entity<DynamicOptions>>,
+    },
+}
+
+enum DynamicOptions {
+    Loading,
+    Loaded {
+        options: Vec<ComboboxOption>,
+        /// Whether some selected values are not among `options`.
+        stale: bool,
+    },
+    Failed(SharedString),
+}
+
+impl DynamicOptions {
+    /// Lists the loaded options and selected values that are no longer
+    /// among them as unavailable.
+    fn refresh(&mut self, state: &Entity<ComboboxState<String>>, cx: &mut App) {
+        let Self::Loaded { options, stale } = self else {
+            return;
+        };
+        let unavailable: Vec<String> = state
+            .read(cx)
+            .values()
+            .filter(|value| options.iter().all(|option| option.value != **value))
+            .cloned()
+            .collect();
+        *stale = !unavailable.is_empty();
+        let items: Vec<_> = options
+            .iter()
+            .map(item)
+            .chain(unavailable.into_iter().map(|value| {
+                let label = format!("{value} (unavailable)");
+                (value, label)
+            }))
+            .collect();
+        state.update(cx, |state, cx| state.set_items(items, cx));
+    }
+}
+
+fn item(option: &ComboboxOption) -> (String, String) {
+    (option.value.clone(), option.label.clone())
+}
+
+#[allow(clippy::large_enum_variant)]
+enum FieldControl {
+    Input(Input),
+    Combobox(Combobox<String>),
+}
+
+impl FieldControl {
+    fn disabled(self) -> Self {
+        match self {
+            Self::Input(input) => Self::Input(input.disabled()),
+            Self::Combobox(combobox) => Self::Combobox(combobox.disabled()),
+        }
+    }
+}
+
+impl Styled for FieldControl {
+    fn style(&mut self) -> &mut StyleRefinement {
+        match self {
+            Self::Input(input) => input.style(),
+            Self::Combobox(combobox) => combobox.style(),
+        }
+    }
+}
+
+impl WithSize for FieldControl {
+    fn size(self, size: Size) -> Self {
+        match self {
+            Self::Input(input) => Self::Input(WithSize::size(input, size)),
+            Self::Combobox(combobox) => Self::Combobox(WithSize::size(combobox, size)),
+        }
+    }
+}
+
+impl WithFocus for FieldControl {
+    fn focus_props(&mut self) -> &mut FocusProps {
+        match self {
+            Self::Input(input) => input.focus_props(),
+            Self::Combobox(combobox) => combobox.focus_props(),
+        }
+    }
+}
+
+impl WithField for FieldControl {
+    fn field_props(&mut self) -> &mut FieldProps {
+        match self {
+            Self::Input(input) => input.field_props(),
+            Self::Combobox(combobox) => combobox.field_props(),
+        }
+    }
+}
+
+impl IntoElement for FieldControl {
+    type Element = AnyElement;
+
+    fn into_element(self) -> Self::Element {
+        match self {
+            Self::Input(input) => input.into_any_element(),
+            Self::Combobox(combobox) => combobox.into_any_element(),
         }
     }
 }
