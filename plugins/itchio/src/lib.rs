@@ -1,4 +1,5 @@
 use api::Classification;
+use futures::future;
 use pdk::{
     Auth, ComboboxOption, Config, Error, Game, GameVersion, GameVersionDetails, LoginFlow,
     LoginRequest, Plugin, Storefront, config::Config as ConfigStore, kv_store::KvStore,
@@ -12,6 +13,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 const API_KEY: &str = "api_key";
 const CLASSIFICATIONS: &str = "classifications";
+const COLLECTIONS: &str = "collections";
 
 pub struct Itchio;
 
@@ -62,14 +64,25 @@ impl Config for Itchio {
 #[pdk::export]
 impl Storefront for Itchio {
     async fn list_games() -> Result<Vec<Game>> {
+        let api_key = api_key()?;
         let classifications = classifications()?;
-        let keys = api::owned_keys(&api_key()?).await?;
+        let collection_ids = collection_ids()?;
+
+        let (keys, collections) = futures::try_join!(
+            api::owned_keys(&api_key),
+            future::try_join_all(
+                collection_ids
+                    .into_iter()
+                    .map(|id| api::collection_games(&api_key, id)),
+            ),
+        )?;
 
         let mut seen = HashSet::new();
 
         Ok(keys
             .into_iter()
             .filter_map(|key| key.game)
+            .chain(collections.into_iter().flatten())
             .filter(|game| classifications.contains(&game.classification))
             .filter(|game| seen.insert(game.id))
             .map(|game| Game {
@@ -101,6 +114,17 @@ fn classifications() -> Result<HashSet<Classification>> {
         .iter()
         .map(|value| Classification::parse(value))
         .collect())
+}
+
+fn collection_ids() -> Result<Vec<u64>> {
+    ConfigStore::get_list(COLLECTIONS)?
+        .iter()
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|_| Error::other(format!("invalid collection id `{value}`")))
+        })
+        .collect()
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {

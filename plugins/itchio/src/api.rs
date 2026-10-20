@@ -45,6 +45,32 @@ pub async fn collections(api_key: &str) -> Result<Vec<Collection>, Error> {
         .map(|response| response.collections)
 }
 
+pub async fn collection_games(api_key: &str, collection_id: u64) -> Result<Vec<Game>, Error> {
+    let mut games = Vec::new();
+
+    // Less than the requested `per_page` can be returned if games are hidden, only an empty page marks the end.
+    for page in 1.. {
+        let request = get(&format!(
+            "/collections/{collection_id}/collection-games?page={page}&per_page={MAX_PER_PAGE}"
+        ))
+        .header("Authorization", api_key);
+        let response: CollectionGamesPage = send(request).await?;
+
+        if response.collection_games.is_empty() {
+            break;
+        }
+
+        games.extend(
+            response
+                .collection_games
+                .into_iter()
+                .filter_map(|entry| entry.game),
+        );
+    }
+
+    Ok(games)
+}
+
 pub fn get(path: &str) -> RequestBuilder {
     request(Client::new().get(&format!("{BASE_URL}{path}")))
 }
@@ -103,12 +129,23 @@ pub struct Collection {
 }
 
 #[derive(Deserialize)]
-pub struct OwnedKey {
-    pub game: Option<OwnedGame>,
+struct CollectionGamesPage {
+    #[serde(deserialize_with = "list_or_empty_object")]
+    collection_games: Vec<CollectionGame>,
 }
 
 #[derive(Deserialize)]
-pub struct OwnedGame {
+struct CollectionGame {
+    game: Option<Game>,
+}
+
+#[derive(Deserialize)]
+pub struct OwnedKey {
+    pub game: Option<Game>,
+}
+
+#[derive(Deserialize)]
+pub struct Game {
     pub id: u64,
     pub title: String,
     #[serde(default)]
