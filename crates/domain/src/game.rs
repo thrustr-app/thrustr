@@ -82,7 +82,11 @@ pub struct GameSource {
 pub struct GameVersion {
     pub id: String,
     pub pretty_name: Option<String>,
+    /// Ignored for nested versions.
     pub platform: Platform,
+    /// Label for the versions nested under this one, e.g. "Build". A version
+    /// with nested versions can't be installed by itself.
+    pub children_label: Option<String>,
 }
 
 #[derive(Debug, Clone)]

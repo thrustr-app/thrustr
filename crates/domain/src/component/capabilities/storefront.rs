@@ -23,11 +23,12 @@ impl From<StorefrontOperation> for Operation {
 
 #[async_trait]
 pub trait Storefront: Send + Sync {
-    async fn list_games(&self) -> Result<Vec<NewGame>, Error>;
-    async fn list_game_versions(&self, game: Game) -> Result<Vec<GameVersion>, Error>;
+    async fn games(&self) -> Result<Vec<NewGame>, Error>;
+    async fn game_versions(&self, game: Game, path: Vec<String>)
+    -> Result<Vec<GameVersion>, Error>;
     async fn game_version_details(
         &self,
         game: Game,
-        version_id: String,
+        path: Vec<String>,
     ) -> Result<GameVersionDetails, Error>;
 }

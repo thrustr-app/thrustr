@@ -154,13 +154,16 @@ pub trait Config: Plugin + __private::Exported<__private::Config> {
 }
 
 pub trait Storefront: Plugin + __private::Exported<__private::Storefront> {
-    fn list_games() -> impl Future<Output = Result<Vec<Game>, Error>>;
+    fn games() -> impl Future<Output = Result<Vec<Game>, Error>>;
 
-    fn list_game_versions(game: Game) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
+    fn game_versions(
+        game: Game,
+        path: Vec<String>,
+    ) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
 
     fn game_version_details(
         game: Game,
-        version_id: String,
+        path: Vec<String>,
     ) -> impl Future<Output = Result<GameVersionDetails, Error>>;
 }
 
@@ -270,18 +273,19 @@ macro_rules! __export {
 
             impl $crate::wit::storefront::exports::thrustr::plugin::storefront::Guest for Guest {
                 async fn get_games() -> std::result::Result<Vec<$crate::Game>, $crate::Error> {
-                    <$ty as $crate::Storefront>::list_games().await
+                    <$ty as $crate::Storefront>::games().await
                 }
                 async fn get_game_versions(
                     game: $crate::Game,
+                    path: Vec<String>,
                 ) -> std::result::Result<Vec<$crate::GameVersion>, $crate::Error> {
-                    <$ty as $crate::Storefront>::list_game_versions(game).await
+                    <$ty as $crate::Storefront>::game_versions(game, path).await
                 }
                 async fn get_game_version_details(
                     game: $crate::Game,
-                    version_id: String,
+                    path: Vec<String>,
                 ) -> std::result::Result<$crate::GameVersionDetails, $crate::Error> {
-                    <$ty as $crate::Storefront>::game_version_details(game, version_id).await
+                    <$ty as $crate::Storefront>::game_version_details(game, path).await
                 }
             }
 

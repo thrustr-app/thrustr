@@ -7,6 +7,7 @@ plugin:
   description: Plugin to interact with itch.io.
   allowed-hosts:
     - api.itch.io
+    - "*.r2.cloudflarestorage.com"
 
 config:
   sections:

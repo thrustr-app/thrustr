@@ -35,7 +35,7 @@ impl StorefrontHandle {
     pub async fn sync_games(&self) -> Result<()> {
         let permit = Permit::begin(&self.component, StorefrontOperation::Sync)?;
 
-        let games = match self.storefront.list_games().await {
+        let games = match self.storefront.games().await {
             Ok(games) => games,
             Err(error) => {
                 permit.finish(Err(error.clone())).await?;
@@ -70,11 +70,15 @@ impl StorefrontHandle {
         Ok(())
     }
 
-    pub async fn list_game_versions(&self, game_id: GameId) -> Result<Vec<GameVersion>> {
+    pub async fn list_game_versions(
+        &self,
+        game_id: GameId,
+        path: Vec<String>,
+    ) -> Result<Vec<GameVersion>> {
         let permit = Permit::begin(&self.component, StorefrontOperation::ListVersions)?;
 
         let game = self.load_game(game_id).await?;
-        let versions = match self.storefront.list_game_versions(game).await {
+        let versions = match self.storefront.game_versions(game, path).await {
             Ok(versions) => versions,
             Err(error) => {
                 permit.finish(Err(error.clone())).await?;
@@ -89,10 +93,10 @@ impl StorefrontHandle {
     pub async fn game_version_details(
         &self,
         game_id: GameId,
-        version_id: String,
+        path: Vec<String>,
     ) -> Result<GameVersionDetails> {
         let cache = self.component.version_details_cache();
-        if let Some(details) = cache.get(game_id, &version_id) {
+        if let Some(details) = cache.get(game_id, &path) {
             return Ok(details);
         }
 
@@ -101,7 +105,7 @@ impl StorefrontHandle {
         let game = self.load_game(game_id).await?;
         let details = match self
             .storefront
-            .game_version_details(game, version_id.clone())
+            .game_version_details(game, path.clone())
             .await
         {
             Ok(details) => details,
@@ -112,7 +116,7 @@ impl StorefrontHandle {
         };
         permit.finish(Ok(())).await?;
 
-        cache.insert(game_id, version_id, details.clone());
+        cache.insert(game_id, path, details.clone());
         Ok(details)
     }
 
@@ -152,20 +156,20 @@ impl StorefrontHandle {
 }
 
 #[derive(Default)]
-pub(crate) struct VersionDetailsCache(DashMap<(GameId, String), (Moment, GameVersionDetails)>);
+pub(crate) struct VersionDetailsCache(DashMap<(GameId, Vec<String>), (Moment, GameVersionDetails)>);
 
 impl VersionDetailsCache {
-    fn get(&self, game_id: GameId, version_id: &str) -> Option<GameVersionDetails> {
-        let key = (game_id, version_id.to_owned());
+    fn get(&self, game_id: GameId, path: &[String]) -> Option<GameVersionDetails> {
+        let key = (game_id, path.to_vec());
         let now = Moment::now();
         self.0
             .remove_if(&key, |_, (expires_at, _)| expires_at.has_passed(now));
         self.0.get(&key).map(|entry| entry.1.clone())
     }
 
-    fn insert(&self, game_id: GameId, version_id: String, details: GameVersionDetails) {
+    fn insert(&self, game_id: GameId, path: Vec<String>, details: GameVersionDetails) {
         if let Some(expires_at) = Moment::now().checked_add(VERSION_DETAILS_TTL) {
-            self.0.insert((game_id, version_id), (expires_at, details));
+            self.0.insert((game_id, path), (expires_at, details));
         }
     }
 

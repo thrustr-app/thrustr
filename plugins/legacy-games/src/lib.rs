@@ -73,22 +73,23 @@ impl Auth for LegacyGames {
 
 #[pdk::export]
 impl Storefront for LegacyGames {
-    async fn list_games() -> Result<Vec<Game>> {
+    async fn games() -> Result<Vec<Game>> {
         let session = Session::load()?;
         let products = owned_products(&session).await?;
 
         Ok(products.into_iter().flat_map(games).collect())
     }
 
-    async fn list_game_versions(game: Game) -> Result<Vec<GameVersion>> {
+    async fn game_versions(game: Game, _path: Vec<String>) -> Result<Vec<GameVersion>> {
         Ok(vec![GameVersion {
             id: game.lookup_id,
             pretty_name: Some(game.name),
             platform: Platform::Windows,
+            children_label: None,
         }])
     }
 
-    async fn game_version_details(game: Game, _version_id: String) -> Result<GameVersionDetails> {
+    async fn game_version_details(game: Game, _path: Vec<String>) -> Result<GameVersionDetails> {
         let external_id = |key: &str| {
             game.external_ids
                 .get(key)

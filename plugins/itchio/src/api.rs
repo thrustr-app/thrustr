@@ -76,15 +76,115 @@ pub async fn uploads(
     game_id: &str,
     download_key_id: Option<&str>,
 ) -> Result<Vec<Upload>, Error> {
-    let mut path = format!("/games/{game_id}/uploads");
-    if let Some(download_key_id) = download_key_id {
-        path.push_str(&format!("?download_key_id={download_key_id}"));
-    }
-
+    let path = with_download_key(format!("/games/{game_id}/uploads"), download_key_id);
     let request = get(&path).header("Authorization", api_key);
     send::<UploadsResponse>(request)
         .await
         .map(|response| response.uploads)
+}
+
+pub async fn upload(
+    api_key: &str,
+    upload_id: &str,
+    download_key_id: Option<&str>,
+) -> Result<Upload, Error> {
+    let path = with_download_key(format!("/uploads/{upload_id}"), download_key_id);
+    let request = get(&path).header("Authorization", api_key);
+    send::<UploadResponse>(request)
+        .await
+        .map(|response| response.upload)
+}
+
+pub async fn builds(
+    api_key: &str,
+    upload_id: &str,
+    download_key_id: Option<&str>,
+) -> Result<Vec<Build>, Error> {
+    let path = with_download_key(format!("/uploads/{upload_id}/builds"), download_key_id);
+    let request = get(&path).header("Authorization", api_key);
+    send::<BuildsResponse>(request)
+        .await
+        .map(|response| response.builds)
+}
+
+pub async fn build(
+    api_key: &str,
+    build_id: &str,
+    download_key_id: Option<&str>,
+) -> Result<Build, Error> {
+    let path = with_download_key(format!("/builds/{build_id}"), download_key_id);
+    let request = get(&path).header("Authorization", api_key);
+    send::<BuildResponse>(request)
+        .await
+        .map(|response| response.build)
+}
+
+pub async fn upload_download_url(
+    api_key: &str,
+    upload_id: &str,
+    download_key_id: Option<&str>,
+) -> Result<String, Error> {
+    let path = with_download_key(format!("/uploads/{upload_id}/download"), download_key_id);
+    download_url(api_key, &path).await
+}
+
+pub async fn build_archive_url(
+    api_key: &str,
+    build_id: &str,
+    download_key_id: Option<&str>,
+) -> Result<String, Error> {
+    let path = with_download_key(
+        format!("/builds/{build_id}/download/archive/default"),
+        download_key_id,
+    );
+    download_url(api_key, &path).await
+}
+
+async fn download_url(api_key: &str, path: &str) -> Result<String, Error> {
+    let response = get(path)
+        .header("Authorization", api_key)
+        .redirect_limit(0)
+        .send()
+        .await
+        .map_err(request_error)?;
+
+    response
+        .headers()
+        .get("location")
+        .and_then(|location| location.to_str().ok())
+        .map(String::from)
+        .ok_or_else(|| Error::other(format!("`{path}` didn't redirect ({})", response.status())))
+}
+
+pub async fn fetch_range(url: &str, range: &str) -> Result<(Vec<u8>, u64), Error> {
+    let response = Client::new()
+        .get(url)
+        .header("Range", format!("bytes={range}"))
+        .send()
+        .await
+        .map_err(request_error)?;
+
+    let status = response.status();
+    if status.as_u16() != 206 {
+        return Err(Error::other(format!("range request failed ({status})")));
+    }
+
+    let size = response
+        .headers()
+        .get("content-range")
+        .and_then(|range| range.to_str().ok())
+        .and_then(|range| range.rsplit_once('/'))
+        .and_then(|(_, size)| size.parse().ok())
+        .ok_or_else(|| Error::other("missing content range"))?;
+
+    Ok((response.into_body().bytes().await.to_vec(), size))
+}
+
+fn with_download_key(mut path: String, download_key_id: Option<&str>) -> String {
+    if let Some(download_key_id) = download_key_id {
+        path.push_str(&format!("?download_key_id={download_key_id}"));
+    }
+    path
 }
 
 pub fn get(path: &str) -> RequestBuilder {
@@ -179,6 +279,11 @@ struct UploadsResponse {
 }
 
 #[derive(Deserialize)]
+struct UploadResponse {
+    upload: Upload,
+}
+
+#[derive(Deserialize)]
 pub struct Upload {
     pub id: u64,
     #[serde(default)]
@@ -187,6 +292,82 @@ pub struct Upload {
     pub storage: Storage,
     #[serde(default, deserialize_with = "list_or_empty_object")]
     pub traits: Vec<UploadTrait>,
+    pub size: Option<u64>,
+    pub build_id: Option<u64>,
+    pub launch_targets_extracted_size: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct BuildsResponse {
+    #[serde(deserialize_with = "list_or_empty_object")]
+    builds: Vec<Build>,
+}
+
+#[derive(Deserialize)]
+struct BuildResponse {
+    build: Build,
+}
+
+#[derive(Deserialize)]
+pub struct Build {
+    pub id: u64,
+    pub version: u64,
+    pub user_version: Option<String>,
+    pub state: BuildState,
+    #[serde(default, deserialize_with = "list_or_empty_object")]
+    pub files: Vec<BuildFile>,
+    pub created_at: Option<String>,
+}
+
+impl Build {
+    pub fn archive(&self) -> Option<&BuildFile> {
+        self.files.iter().find(|file| {
+            file.kind == BuildFileType::Archive
+                && file.sub_type == BuildFileSubType::Default
+                && file.state == BuildFileState::Uploaded
+        })
+    }
+}
+
+#[derive(Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildState {
+    Completed,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
+pub struct BuildFile {
+    pub size: u64,
+    #[serde(rename = "type")]
+    pub kind: BuildFileType,
+    pub sub_type: BuildFileSubType,
+    pub state: BuildFileState,
+}
+
+#[derive(Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildFileType {
+    Archive,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildFileSubType {
+    Default,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildFileState {
+    Uploaded,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Deserialize, PartialEq, Eq)]
