@@ -59,6 +59,7 @@ impl PlatformExt for Platform {
             Platform::Windows => Some(Icon::windows()),
             Platform::Linux => Some(Icon::linux()),
             Platform::Macos => Some(Icon::apple()),
+            Platform::Android => Some(Icon::android()),
             Platform::Other => None,
         }
     }

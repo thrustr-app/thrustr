@@ -386,6 +386,7 @@ pub enum UploadTrait {
     PWindows,
     PLinux,
     POsx,
+    PAndroid,
     Preorder,
     #[serde(other)]
     Other,

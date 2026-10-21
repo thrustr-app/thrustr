@@ -3,6 +3,7 @@ pub enum Platform {
     Windows,
     Linux,
     Macos,
+    Android,
     Other,
 }
 
@@ -15,4 +16,8 @@ impl Platform {
 
     #[cfg(target_os = "macos")]
     pub const CURRENT: Self = Self::Macos;
+
+    pub const fn is_supported(self) -> bool {
+        matches!(self, Self::CURRENT | Self::Other)
+    }
 }

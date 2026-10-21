@@ -352,10 +352,7 @@ impl InstallDialog {
                     Ok(versions) => {
                         level.options = versions
                             .into_iter()
-                            .filter(|v| {
-                                depth > 0
-                                    || matches!(v.platform, Platform::CURRENT | Platform::Other)
-                            })
+                            .filter(|v| depth > 0 || v.platform.is_supported())
                             .map(|v| VersionOption {
                                 label: v.pretty_name.unwrap_or_else(|| v.id.clone()).into(),
                                 id: v.id.into(),

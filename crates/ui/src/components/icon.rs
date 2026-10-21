@@ -18,6 +18,7 @@ macro_rules! icon_constructors {
 }
 
 icon_constructors! {
+    android => "icons/android.svg",
     appearance => "icons/appearance.svg",
     apple => "icons/apple.svg",
     arrow => "icons/arrow.svg",

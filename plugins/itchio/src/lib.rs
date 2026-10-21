@@ -208,6 +208,7 @@ fn platform(upload_trait: UploadTrait) -> Option<Platform> {
         UploadTrait::PWindows => Some(Platform::Windows),
         UploadTrait::PLinux => Some(Platform::Linux),
         UploadTrait::POsx => Some(Platform::Macos),
+        UploadTrait::PAndroid => Some(Platform::Android),
         UploadTrait::Preorder | UploadTrait::Other => None,
     }
 }
