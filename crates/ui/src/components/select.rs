@@ -193,7 +193,7 @@ impl<T: PartialEq + 'static> RenderOnce for Select<T> {
         let indicator = if self.loading {
             Icon::loader().size(self.size).spin()
         } else {
-            Icon::chevrons().size_sm()
+            Icon::chevron().size_md()
         }
         .color(theme.colors.secondary);
 

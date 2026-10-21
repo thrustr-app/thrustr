@@ -22,7 +22,7 @@ icon_constructors! {
     apple => "icons/apple.svg",
     arrow => "icons/arrow.svg",
     check => "icons/check.svg",
-    chevrons => "icons/chevrons.svg",
+    chevron => "icons/chevron.svg",
     collections => "icons/collections.svg",
     danger => "icons/danger.svg",
     disk => "icons/disk.svg",

@@ -63,7 +63,7 @@ pub(crate) fn item(
                 .flex_none()
                 .size(Icon::length(Size::Small))
                 .when(selected, |slot| {
-                    slot.child(Icon::check().size_sm().color(theme.colors.accent))
+                    slot.child(Icon::check().size_sm().color(theme.colors.primary))
                 }),
         )
 }

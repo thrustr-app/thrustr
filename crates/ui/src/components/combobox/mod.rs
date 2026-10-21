@@ -136,7 +136,7 @@ impl<T: Clone + PartialEq + 'static> RenderOnce for Combobox<T> {
 
         let indicator = div()
             .flex_none()
-            .child(Icon::chevrons().size_sm().color(theme.colors.secondary))
+            .child(Icon::chevron().size_md().color(theme.colors.secondary))
             .when(interactive, |indicator| {
                 indicator.cursor_pointer().on_mouse_down(
                     MouseButton::Left,
