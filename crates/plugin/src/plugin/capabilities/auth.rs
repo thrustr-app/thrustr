@@ -3,7 +3,7 @@ use crate::wit::exports::thrustr::plugin::auth::{
     self, LoginCallback, LoginFlow as PluginLoginFlow, LoginForm as PluginLoginForm,
     LoginRequest as PluginLoginRequest,
 };
-use anyhow::bail;
+use anyhow::ensure;
 use async_trait::async_trait;
 use domain::component::{Auth, Error, LoginFlow, LoginForm, LoginRequest};
 use std::sync::Arc;
@@ -17,22 +17,20 @@ pub struct PluginAuth {
 impl PluginAuth {
     pub fn resolve(
         runtime: &Arc<PluginRuntime>,
-        form: Option<domain::component::LoginForm>,
+        form: Option<LoginForm>,
     ) -> anyhow::Result<Option<Self>> {
-        let indices = runtime.export("auth", auth::GuestIndices::new)?;
-        Ok(pair(indices, form)?.map(|(indices, form)| Self {
+        let Some(indices) = runtime.export("auth", auth::GuestIndices::new)? else {
+            ensure!(
+                form.is_none(),
+                "plugin manifest has [auth] but the plugin does not export Auth"
+            );
+            return Ok(None);
+        };
+        Ok(Some(Self {
             runtime: runtime.clone(),
             indices,
             form,
         }))
-    }
-}
-
-fn pair<I, F>(indices: Option<I>, form: Option<F>) -> anyhow::Result<Option<(I, Option<F>)>> {
-    match (indices, form) {
-        (Some(indices), form) => Ok(Some((indices, form))),
-        (None, None) => Ok(None),
-        (None, Some(_)) => bail!("plugin manifest has [auth] but the plugin does not export Auth"),
     }
 }
 

@@ -1,40 +1,42 @@
 use crate::plugin::{PluginRuntime, guest_call};
 use crate::wit::exports::thrustr::plugin::config;
-use anyhow::bail;
+use anyhow::{bail, ensure};
 use async_trait::async_trait;
-use domain::component::{ComboboxOption, Config, ConfigSchema, Error, FieldValue};
+use domain::component::{ComboboxOption, Config, ConfigSchema, Error, FieldValue, Form};
 use std::{collections::HashMap, sync::Arc};
 
 pub struct PluginConfig {
     runtime: Arc<PluginRuntime>,
-    indices: config::GuestIndices,
+    indices: Option<config::GuestIndices>,
     schema: Arc<ConfigSchema>,
 }
 
 impl PluginConfig {
-    // TODO: maybe it is a good idea to enable the capability if the
-    // schema alone is present, since `validate` already defaults to Ok(()).
     pub fn resolve(
         runtime: &Arc<PluginRuntime>,
         schema: Option<Arc<ConfigSchema>>,
     ) -> anyhow::Result<Option<Self>> {
         let indices = runtime.export("config", config::GuestIndices::new)?;
-        Ok(pair(indices, schema)?.map(|(indices, schema)| Self {
+        let Some(schema) = schema else {
+            ensure!(
+                indices.is_none(),
+                "plugin exports Config but its manifest has no [config]"
+            );
+            return Ok(None);
+        };
+        if indices.is_none()
+            && let Some(field) = schema.fields().find(|field| field.is_dynamic())
+        {
+            bail!(
+                "field `{}` has dynamic options but the plugin does not export Config",
+                field.id()
+            );
+        }
+        Ok(Some(Self {
             runtime: runtime.clone(),
             indices,
             schema,
         }))
-    }
-}
-
-fn pair<I, S>(indices: Option<I>, schema: Option<S>) -> anyhow::Result<Option<(I, S)>> {
-    match (indices, schema) {
-        (Some(indices), Some(schema)) => Ok(Some((indices, schema))),
-        (None, None) => Ok(None),
-        (Some(_), None) => bail!("plugin exports Config but its manifest has no [config]"),
-        (None, Some(_)) => {
-            bail!("plugin manifest has [config] but the plugin does not export Config")
-        }
     }
 }
 
@@ -45,18 +47,24 @@ impl Config for PluginConfig {
     }
 
     async fn validate(&self, fields: HashMap<String, FieldValue>) -> Result<(), Error> {
+        let Some(indices) = &self.indices else {
+            return Ok(());
+        };
         let fields = fields
             .into_iter()
             .map(|(id, value)| (id, value.into()))
             .collect();
-        guest_call!(self.runtime, self.indices, |config, accessor| {
+        guest_call!(self.runtime, indices, |config, accessor| {
             config.call_validate(accessor, fields)
         })
     }
 
     async fn options(&self, field_id: &str) -> Result<Vec<ComboboxOption>, Error> {
+        let Some(indices) = &self.indices else {
+            return Err(Error::Other("plugin does not export Config".to_owned()));
+        };
         let field_id = field_id.to_owned();
-        let options = guest_call!(self.runtime, self.indices, |config, accessor| {
+        let options = guest_call!(self.runtime, indices, |config, accessor| {
             config.call_options(accessor, field_id)
         })?;
         Ok(options
