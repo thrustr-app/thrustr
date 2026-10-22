@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 pdk-macros = { path = "../pdk-macros" }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde.workspace = true
-wit-bindgen = "0.62"
+wit-bindgen = "0.63"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
