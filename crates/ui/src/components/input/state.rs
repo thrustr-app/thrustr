@@ -600,9 +600,9 @@ impl InputState {
         window.show_character_palette();
     }
 
-    pub(super) fn on_scroll_wheel(
+    pub(super) fn on_scroll(
         &mut self,
-        event: &ScrollWheelEvent,
+        event: &ScrollEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

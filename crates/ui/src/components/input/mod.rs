@@ -202,7 +202,7 @@ pub(crate) fn editable<E: InteractiveElement>(
     interactive: bool,
     window: &Window,
 ) -> E {
-    let element = element.on_scroll_wheel(window.listener_for(state, InputState::on_scroll_wheel));
+    let element = element.on_scroll(window.listener_for(state, InputState::on_scroll));
     if !interactive {
         return element;
     }

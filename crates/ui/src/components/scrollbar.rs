@@ -3,7 +3,7 @@ use gpui::{
     CursorStyle, DispatchPhase, Div, Edges, Element, ElementId, Entity, GlobalElementId, Hitbox,
     HitboxBehavior, Hsla, InspectorElementId, InteractiveElement, Interactivity, IntoElement,
     IsZero, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Point, Position, Render, RenderOnce, ScrollHandle, ScrollWheelEvent, Stateful,
+    Pixels, Point, Position, Render, RenderOnce, ScrollEvent, ScrollHandle, Stateful,
     StatefulInteractiveElement, Style, StyleRefinement, Styled, Task, UniformListDecoration,
     UniformListScrollHandle, Window, px, quad,
 };
@@ -572,7 +572,7 @@ impl ScrollbarElement {
         self.on_mouse_down(capture_phase, window);
         self.on_mouse_move(capture_phase, window);
         self.on_mouse_up(capture_phase, window);
-        self.on_scroll_wheel(window);
+        self.on_scroll(window);
     }
 
     fn on_mouse_down(&self, capture_phase: DispatchPhase, window: &mut Window) {
@@ -617,9 +617,9 @@ impl ScrollbarElement {
         });
     }
 
-    fn on_scroll_wheel(&self, window: &mut Window) {
+    fn on_scroll(&self, window: &mut Window) {
         let state = self.state.clone();
-        window.on_mouse_event(move |_: &ScrollWheelEvent, phase, window, cx| {
+        window.on_mouse_event(move |_: &ScrollEvent, phase, window, cx| {
             if phase.bubble() {
                 state.update(cx, |state, cx| {
                     if state.parent_hovered(window) {
