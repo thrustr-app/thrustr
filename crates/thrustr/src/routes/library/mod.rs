@@ -8,15 +8,19 @@ use crate::{
 use artwork::ArtworkReady;
 use cache::{LruImageCache, lru_image_cache};
 use card::{GameCard, GameEntry};
-use domain::{component::StorefrontOperation, game::GameId, section_index::SectionIndex};
+use domain::{
+    component::StorefrontOperation,
+    game::{GameId, GameIndex},
+    section_index::SectionIndex,
+};
 use event::Topic;
 use gpui::{
     AnyElement, App, AppContext, Context, Div, Entity, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Pixels, Point, Rems, Render, Resource, ScrollHandle,
-    ScrollStrategy, SharedString, Styled, Subscription, Task, UniformListScrollHandle, Window,
-    container_query, div, prelude::FluentBuilder, px, rems, uniform_list,
+    IntoElement, ParentElement, Pixels, Rems, Render, Resource, ScrollHandle, SharedString, Styled,
+    Subscription, Task, UniformListScrollHandle, Window, container_query, div,
+    prelude::FluentBuilder, px, rems, uniform_list,
 };
-use grid::{GridDims, GridMetrics};
+use grid::{GridLayout, GridViewport};
 use lru::LruCache;
 use std::{
     cell::Cell, collections::HashMap, num::NonZeroUsize, ops::Range, rc::Rc, time::Duration,
@@ -61,12 +65,6 @@ const SEARCH_DEBOUNCE: Duration = Duration::from_millis(50);
 
 type ChunkCache = LruCache<usize, Vec<GameEntry>>;
 
-fn available_letters(sections: &SectionIndex) -> u32 {
-    sections.sections().iter().fold(0, |mask, section| {
-        scrubber_position(&section.label).map_or(mask, |i| mask | (1 << i))
-    })
-}
-
 #[derive(Clone, Default)]
 pub struct LibraryState {
     search_query: SharedString,
@@ -80,26 +78,31 @@ struct ViewAnchor {
     rows_from_top: f32,
 }
 
+#[derive(Clone, Copy)]
+struct PinnedLetter {
+    letter: usize,
+    offset: Pixels,
+}
+
 pub struct Library {
     ids: Rc<Vec<GameId>>,
     sections: Rc<SectionIndex>,
     available_letters: u32,
-    pinned_letter: Option<usize>,
-    pinned_offset: Option<Point<Pixels>>,
-    scroll_handle: UniformListScrollHandle,
-    pending_anchor: Option<ViewAnchor>,
-    selected: Option<usize>,
-    pending_selection: Option<GameId>,
-    num_cols: Rc<Cell<usize>>,
-    scrollbar: Entity<ScrollbarState>,
     chunks: Rc<ChunkCache>,
     loading_chunks: HashMap<usize, Task<()>>,
+    image_cache: Entity<LruImageCache>,
+    selected: Option<usize>,
+    pending_selection: Option<GameId>,
+    focus_handle: FocusHandle,
+    scroll_handle: UniformListScrollHandle,
+    last_layout: Rc<Cell<Option<GridLayout>>>,
+    scrollbar: Entity<ScrollbarState>,
+    pending_anchor: Option<ViewAnchor>,
+    pinned: Option<PinnedLetter>,
     search: Entity<InputState>,
     _search_debounce: Option<Task<()>>,
     syncing: bool,
     can_sync: bool,
-    image_cache: Entity<LruImageCache>,
-    focus_handle: FocusHandle,
     _focus_subscription: Subscription,
     _search_subscription: Subscription,
     _refresh_task: Option<Task<()>>,
@@ -117,11 +120,9 @@ impl Route for Library {
         let focus_subscription = cx.on_focus(&focus_handle, window, |this, window, cx| {
             if window.last_input_was_keyboard() {
                 if !this.is_restoring() {
-                    this.selected = this.scroll_anchor();
+                    this.selected = this.anchor_item();
                     if let Some(idx) = this.selected {
-                        let cols = this.cols();
-                        this.scroll_handle
-                            .scroll_to_item(idx / cols, ScrollStrategy::Nearest);
+                        this.reveal_item(idx);
                     }
                 }
                 cx.defer_in(window, |_, _, cx| cx.notify());
@@ -146,22 +147,21 @@ impl Route for Library {
             ids: Rc::new(Vec::new()),
             sections: Rc::new(SectionIndex::default()),
             available_letters: 0,
-            pinned_letter: None,
-            pinned_offset: None,
-            scroll_handle,
-            pending_anchor: state.anchor,
-            selected: None,
-            pending_selection: state.selected,
-            num_cols: Rc::new(Cell::new(1)),
-            scrollbar,
             chunks: Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS)),
             loading_chunks: HashMap::new(),
+            image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
+            selected: None,
+            pending_selection: state.selected,
+            focus_handle,
+            scroll_handle,
+            last_layout: Rc::new(Cell::new(None)),
+            scrollbar,
+            pending_anchor: state.anchor,
+            pinned: None,
             search,
             _search_debounce: None,
             syncing: false,
             can_sync: false,
-            image_cache: cx.new(|cx| LruImageCache::new(1, cx)),
-            focus_handle,
             _focus_subscription: focus_subscription,
             _search_subscription: search_subscription,
             _refresh_task: None,
@@ -276,67 +276,6 @@ impl Library {
         changed
     }
 
-    fn cols(&self) -> usize {
-        self.num_cols.get().max(1)
-    }
-
-    /// The list's inner scroll handle.
-    fn base_scroll(&self) -> ScrollHandle {
-        self.scroll_handle.0.borrow().base_handle.clone()
-    }
-
-    fn set_scroll_y(&self, y: Pixels) {
-        let base = self.base_scroll();
-        let mut offset = base.offset();
-        offset.y = y;
-        base.set_offset(offset);
-    }
-
-    fn is_restoring(&self) -> bool {
-        self.pending_anchor.is_some() || self.pending_selection.is_some()
-    }
-
-    fn selected_id(&self) -> Option<GameId> {
-        self.selected.and_then(|idx| self.ids.get(idx)).copied()
-    }
-
-    fn chunks_mut(&mut self) -> &mut ChunkCache {
-        // Render clones this Rc into frame closures, but gpui drops the element
-        // arena right after each draw and this runs between frames, so we should
-        // be the sole owner here.
-        debug_assert_eq!(
-            Rc::strong_count(&self.chunks),
-            1,
-            "render frame still holds Rc clone - make_mut will clone the entire chunk cache"
-        );
-        Rc::make_mut(&mut self.chunks)
-    }
-
-    fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
-        let position = self.chunks.iter().find_map(|(&chunk_idx, entries)| {
-            entries
-                .iter()
-                .position(|g| g.id == update.game_id)
-                .map(|offset| (chunk_idx, offset))
-        });
-        if let Some((chunk_idx, offset)) = position {
-            let entry = &mut self.chunks_mut().peek_mut(&chunk_idx).unwrap()[offset];
-            let path = cover_path(&update.hash);
-            entry.cover_path = path.clone();
-            entry.accent = update.accent.map(|c| c.to_gpui_hsla());
-
-            if let Some(path) = path {
-                let resource = Resource::Path(path);
-                self.image_cache
-                    .update(cx, |cache, cx| cache.remove(&resource, cx));
-            }
-
-            if self.is_item_visible(chunk_idx * CHUNK_SIZE + offset) {
-                cx.notify();
-            }
-        }
-    }
-
     fn refresh_games(&mut self, cx: &mut Context<Self>) {
         let game_service = cx.game_service();
 
@@ -344,39 +283,8 @@ impl Library {
         self._refresh_task = Some(cx.spawn_and_update(
             async move { game_service.list_index(Some(&query)) },
             |library, result, _| match result {
-                Ok(index) => {
-                    let selected_id = library.selected_id().or(library.pending_selection.take());
-                    let anchor = library.scroll_anchor();
-                    let old_ids = library.ids.clone();
-
-                    let positions: HashMap<GameId, usize> = index
-                        .ids
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, &id)| (id, idx))
-                        .collect();
-
-                    library.focus_handle =
-                        library.focus_handle.clone().tab_stop(!index.ids.is_empty());
-
-                    library.ids = Rc::new(index.ids);
-                    library.available_letters = available_letters(&index.sections);
-                    library.sections = Rc::new(index.sections);
-                    library.pinned_letter = None;
-                    library.pinned_offset = None;
-                    library.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
-                    library.loading_chunks.clear();
-
-                    library.selected = selected_id.and_then(|id| positions.get(&id).copied());
-                    library.restore_scroll(&old_ids, anchor, &positions);
-                    // Lets `save_state` fall back to the current view if the game is gone.
-                    library.pending_anchor = library
-                        .pending_anchor
-                        .filter(|anchor| positions.contains_key(&anchor.game));
-                }
-                Err(e) => {
-                    error!("failed to list game index: {e:#}");
-                }
+                Ok(index) => library.apply_game_index(index),
+                Err(e) => error!("failed to list game index: {e:#}"),
             },
         ));
     }
@@ -390,8 +298,37 @@ impl Library {
         }));
     }
 
+    fn apply_game_index(&mut self, index: GameIndex) {
+        let selected_id = self.selected_id().or(self.pending_selection.take());
+        let anchor = self.anchor_item();
+        let old_ids = self.ids.clone();
+
+        let positions: HashMap<GameId, usize> = index
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(idx, &id)| (id, idx))
+            .collect();
+
+        self.focus_handle = self.focus_handle.clone().tab_stop(!index.ids.is_empty());
+
+        self.ids = Rc::new(index.ids);
+        self.available_letters = available_letters(&index.sections);
+        self.sections = Rc::new(index.sections);
+        self.pinned = None;
+        self.chunks = Rc::new(ChunkCache::new(MAX_RESIDENT_CHUNKS));
+        self.loading_chunks.clear();
+
+        self.selected = selected_id.and_then(|id| positions.get(&id).copied());
+        self.restore_scroll(&old_ids, anchor, &positions);
+        // Lets `save_state` fall back to the current view if the game is gone.
+        self.pending_anchor = self
+            .pending_anchor
+            .filter(|anchor| positions.contains_key(&anchor.game));
+    }
+
     fn move_selection(&mut self, dir: GridDir, cx: &mut Context<Self>) {
-        let cols = self.cols();
+        let cols = self.num_cols();
         let next = match self.selected {
             None => self.top_visible_item(),
             Some(_) => grid_step(self.selected, dir, self.ids.len(), cols),
@@ -399,8 +336,7 @@ impl Library {
 
         if let Some(next) = next.filter(|&next| Some(next) != self.selected) {
             self.selected = Some(next);
-            self.scroll_handle
-                .scroll_to_item(next / cols, ScrollStrategy::Nearest);
+            self.reveal_item(next);
             self.scrollbar
                 .update(cx, |scrollbar, cx| scrollbar.flash(cx));
             cx.notify();
@@ -411,45 +347,103 @@ impl Library {
         let Some(start) = self.sections.start_of(label) else {
             return;
         };
-        let cols = self.cols();
-        self.scroll_handle
-            .scroll_to_item(start / cols, ScrollStrategy::Top);
-        self.pinned_letter = scrubber_position(label);
-        self.pinned_offset = None;
+        self.scroll_item_to_top(start);
+        self.pinned = scrubber_position(label).map(|letter| PinnedLetter {
+            letter,
+            offset: self.scroll_offset(),
+        });
         self.scrollbar
             .update(cx, |scrollbar, cx| scrollbar.flash(cx));
         cx.notify();
     }
 
-    fn metrics(&self, count: usize) -> Option<GridMetrics> {
-        let cols = self.cols();
-        GridMetrics::measure(&self.scroll_handle, count.div_ceil(cols))
+    fn activate_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.selected_id() {
+            cx.navigate(Page::Game(id));
+        }
+    }
+
+    fn selected_id(&self) -> Option<GameId> {
+        self.selected.and_then(|idx| self.ids.get(idx)).copied()
+    }
+
+    fn num_cols(&self) -> usize {
+        self.last_layout.get().map_or(1, |layout| layout.num_cols)
+    }
+
+    fn row_of(&self, idx: usize) -> usize {
+        idx / self.num_cols()
+    }
+
+    fn viewport(&self) -> Option<GridViewport> {
+        GridViewport::measure(&self.scroll_handle, self.last_layout.get()?.num_rows)
+    }
+
+    /// The list's inner scroll handle.
+    fn base_scroll(&self) -> ScrollHandle {
+        self.scroll_handle.0.borrow().base_handle.clone()
+    }
+
+    /// How far down the list is scrolled, as a positive distance.
+    fn scroll_offset(&self) -> Pixels {
+        -self.base_scroll().offset().y
+    }
+
+    fn set_scroll_offset(&self, offset: Pixels) {
+        let base = self.base_scroll();
+        let mut position = base.offset();
+        position.y = -offset;
+        base.set_offset(position);
+    }
+
+    fn scroll_item_to_top(&self, idx: usize) {
+        if let Some(viewport) = self.viewport() {
+            self.set_scroll_offset(viewport.offset_to_place(self.row_of(idx), 0.));
+        }
+    }
+
+    fn reveal_item(&self, idx: usize) {
+        if let Some(viewport) = self.viewport() {
+            self.set_scroll_offset(viewport.offset_to_reveal(self.row_of(idx)));
+        }
     }
 
     fn top_visible_item(&self) -> Option<usize> {
-        let cols = self.cols();
-        let count = self.ids.len();
-        if count == 0 {
-            return None;
-        }
-
-        let Some(metrics) = self.metrics(count) else {
-            return Some(0);
-        };
-        Some((metrics.nearest_row() * cols).min(count - 1))
+        let last = self.ids.len().checked_sub(1)?;
+        let row = self
+            .viewport()
+            .map_or(0, |viewport| viewport.row_nearest_top());
+        Some((row * self.num_cols()).min(last))
     }
 
     fn is_item_visible(&self, idx: usize) -> bool {
-        let cols = self.cols();
-        self.metrics(self.ids.len())
-            .is_some_and(|metrics| metrics.row_is_visible(idx / cols))
+        self.viewport()
+            .is_some_and(|viewport| viewport.is_row_visible(self.row_of(idx)))
     }
 
     /// Index anchoring the viewport across a games refresh.
-    fn scroll_anchor(&self) -> Option<usize> {
+    fn anchor_item(&self) -> Option<usize> {
         self.selected
             .filter(|&idx| self.is_item_visible(idx))
             .or_else(|| self.top_visible_item())
+    }
+
+    fn unpin_letter_if_scrolled(&mut self) {
+        let offset = self.scroll_offset();
+        self.pinned = self
+            .pinned
+            .filter(|pin| (pin.offset - offset).abs() < px(1.));
+    }
+
+    fn top_letter(&self) -> Option<usize> {
+        let top_item = self.viewport()?.first_visible_row() * self.num_cols();
+        self.sections
+            .label_for(top_item)
+            .and_then(scrubber_position)
+    }
+
+    fn is_restoring(&self) -> bool {
+        self.pending_anchor.is_some() || self.pending_selection.is_some()
     }
 
     /// Scroll the refreshed list back to roughly the games that were on screen.
@@ -467,31 +461,28 @@ impl Library {
             return;
         };
 
-        let cols = self.cols();
-        let old_row = old_anchor / cols;
-        let new_row = new_anchor / cols;
+        let old_row = self.row_of(old_anchor);
+        let new_row = self.row_of(new_anchor);
         if new_row == old_row {
             return;
         }
 
-        // The layout still describes the list being replaced.
-        let Some(metrics) = self.metrics(old_ids.len()) else {
+        let Some(viewport) = self.viewport() else {
             return;
         };
-        let y = self.base_scroll().offset().y;
-        self.set_scroll_y(y - metrics.scroll_delta(old_row, new_row));
+        self.set_scroll_offset(self.scroll_offset() + viewport.scroll_delta(old_row, new_row));
     }
 
     /// Anchors the viewport on the game being opened, or on the top visible one otherwise.
     fn view_anchor(&self, opened: Option<GameId>) -> Option<ViewAnchor> {
-        let metrics = self.metrics(self.ids.len())?;
+        let viewport = self.viewport()?;
         let idx = opened
             .and_then(|opened| self.ids.iter().position(|&id| id == opened))
             .or_else(|| self.top_visible_item())?;
 
         Some(ViewAnchor {
             game: self.ids[idx],
-            rows_from_top: metrics.rows_from_top(idx / self.cols()),
+            rows_from_top: viewport.rows_from_top(self.row_of(idx)),
         })
     }
 
@@ -499,9 +490,8 @@ impl Library {
         let Some(anchor) = self.pending_anchor else {
             return;
         };
-        let count = self.ids.len();
-        let Some(metrics) = self.metrics(count) else {
-            if count > 0 {
+        let Some(viewport) = self.viewport() else {
+            if !self.ids.is_empty() {
                 cx.on_next_frame(window, |_, _, cx| cx.notify());
             }
             return;
@@ -511,18 +501,7 @@ impl Library {
         let Some(idx) = self.ids.iter().position(|&id| id == anchor.game) else {
             return;
         };
-        let cols = self.cols();
-        self.set_scroll_y(-metrics.offset_for_row(
-            idx / cols,
-            anchor.rows_from_top,
-            count.div_ceil(cols),
-        ));
-    }
-
-    fn activate_selected(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected_id() {
-            cx.navigate(Page::Game(id));
-        }
+        self.set_scroll_offset(viewport.offset_to_place(self.row_of(idx), anchor.rows_from_top));
     }
 
     fn ensure_chunks_resident(&mut self, items: Range<usize>, cx: &mut Context<Self>) {
@@ -569,46 +548,61 @@ impl Library {
         self.loading_chunks.insert(chunk_idx, task);
     }
 
-    fn track_pinned_letter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let pending_scroll = {
-            let list = self.scroll_handle.0.borrow();
-            list.deferred_scroll_to_item
-                .is_some()
-                .then(|| list.base_handle.offset())
-        };
-        if let Some(offset) = pending_scroll {
-            cx.on_next_frame(window, move |library, _, cx| {
-                if library.base_scroll().offset() != offset {
-                    cx.notify();
-                }
-            });
-        }
+    fn chunks_mut(&mut self) -> &mut ChunkCache {
+        // Render clones this Rc into frame closures, but gpui drops the element
+        // arena right after each draw and this runs between frames, so we should
+        // be the sole owner here.
+        debug_assert_eq!(
+            Rc::strong_count(&self.chunks),
+            1,
+            "render frame still holds Rc clone - make_mut will clone the entire chunk cache"
+        );
+        Rc::make_mut(&mut self.chunks)
+    }
 
-        if self.pinned_letter.is_some() && pending_scroll.is_none() {
-            let live_offset = self.base_scroll().offset();
-            match self.pinned_offset {
-                None => self.pinned_offset = Some(live_offset),
-                Some(offset) if offset != live_offset => {
-                    self.pinned_letter = None;
-                    self.pinned_offset = None;
-                }
-                _ => {}
+    fn apply_artwork_update(&mut self, update: ArtworkReady, cx: &mut Context<Self>) {
+        let position = self.chunks.iter().find_map(|(&chunk_idx, entries)| {
+            entries
+                .iter()
+                .position(|g| g.id == update.game_id)
+                .map(|offset| (chunk_idx, offset))
+        });
+        if let Some((chunk_idx, offset)) = position {
+            let entry = &mut self.chunks_mut().peek_mut(&chunk_idx).unwrap()[offset];
+            let path = cover_path(&update.hash);
+            entry.cover_path = path.clone();
+            entry.accent = update.accent.map(|c| c.to_gpui_hsla());
+
+            if let Some(path) = path {
+                let resource = Resource::Path(path);
+                self.image_cache
+                    .update(cx, |cache, cx| cache.remove(&resource, cx));
+            }
+
+            if self.is_item_visible(chunk_idx * CHUNK_SIZE + offset) {
+                cx.notify();
             }
         }
     }
 }
 
+fn available_letters(sections: &SectionIndex) -> u32 {
+    sections.sections().iter().fold(0, |mask, section| {
+        scrubber_position(&section.label).map_or(mask, |i| mask | (1 << i))
+    })
+}
+
 fn render_row(
     row_idx: usize,
-    dims: &GridDims,
+    layout: &GridLayout,
     chunks: &ChunkCache,
     game_count: usize,
     padding: Pixels,
     focused: bool,
     selected: Option<usize>,
 ) -> Div {
-    let start = row_idx * dims.num_cols;
-    let end = (start + dims.num_cols).min(game_count);
+    let start = row_idx * layout.num_cols;
+    let end = (start + layout.num_cols).min(game_count);
 
     div()
         .w_full()
@@ -620,15 +614,18 @@ fn render_row(
             chunks
                 .peek(&(idx / CHUNK_SIZE))
                 .and_then(|entries| entries.get(idx % CHUNK_SIZE))
-                .map(|game| GameCard::new(game.clone(), dims.card_width))
-                .unwrap_or_else(|| GameCard::unloaded(dims.card_width))
+                .map(|game| GameCard::new(game.clone(), layout.card_width))
+                .unwrap_or_else(|| GameCard::unloaded(layout.card_width))
                 .selected(focused && selected == Some(idx))
         }))
-        .children((0..dims.num_cols - (end - start)).map(|_| GameCard::spacer(dims.card_width)))
+        .children((0..layout.num_cols - (end - start)).map(|_| GameCard::spacer(layout.card_width)))
 }
 
 impl Render for Library {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.apply_pending_anchor(window, cx);
+        self.unpin_letter_if_scrolled();
+
         let theme = cx.theme();
         let game_count = self.ids.len();
         let chunks = self.chunks.clone();
@@ -637,18 +634,19 @@ impl Render for Library {
 
         let scrollbar = self.scrollbar.clone();
         let scroll_handle = self.scroll_handle.clone();
-        let base_scroll = self.base_scroll();
-        let sections = self.sections.clone();
+        let last_layout = self.last_layout.clone();
+        let has_sections = !self.sections.is_empty();
 
-        let is_focused = self.focus_handle.is_focused(window);
-        self.apply_pending_anchor(window, cx);
-        self.track_pinned_letter(window, cx);
-
-        let focused = is_focused && window.last_input_was_keyboard();
+        let focused = self.focus_handle.is_focused(window) && window.last_input_was_keyboard();
         let selected = self.selected;
-        let num_cols = self.num_cols.clone();
         let available_letters = self.available_letters;
-        let pinned_letter = self.pinned_letter;
+        let current_letter = self
+            .pinned
+            .map(|pin| pin.letter)
+            .or_else(|| self.top_letter());
+        let visible_rows = self
+            .viewport()
+            .map_or(0, |viewport| viewport.visible_rows());
 
         div()
             .track_focus(&self.focus_handle)
@@ -670,26 +668,10 @@ impl Render for Library {
             .text_color(theme.colors.accent)
             .child(container_query(move |size, window, _cx| {
                 let padding = px(GRID_PADDING.0 * window.rem_size().as_f32());
-                let viewport = base_scroll.bounds().size.height;
-                let content_height =
-                    (viewport > Pixels::ZERO).then(|| base_scroll.max_offset().y + viewport);
-                let dims = GridDims::compute(
-                    size.width - padding * 2.,
-                    size.height,
-                    game_count,
-                    content_height,
-                );
-                num_cols.set(dims.num_cols);
+                let layout = GridLayout::compute(size.width - padding * 2., game_count);
+                last_layout.set(Some(layout));
 
-                let current_letter = pinned_letter.or_else(|| {
-                    GridMetrics::measure(&scroll_handle, dims.num_rows)
-                        .and_then(|metrics| {
-                            sections.label_for(metrics.first_touching_row() * dims.num_cols)
-                        })
-                        .and_then(scrubber_position)
-                });
-
-                let scrubber = (!sections.is_empty()).then(|| {
+                let scrubber = has_sections.then(|| {
                     let library = library.clone();
                     Scrubber::new()
                         .available(available_letters)
@@ -708,14 +690,17 @@ impl Render for Library {
                 div()
                     .size_full()
                     .relative()
-                    .image_cache(lru_image_cache(image_cache.clone(), dims.cache_capacity()))
+                    .image_cache(lru_image_cache(
+                        image_cache.clone(),
+                        layout.cache_capacity(visible_rows),
+                    ))
                     .child(
-                        uniform_list("game-grid", dims.num_rows, {
+                        uniform_list("game-grid", layout.num_rows, {
                             let chunks = chunks.clone();
                             let library = library.clone();
                             move |range, _, cx| {
-                                let items = range.start * dims.num_cols
-                                    ..(range.end * dims.num_cols).min(game_count);
+                                let items = range.start * layout.num_cols
+                                    ..(range.end * layout.num_cols).min(game_count);
                                 let library = library.clone();
                                 cx.defer(move |cx| {
                                     library
@@ -728,8 +713,8 @@ impl Render for Library {
                                 range
                                     .map(|row_idx| {
                                         render_row(
-                                            row_idx, &dims, &chunks, game_count, padding, focused,
-                                            selected,
+                                            row_idx, &layout, &chunks, game_count, padding,
+                                            focused, selected,
                                         )
                                     })
                                     .collect()
