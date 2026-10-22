@@ -38,14 +38,14 @@ impl StorefrontHandle {
         let games = match self.storefront.games().await {
             Ok(games) => games,
             Err(error) => {
-                permit.finish(Err(error.clone())).await?;
+                permit.finish(Err(error.clone()));
                 return Err(error.into());
             }
         };
 
         let listed = games.len();
         let summary = self.store_games(games).await?;
-        permit.finish(Ok(())).await?;
+        permit.finish(Ok(()));
 
         info!(
             component = self.component.id(),
@@ -81,11 +81,11 @@ impl StorefrontHandle {
         let versions = match self.storefront.game_versions(game, path).await {
             Ok(versions) => versions,
             Err(error) => {
-                permit.finish(Err(error.clone())).await?;
+                permit.finish(Err(error.clone()));
                 return Err(error.into());
             }
         };
-        permit.finish(Ok(())).await?;
+        permit.finish(Ok(()));
 
         Ok(versions)
     }
@@ -110,11 +110,11 @@ impl StorefrontHandle {
         {
             Ok(details) => details,
             Err(error) => {
-                permit.finish(Err(error.clone())).await?;
+                permit.finish(Err(error.clone()));
                 return Err(error.into());
             }
         };
-        permit.finish(Ok(())).await?;
+        permit.finish(Ok(()));
 
         cache.insert(game_id, path, details.clone());
         Ok(details)

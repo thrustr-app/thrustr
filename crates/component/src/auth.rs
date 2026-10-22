@@ -44,7 +44,7 @@ impl AuthHandle {
     pub async fn logout(&self) -> Result<()> {
         let permit = Permit::begin(&self.component, AuthOperation::Logout)?;
         let result = self.auth.logout().await;
-        permit.finish(result.clone()).await?;
+        permit.finish(result.clone());
         Ok(result?)
     }
 }
@@ -62,7 +62,7 @@ impl LoginPermit {
         }
 
         let result = self.auth.login(request).await;
-        self.permit.finish(result.clone()).await?;
+        self.permit.finish(result.clone());
         Ok(result?)
     }
 }

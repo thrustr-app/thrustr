@@ -50,9 +50,7 @@ impl ConfigHandle {
                 .map_err(|e| Error::Other(format!("invalid options: {e}")))
         });
 
-        permit
-            .finish(result.as_ref().map(drop).map_err(Clone::clone))
-            .await?;
+        permit.finish(result.as_ref().map(drop).map_err(Clone::clone));
         result.map_err(Into::into)
     }
 
@@ -63,7 +61,7 @@ impl ConfigHandle {
         let result = self.config.validate(fields.clone()).await;
 
         if result.is_err() {
-            permit.finish(result.clone()).await?;
+            permit.finish(result.clone());
             return result.map_err(Into::into);
         }
 
@@ -74,6 +72,7 @@ impl ConfigHandle {
             .inspect_err(|e|  warn!(component = self.component.id(), error = %e, "storing configuration failed"))?;
 
         info!(component = self.component.id(), "configuration saved");
-        permit.finish(Ok(())).await
+        permit.finish(Ok(()));
+        Ok(())
     }
 }

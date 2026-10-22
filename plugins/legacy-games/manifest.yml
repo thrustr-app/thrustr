@@ -18,3 +18,4 @@ auth:
     - type: text
       id: password
       label: Password
+      description: The password is not mandatory to retrieve Amazon Prime giveaway games.
