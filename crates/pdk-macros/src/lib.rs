@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use syn::{Error, ItemImpl, parse_macro_input};
 
+mod config;
 mod export;
 mod scheduler;
 

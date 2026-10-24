@@ -166,11 +166,8 @@ impl ComponentHandle {
         initializing.finish(result.clone());
         result?;
 
-        // Boxed because syncing finishes through `Permit::finish`, which awaits
-        // `initialize`. A sync never starts an initialization but the compiler
-        // can't know that.
         if let Some(storefront) = self.storefront()
-            && let Err(err) = Box::pin(storefront.sync_games()).await
+            && let Err(err) = storefront.sync_games().await
         {
             warn!(component = self.id(), error = %err, "initial game sync failed");
         }
@@ -331,16 +328,22 @@ impl Permit {
         }
     }
 
-    /// Reports the result of the operation, running any initialization it
-    /// starts.
-    pub(crate) async fn finish(mut self, result: std::result::Result<(), Error>) -> Result<()> {
+    /// Reports the result of the operation. Any initialization it starts runs
+    /// in the background and reports through the status.
+    pub(crate) fn finish(mut self, result: std::result::Result<(), Error>) {
         let running = self
             .running
             .take()
             .expect("permit should hold its operation until finished");
         let outcome = self.handle.state_write().finish(running, result);
         self.handle.report(&outcome);
-        self.handle.initialize(outcome.initialization).await
+
+        if let Some(initialization) = outcome.initialization {
+            let handle = self.handle.clone();
+            self.handle.context().tokio_handle.spawn(async move {
+                let _ = handle.initialize(Some(initialization)).await;
+            });
+        }
     }
 }
 
@@ -394,6 +397,9 @@ pub enum OperationError {
 
     #[error(transparent)]
     MissingField(#[from] MissingFieldError),
+
+    #[error("`{0}` has no dynamic options")]
+    NoDynamicOptions(String),
 
     #[error("component has no login form")]
     NoLoginForm,

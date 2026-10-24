@@ -27,7 +27,7 @@ impl PluginStorefront {
 
 #[async_trait]
 impl Storefront for PluginStorefront {
-    async fn list_games(&self) -> Result<Vec<NewGame>, Error> {
+    async fn games(&self) -> Result<Vec<NewGame>, Error> {
         let games = guest_call!(self.runtime, self.indices, |storefront, accessor| {
             storefront.call_get_games(accessor)
         })?;
@@ -35,9 +35,13 @@ impl Storefront for PluginStorefront {
         Ok(games.into_iter().map(|g| self.to_new_game(g)).collect())
     }
 
-    async fn list_game_versions(&self, game: Game) -> Result<Vec<GameVersion>, Error> {
+    async fn game_versions(
+        &self,
+        game: Game,
+        path: Vec<String>,
+    ) -> Result<Vec<GameVersion>, Error> {
         let versions = guest_call!(self.runtime, self.indices, |storefront, accessor| {
-            storefront.call_get_game_versions(accessor, game.into())
+            storefront.call_get_game_versions(accessor, game.into(), path)
         })?;
 
         Ok(versions.into_iter().map(Into::into).collect())
@@ -46,10 +50,10 @@ impl Storefront for PluginStorefront {
     async fn game_version_details(
         &self,
         game: Game,
-        version_id: String,
+        path: Vec<String>,
     ) -> Result<GameVersionDetails, Error> {
         let details = guest_call!(self.runtime, self.indices, |storefront, accessor| {
-            storefront.call_get_game_version_details(accessor, game.into(), version_id)
+            storefront.call_get_game_version_details(accessor, game.into(), path)
         })?;
 
         Ok(details.into())
@@ -78,6 +82,7 @@ impl From<types::GameVersion> for GameVersion {
             id: value.id,
             pretty_name: value.pretty_name,
             platform: value.platform.into(),
+            children_label: value.children_label,
         }
     }
 }
@@ -97,6 +102,8 @@ impl From<types::Platform> for Platform {
             types::Platform::Windows => Platform::Windows,
             types::Platform::Linux => Platform::Linux,
             types::Platform::Macos => Platform::Macos,
+            types::Platform::Android => Platform::Android,
+            types::Platform::Other => Platform::Other,
         }
     }
 }

@@ -73,14 +73,12 @@ impl PluginCache {
         self.lock().remove(key);
     }
 
-    fn list(&self, prefix: Option<&str>, now: Moment) -> Vec<String> {
+    fn list(&self, prefix: &str, now: Moment) -> Vec<String> {
         let mut keys: Vec<_> = self
             .lock()
             .lru
             .iter()
-            .filter(|(key, entry)| {
-                !entry.is_expired(now) && prefix.is_none_or(|prefix| key.starts_with(prefix))
-            })
+            .filter(|(key, entry)| !entry.is_expired(now) && key.starts_with(prefix))
             .map(|(key, _)| key.clone())
             .collect();
         keys.sort_unstable();
@@ -140,7 +138,7 @@ impl CacheHost for PluginState {
         self.cache.delete(&key);
     }
 
-    fn list(&mut self, prefix: Option<String>) -> Vec<String> {
-        self.cache.list(prefix.as_deref(), Moment::now())
+    fn list(&mut self, prefix: String) -> Vec<String> {
+        self.cache.list(&prefix, Moment::now())
     }
 }

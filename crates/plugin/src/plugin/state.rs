@@ -3,7 +3,7 @@ use crate::{
     wit::thrustr::plugin::types::Host,
 };
 use component::ComponentLink;
-use domain::component::ComponentStorage;
+use domain::component::{ComponentStorage, ConfigSchema};
 use reqwest::Client;
 use std::sync::Arc;
 use wasmtime::component::HasData;
@@ -23,6 +23,7 @@ pub struct PluginState {
     pub(crate) storage: Arc<dyn ComponentStorage>,
     pub(crate) link: ComponentLink,
     pub(crate) cache: Arc<PluginCache>,
+    pub(crate) config_schema: Option<Arc<ConfigSchema>>,
 }
 
 impl PluginState {
@@ -33,6 +34,7 @@ impl PluginState {
         allowed_hosts: Arc<[String]>,
         link: ComponentLink,
         cache: Arc<PluginCache>,
+        config_schema: Option<Arc<ConfigSchema>>,
     ) -> Self {
         let ctx = WasiCtx::builder().inherit_stdout().build();
 
@@ -46,6 +48,7 @@ impl PluginState {
             storage,
             link,
             cache,
+            config_schema,
         }
     }
 

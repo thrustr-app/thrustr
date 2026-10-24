@@ -14,7 +14,6 @@ use crate::components::input::{
     actions::*,
     cursor::Cursor,
     element::{CURSOR_WIDTH, TextElement},
-    events::{ChangeEvent, InputEvent},
     history::{Change, History},
     text_ops::TextOps,
     *,
@@ -23,36 +22,39 @@ use gpui::*;
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
-const DEFAULT_PLACEHOLDER_COLOR: u32 = 0x80808080;
 const DEFAULT_MASK: &str = "•";
 const DEFAULT_SELECTION_COLOR: u32 = 0x3390FF80;
 
-/// State management for text input components
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputEvent {
+    Input,
+    Change,
+}
+
+/// State of a single-line text field, owned by the view rendering it.
 ///
-/// Handles text editing, cursor positioning, selection, and scrolling
-/// for single-line text fields.
-#[allow(clippy::type_complexity)]
+/// Handles text editing, cursor positioning, selection, and scrolling, and
+/// emits [`InputEvent`]s as the user edits the text.
 pub struct InputState {
-    pub focus_handle: FocusHandle,
-    pub value: SharedString,
-    pub emitted_value: SharedString,
-    pub placeholder: SharedString,
-    pub placeholder_color: Hsla,
-    pub selection_color: Hsla,
-    pub selected_range: Range<usize>,
-    pub selection_reversed: bool,
-    pub marked_range: Option<Range<usize>>,
-    pub last_layout: Option<ShapedLine>,
-    pub last_bounds: Option<Bounds<Pixels>>,
-    pub selecting: bool,
-    pub scroll_handle: ScrollHandle,
-    pub should_auto_scroll: bool,
-    pub cursor: Entity<Cursor>,
-    pub masked: bool,
-    pub mask: SharedString,
-    pub on_input: Option<Box<dyn Fn(&InputEvent, &mut Window, &mut App) + 'static>>,
-    pub on_change: Option<Box<dyn Fn(&ChangeEvent, &mut Window, &mut App) + 'static>>,
-    pub max_length: Option<usize>,
+    pub(super) focus_handle: FocusHandle,
+    pub(super) value: SharedString,
+    pub(super) committed_value: SharedString,
+    pub(super) placeholder: SharedString,
+    /// Falls back to the theme's placeholder color.
+    pub(super) placeholder_color: Option<Hsla>,
+    pub(super) selection_color: Hsla,
+    pub(super) selected_range: Range<usize>,
+    pub(super) selection_reversed: bool,
+    pub(super) marked_range: Option<Range<usize>>,
+    pub(super) last_layout: Option<ShapedLine>,
+    pub(super) last_bounds: Option<Bounds<Pixels>>,
+    pub(super) selecting: bool,
+    pub(super) scroll_handle: ScrollHandle,
+    pub(super) should_auto_scroll: bool,
+    pub(super) cursor: Entity<Cursor>,
+    pub(super) masked: bool,
+    pub(super) mask: SharedString,
+    pub(super) max_length: Option<usize>,
     history: History,
     ignore_history: bool,
     focus_select: bool,
@@ -60,11 +62,6 @@ pub struct InputState {
 }
 
 impl InputState {
-    // ============================================================================
-    // Constructor and Builder Methods
-    // ============================================================================
-
-    /// Create a new [`InputState`] with default values
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let cursor = cx.new(|_| Cursor::new());
         let focus_handle = cx.focus_handle();
@@ -97,9 +94,9 @@ impl InputState {
         Self {
             focus_handle,
             value: SharedString::default(),
-            emitted_value: SharedString::default(),
+            committed_value: SharedString::default(),
             placeholder: SharedString::default(),
-            placeholder_color: rgba(DEFAULT_PLACEHOLDER_COLOR).into(),
+            placeholder_color: None,
             selection_color: rgba(DEFAULT_SELECTION_COLOR).into(),
             selected_range: 0..0,
             selection_reversed: false,
@@ -111,8 +108,6 @@ impl InputState {
             should_auto_scroll: false,
             masked: false,
             mask: SharedString::new(DEFAULT_MASK),
-            on_input: None,
-            on_change: None,
             max_length: None,
             history: History::new(),
             ignore_history: false,
@@ -122,96 +117,98 @@ impl InputState {
         }
     }
 
-    /// Set the placeholder text
-    pub fn set_placeholder(&mut self, placeholder: Option<impl Into<SharedString>>) {
-        if let Some(placeholder) = placeholder {
-            self.placeholder = placeholder.into();
-        } else {
-            self.placeholder = SharedString::default();
-        }
+    pub fn with_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.placeholder = placeholder.into();
+        self
     }
 
-    /// Set the placeholder text color
-    pub fn set_placeholder_color(&mut self, color: Option<impl Into<Hsla>>) {
-        if let Some(color) = color {
-            self.placeholder_color = color.into();
-        } else {
-            self.placeholder_color = rgba(DEFAULT_PLACEHOLDER_COLOR).into();
-        }
-    }
-
-    /// Set the selection color
-    pub fn set_selection_color(&mut self, color: Option<impl Into<Hsla>>) {
-        if let Some(color) = color {
-            self.selection_color = color.into();
-        } else {
-            self.selection_color = rgba(DEFAULT_SELECTION_COLOR).into();
-        }
-    }
-
-    /// Set the value of the text field
-    pub fn set_value(&mut self, value: Option<impl Into<SharedString>>) {
-        if let Some(value) = value {
-            let value = value.into();
-            if value != self.value {
-                self.value = value;
-                self.emitted_value = self.value.clone();
-                self.selected_range.start =
-                    TextOps::snap_to_grapheme_boundary(&self.value, self.selected_range.start);
-                self.selected_range.end =
-                    TextOps::snap_to_grapheme_boundary(&self.value, self.selected_range.end);
-                self.marked_range = None;
-                self.history.clear();
-            }
-        }
-    }
-
-    pub fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.value.is_empty() {
-            return;
-        }
-        self.value = SharedString::default();
-        self.selected_range = 0..0;
-        self.marked_range = None;
-        self.should_auto_scroll = true;
-        self.last_layout = None;
-        self.last_bounds = None;
-        self.history.clear();
-        if let Some(on_input) = &self.on_input {
-            on_input(
-                &InputEvent {
-                    value: self.value.clone(),
-                },
-                window,
-                cx,
-            );
-        }
+    pub fn set_placeholder(
+        &mut self,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        self.placeholder = placeholder.into();
         cx.notify();
     }
 
-    /// Mask or unmask the text field (e.g., for passwords)
-    pub fn set_masked(&mut self, masked: bool) {
+    pub fn with_placeholder_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.placeholder_color = Some(color.into());
+        self
+    }
+
+    pub fn with_selection_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.selection_color = color.into();
+        self
+    }
+
+    pub fn with_masked(mut self, masked: bool) -> Self {
+        self.masked = masked;
+        self
+    }
+
+    pub fn set_masked(&mut self, masked: bool, cx: &mut Context<Self>) {
         if self.masked != masked {
             self.masked = masked;
             self.should_auto_scroll = true;
+            cx.notify();
         }
     }
 
-    /// Set the mask string to use when masking is enabled
-    ///
-    /// Each character in the actual text will be replaced with the entire mask string
-    /// when masking is enabled.
-    pub fn set_mask(&mut self, mask: Option<impl Into<SharedString>>) {
-        if let Some(mask) = mask {
-            let mask = mask.into();
-            if self.mask != mask {
-                self.mask = mask;
-                if self.masked {
-                    self.should_auto_scroll = true;
-                }
-            }
-        } else {
-            self.mask = SharedString::new(DEFAULT_MASK);
+    pub fn with_mask(mut self, mask: impl Into<SharedString>) -> Self {
+        self.mask = mask.into();
+        self
+    }
+
+    pub fn with_max_length(mut self, max_length: usize) -> Self {
+        self.max_length = Some(max_length);
+        self
+    }
+
+    pub fn with_value(mut self, value: impl Into<SharedString>) -> Self {
+        self.replace_value(value.into());
+        self
+    }
+
+    pub fn value(&self) -> &SharedString {
+        &self.value
+    }
+
+    /// Replace the text, dropping the undo history and placing the cursor at
+    /// the end. Unlike user edits, this emits no [`InputEvent`].
+    pub fn set_value(&mut self, value: impl Into<SharedString>, cx: &mut Context<Self>) {
+        let value = value.into();
+        if value != self.value {
+            self.replace_value(value);
+            cx.notify();
+        }
+    }
+
+    /// Replace the text without notifying.
+    pub(crate) fn replace_value(&mut self, value: SharedString) {
+        self.selected_range = value.len()..value.len();
+        self.selection_reversed = false;
+        self.marked_range = None;
+        self.committed_value = value.clone();
+        self.value = value;
+        self.history.clear();
+        self.should_auto_scroll = true;
+    }
+
+    /// Replace the placeholder without notifying.
+    pub(crate) fn replace_placeholder(&mut self, placeholder: SharedString) {
+        self.placeholder = placeholder;
+    }
+
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.focus_handle.focus(window, cx);
+    }
+
+    /// Clear the text as a user edit.
+    pub(super) fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.value.is_empty() {
+            self.selected_range = 0..self.value.len();
+            self.marked_range = None;
+            self.replace_text_in_range(None, "", window, cx);
         }
     }
 
@@ -235,24 +232,13 @@ impl InputState {
             cursor.stop();
         });
         cx.notify();
-        self.on_change(window, cx);
+        self.commit(cx);
     }
 
-    fn on_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.value == self.emitted_value {
-            return;
-        }
-
-        self.emitted_value = self.value.clone();
-
-        if let Some(callback) = &self.on_change {
-            callback(
-                &ChangeEvent {
-                    value: self.value.clone(),
-                },
-                window,
-                cx,
-            );
+    fn commit(&mut self, cx: &mut Context<Self>) {
+        if self.value != self.committed_value {
+            self.committed_value = self.value.clone();
+            cx.emit(InputEvent::Change);
         }
     }
 
@@ -262,15 +248,10 @@ impl InputState {
         });
     }
 
-    pub(crate) fn cursor_visible(&self, window: &Window, cx: &App) -> bool {
+    pub(super) fn cursor_visible(&self, window: &Window, cx: &App) -> bool {
         self.focus_handle.is_focused(window) && self.cursor.read(cx).visible()
     }
 
-    // ============================================================================
-    // Cursor Movement Actions
-    // ============================================================================
-
-    /// Move cursor left by one grapheme cluster
     pub(super) fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {
             self.move_to(
@@ -282,7 +263,6 @@ impl InputState {
         }
     }
 
-    /// Move cursor right by one grapheme cluster
     pub(super) fn right(&mut self, _: &Right, _: &mut Window, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {
             self.move_to(
@@ -294,29 +274,24 @@ impl InputState {
         }
     }
 
-    /// Move cursor left by one word
     pub(super) fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
         let new_offset = TextOps::previous_word_boundary(&self.value, self.cursor_offset());
         self.move_to(new_offset, cx);
     }
 
-    /// Move cursor right by one word
     pub(super) fn word_right(&mut self, _: &WordRight, _: &mut Window, cx: &mut Context<Self>) {
         let new_offset = TextOps::next_word_boundary(&self.value, self.cursor_offset());
         self.move_to(new_offset, cx);
     }
 
-    /// Move cursor to the beginning of the field
     pub(super) fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
         self.move_to(0, cx);
     }
 
-    /// Move cursor to the end of the field
     pub(super) fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
         self.move_to(self.value.len(), cx);
     }
 
-    /// Move cursor to a specific offset
     pub(super) fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.pause_cursor_blink(cx);
         let offset = offset.clamp(0, self.value.len());
@@ -329,11 +304,6 @@ impl InputState {
         cx.notify();
     }
 
-    // ============================================================================
-    // Text Selection Actions
-    // ============================================================================
-
-    /// Extend selection left by one grapheme cluster
     pub(super) fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(
             TextOps::previous_boundary(&self.value, self.cursor_offset()),
@@ -341,7 +311,6 @@ impl InputState {
         );
     }
 
-    /// Extend selection right by one grapheme cluster
     pub(super) fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(
             TextOps::next_boundary(&self.value, self.cursor_offset()),
@@ -349,7 +318,6 @@ impl InputState {
         );
     }
 
-    /// Extend selection left by one word
     pub(super) fn select_word_left(
         &mut self,
         _: &SelectWordLeft,
@@ -361,7 +329,6 @@ impl InputState {
         self.select_to(new_offset, cx);
     }
 
-    /// Extend selection right by one word
     pub(super) fn select_word_right(
         &mut self,
         _: &SelectWordRight,
@@ -373,7 +340,6 @@ impl InputState {
         self.select_to(new_offset, cx);
     }
 
-    /// Select from cursor to beginning of field
     pub(super) fn select_to_beginning(
         &mut self,
         _: &SelectToBeginning,
@@ -383,7 +349,6 @@ impl InputState {
         self.select_to(0, cx);
     }
 
-    /// Select from cursor to end of field
     pub(super) fn select_to_end(
         &mut self,
         _: &SelectToEnd,
@@ -393,13 +358,11 @@ impl InputState {
         self.select_to(self.value.len(), cx);
     }
 
-    /// Select all text in the field
     pub(super) fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
         self.move_to(0, cx);
         self.select_to(self.value.len(), cx);
     }
 
-    /// Extend selection to a specific offset
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         if self.selection_reversed {
             self.selected_range.start = offset;
@@ -416,7 +379,6 @@ impl InputState {
         cx.notify();
     }
 
-    /// Select the word at the given offset
     fn select_word(&mut self, offset: usize, cx: &mut Context<Self>) {
         let start = TextOps::previous_word_boundary(&self.value, offset);
         let end = TextOps::next_word_boundary(&self.value, offset);
@@ -425,11 +387,6 @@ impl InputState {
         cx.notify();
     }
 
-    // ============================================================================
-    // Text Editing Actions
-    // ============================================================================
-
-    /// Delete character before cursor
     pub(super) fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {
             self.select_to(
@@ -440,7 +397,6 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    /// Delete character after cursor
     pub(super) fn delete(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {
             self.select_to(
@@ -451,16 +407,13 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    /// Paste text from clipboard
     pub(super) fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             self.history.prevent_merge();
-            // Replace newlines with spaces for single-line text fields
             self.replace_text_in_range(None, &text.replace('\n', " "), window, cx);
         }
     }
 
-    /// Copy selected text to clipboard
     pub(super) fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
             let selected_text = self.value[self.selected_range.clone()].to_string();
@@ -468,7 +421,6 @@ impl InputState {
         }
     }
 
-    /// Cut selected text to clipboard
     pub(super) fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
             let selected_text = self.value[self.selected_range.clone()].to_string();
@@ -537,7 +489,6 @@ impl InputState {
         }
     }
 
-    /// Delete word to the left of cursor
     pub(super) fn delete_word_left(
         &mut self,
         _: &DeleteWordLeft,
@@ -553,7 +504,6 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    /// Delete word to the right of cursor
     pub(super) fn delete_word_right(
         &mut self,
         _: &DeleteWordRight,
@@ -569,7 +519,6 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    /// Delete from cursor to beginning of text field
     pub(super) fn delete_to_beginning(
         &mut self,
         _: &DeleteToBeginning,
@@ -583,7 +532,6 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    /// Delete from cursor to end of text field
     pub(super) fn delete_to_end(
         &mut self,
         _: &DeleteToEnd,
@@ -597,16 +545,11 @@ impl InputState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    pub(super) fn enter(&mut self, _: &Enter, window: &mut Window, cx: &mut Context<Self>) {
-        self.on_change(window, cx);
+    pub(super) fn enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
+        self.commit(cx);
         cx.propagate();
     }
 
-    // ============================================================================
-    // Mouse Event Handlers
-    // ============================================================================
-
-    /// Handle mouse down events for cursor positioning and text selection
     pub(super) fn on_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -616,19 +559,15 @@ impl InputState {
         self.selecting = true;
         self.focus_select = false;
 
-        // Handle multi-click selection
         if event.click_count > 1 {
             if event.click_count.is_multiple_of(2) {
-                // Double-click: select word
                 self.select_word(self.index_for_mouse_position(event.position), cx);
             } else {
-                // Triple-click: select all
                 self.select_all(&SelectAll, window, cx);
             }
             return;
         }
 
-        // Single click: position cursor or extend selection
         let mouse_offset = self.index_for_mouse_position(event.position);
         if event.modifiers.shift {
             self.select_to(mouse_offset, cx);
@@ -637,12 +576,10 @@ impl InputState {
         }
     }
 
-    /// Handle mouse up events
     pub(super) fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
         self.selecting = false;
     }
 
-    /// Handle mouse move events for drag selection
     pub(super) fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
@@ -654,11 +591,6 @@ impl InputState {
         }
     }
 
-    // ============================================================================
-    // System Integration
-    // ============================================================================
-
-    /// Show character palette
     pub(super) fn show_character_palette(
         &mut self,
         _: &ShowCharacterPalette,
@@ -668,14 +600,9 @@ impl InputState {
         window.show_character_palette();
     }
 
-    // ============================================================================
-    // Scrolling Methods
-    // ============================================================================
-
-    /// Handle scroll wheel events
-    pub(super) fn on_scroll_wheel(
+    pub(super) fn on_scroll(
         &mut self,
-        event: &ScrollWheelEvent,
+        event: &ScrollEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -692,11 +619,9 @@ impl InputState {
         self.update_scroll_offset(Some(new_offset), cx);
     }
 
-    /// Update scroll offset with bounds checking
     fn update_scroll_offset(&mut self, offset: Option<Point<Pixels>>, cx: &mut Context<Self>) {
         let mut offset = offset.unwrap_or(self.scroll_handle.offset());
 
-        // Constrain horizontal scrolling
         if let (Some(layout), Some(bounds)) = (self.last_layout.as_ref(), self.last_bounds.as_ref())
         {
             let text_width = layout.width;
@@ -713,14 +638,12 @@ impl InputState {
             offset.x = offset.x.max(px(0.0));
         }
 
-        // Disable vertical scrolling for single-line text fields
         offset.y = px(0.0);
 
         self.scroll_handle.set_offset(offset);
         cx.notify();
     }
 
-    /// Automatically scroll to keep cursor visible
     pub(super) fn auto_scroll_to_cursor(&mut self, layout: &ShapedLine, bounds: Bounds<Pixels>) {
         self.should_auto_scroll = false;
 
@@ -740,13 +663,10 @@ impl InputState {
             new_scroll_x = cursor_x - visible_width;
         }
 
-        // Ensure no blank space is shown when text fits or becomes shorter
+        // Never leave blank space past the end of the text.
         if text_width <= visible_width {
-            // Text fits entirely, show from beginning
             new_scroll_x = px(0.0);
         } else {
-            // Text is longer than visible area
-            // Ensure we don't scroll past the end, leaving blank space
             let max_scroll = text_width - visible_width;
             new_scroll_x = new_scroll_x.min(max_scroll).max(px(0.0));
         }
@@ -757,11 +677,6 @@ impl InputState {
         }
     }
 
-    // ============================================================================
-    // Position and Index Calculation
-    // ============================================================================
-
-    /// Get the current cursor offset
     pub(super) fn cursor_offset(&self) -> usize {
         if self.selection_reversed {
             self.selected_range.start
@@ -770,12 +685,11 @@ impl InputState {
         }
     }
 
-    /// Get the current cursor offset in display text coordinates
     pub(super) fn display_cursor_offset(&self) -> usize {
         self.actual_to_display_offset(self.cursor_offset())
     }
 
-    /// Convert actual text offset to display text offset
+    /// Offset into the displayed text, which differs from the value while masked.
     pub(super) fn actual_to_display_offset(&self, actual_offset: usize) -> usize {
         if !self.masked {
             return actual_offset;
@@ -784,7 +698,6 @@ impl InputState {
         self.value[..actual_offset].graphemes(true).count() * self.mask.len()
     }
 
-    /// Convert display text offset back to actual text offset
     fn display_to_actual_offset(&self, display_offset: usize) -> usize {
         if !self.masked || self.mask.is_empty() {
             return display_offset;
@@ -793,7 +706,7 @@ impl InputState {
         TextOps::grapheme_offset_to_byte_offset(&self.value, display_offset / self.mask.len())
     }
 
-    /// Window x coordinate at which the given actual text offset is painted
+    /// Window x coordinate at which `actual_offset` is painted.
     pub(super) fn x_for_offset(
         &self,
         line: &ShapedLine,
@@ -804,12 +717,10 @@ impl InputState {
             - self.scroll_handle.offset().x
     }
 
-    /// Convert a window x coordinate to an x coordinate within the shaped line
     fn line_x(&self, bounds: Bounds<Pixels>, window_x: Pixels) -> Pixels {
         window_x - bounds.left() + self.scroll_handle.offset().x
     }
 
-    /// Calculate text index for mouse position
     fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
         if self.value.is_empty() {
             return 0;
@@ -834,6 +745,9 @@ impl InputState {
             .map(|range_utf16| TextOps::range_from_utf16(&self.value, range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        if range.is_empty() && new_text.is_empty() && self.marked_range.is_none() {
+            return None;
+        }
 
         let new_text = if let Some(max_length) = self.max_length
             && !new_text.is_empty()
@@ -914,7 +828,7 @@ impl EntityInputHandler for InputState {
         &mut self,
         range_utf16: Option<Range<usize>>,
         new_text: &str,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let (new_text, new_value, range) =
@@ -931,15 +845,7 @@ impl EntityInputHandler for InputState {
         self.last_layout = None;
         self.last_bounds = None;
 
-        if let Some(on_input) = &self.on_input {
-            on_input(
-                &InputEvent {
-                    value: self.value.clone(),
-                },
-                window,
-                cx,
-            );
-        }
+        cx.emit(InputEvent::Input);
         self.update_scroll_offset(None, cx);
     }
 
@@ -948,7 +854,7 @@ impl EntityInputHandler for InputState {
         range_utf16: Option<Range<usize>>,
         new_text: &str,
         new_selected_range_utf16: Option<Range<usize>>,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let (new_text, new_value, range) =
@@ -975,15 +881,7 @@ impl EntityInputHandler for InputState {
             });
 
         self.should_auto_scroll = true;
-        if let Some(on_input) = &self.on_input {
-            on_input(
-                &InputEvent {
-                    value: self.value.clone(),
-                },
-                window,
-                cx,
-            );
-        }
+        cx.emit(InputEvent::Input);
         cx.notify();
     }
 
@@ -1021,6 +919,8 @@ impl EntityInputHandler for InputState {
     }
 }
 
+impl EventEmitter<InputEvent> for InputState {}
+
 impl Focusable for InputState {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -1030,10 +930,8 @@ impl Focusable for InputState {
 impl Render for InputState {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .id("text-element")
             .flex_1()
-            .flex_grow_1()
             .overflow_x_hidden()
-            .child(TextElement::new(cx.entity().clone()))
+            .child(TextElement::new(cx.entity()))
     }
 }

@@ -10,6 +10,7 @@ diesel::table! {
         cover_url -> Nullable<Text>,
         summary -> Nullable<Text>,
         description -> Nullable<Text>,
+        removed -> Bool,
     }
 }
 
@@ -49,7 +50,7 @@ diesel::table! {
     component_config (component_id, field_id) {
         component_id -> Text,
         field_id -> Text,
-        value -> Text,
+        value -> Json,
     }
 }
 

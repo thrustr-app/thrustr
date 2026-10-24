@@ -278,6 +278,9 @@ fn io_error(err: &std::io::Error) -> Error {
 
     match err.kind() {
         ErrorKind::ConnectionRefused => Error::ConnectionRefused,
+        ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable | ErrorKind::NetworkDown => {
+            Error::DestinationUnavailable
+        }
         ErrorKind::ConnectionReset
         | ErrorKind::ConnectionAborted
         | ErrorKind::BrokenPipe

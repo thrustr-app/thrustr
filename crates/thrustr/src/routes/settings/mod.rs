@@ -23,13 +23,13 @@ pub use plugins::Plugins;
 pub use storefronts::Storefronts;
 
 impl SettingsPage {
-    fn build_view(&self, cx: &mut App) -> Option<AnyView> {
+    fn build_view(&self, window: &mut Window, cx: &mut App) -> Option<AnyView> {
         Some(match self {
             Self::Storefronts(None) => cx.new(Storefronts::new).into(),
             Self::Plugins(None) => cx.new(Plugins::new).into(),
             Self::Storefronts(Some(id)) | Self::Plugins(Some(id)) => {
                 let component = cx.component(id)?;
-                cx.new(|cx| Config::new(component, cx)).into()
+                cx.new(|cx| Config::new(component, window, cx)).into()
             }
             Self::Appearance => cx.new(|_| Appearance).into(),
         })
@@ -63,15 +63,15 @@ impl Route for Settings {
     type Args = SettingsPage;
     type State = ();
 
-    fn build(page: SettingsPage, _state: (), _window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let active_view = page.build_view(cx);
+    fn build(page: SettingsPage, _state: (), window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let active_view = page.build_view(window, cx);
 
-        cx.observe_global::<Navigator>(|this, cx| {
+        cx.observe_global_in::<Navigator>(window, |this, window, cx| {
             if let Page::Settings(Some(page)) = cx.navigator().current_page()
                 && page != this.current_page
             {
                 this.current_page = page.clone();
-                this.active_view = page.build_view(cx);
+                this.active_view = page.build_view(window, cx);
                 cx.notify();
             }
         })
@@ -80,7 +80,8 @@ impl Route for Settings {
         Self {
             current_page: page,
             active_view,
-            _components_task: cx.listen_any(
+            _components_task: cx.listen_any_in(
+                window,
                 &[Topic::ComponentRegistered, Topic::ComponentState],
                 Self::build_missing_view,
             ),
@@ -89,9 +90,9 @@ impl Route for Settings {
 }
 
 impl Settings {
-    fn build_missing_view(&mut self, cx: &mut Context<Self>) {
+    fn build_missing_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.active_view.is_none() {
-            self.active_view = self.current_page.build_view(cx);
+            self.active_view = self.current_page.build_view(window, cx);
             cx.notify();
         }
     }

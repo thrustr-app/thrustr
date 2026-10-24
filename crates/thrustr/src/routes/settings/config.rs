@@ -7,72 +7,26 @@ use crate::{
 };
 use component::{AuthHandle, ComponentHandle, ConfigHandle};
 use domain::component::{
-    AuthFlow, AuthOperation, ConfigOperation, ConfigSection, Form, FormElement, LoginForm,
-    LoginMethod, LoginRequest, Operation, Status, TextField,
+    AuthOperation, ComboboxField, ComboboxOption, ComboboxOptions, ConfigOperation, ConfigSection,
+    Field as FormField, FieldValue, Form, FormElement, LoginFlow, LoginForm, LoginMethod,
+    LoginRequest, Operation, Status,
 };
 use event::Topic;
 use gpui::{
     AnyElement, App, AppContext, ClickEvent, Context, Div, Entity, FontWeight, Image, ImageSource,
-    InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, SharedString, Styled,
-    Task, Window, div, img, prelude::FluentBuilder, relative, rems,
+    InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, SharedString,
+    StyleRefinement, Styled, Subscription, Task, Window, div, img, prelude::FluentBuilder,
+    relative, rems,
 };
 use std::{collections::HashMap, sync::Arc};
 use theme::ThemeExt;
 use ui::{
-    Alert, Button, Dialog, Empty, Icon, Input, InputEvent, PortalContext, WithField, WithFocus,
-    WithRadius, WithScrollbar, WithSize, WithVariant, input,
+    Alert, Button, Combobox, ComboboxEvent, ComboboxState, Dialog, Empty, FieldProps, FocusProps,
+    Icon, Input, InputEvent, InputState, PortalContext, SelectionMode, Size, WithField, WithFocus,
+    WithRadius, WithScrollbar, WithSize, WithVariant,
 };
 
-type Values = HashMap<SharedString, SharedString>;
-
-struct Field {
-    id: SharedString,
-    label: SharedString,
-    placeholder: Option<SharedString>,
-}
-
-impl Field {
-    fn input<T: 'static>(
-        &self,
-        values: &Values,
-        values_mut: fn(&mut T) -> &mut Values,
-        cx: &mut Context<T>,
-    ) -> Input {
-        let id = self.id.clone();
-        input(self.id.clone())
-            .label(self.label.clone())
-            .when_some(self.placeholder.clone(), Input::placeholder)
-            .value(values.get(&self.id).cloned().unwrap_or_default())
-            .on_input(cx.listener(move |this, event: &InputEvent, _, cx| {
-                values_mut(this).insert(id.clone(), event.value.clone());
-                cx.notify();
-            }))
-    }
-}
-
-enum Element {
-    Field(Field),
-    Hbox(Vec<Field>),
-}
-
-impl Element {
-    fn fields(&self) -> &[Field] {
-        match self {
-            Element::Field(field) => std::slice::from_ref(field),
-            Element::Hbox(fields) => fields,
-        }
-    }
-}
-
-struct Section {
-    name: SharedString,
-    elements: Vec<Element>,
-}
-
-struct AuthState {
-    handle: AuthHandle,
-    method: Option<LoginMethod>,
-}
+type Values = HashMap<String, FieldValue>;
 
 pub struct Config {
     name: SharedString,
@@ -87,10 +41,16 @@ pub struct Config {
     status_error: Option<SharedString>,
     scroll_handle: ScrollHandle,
     _tasks: Vec<Task<()>>,
+    _subscriptions: Vec<Subscription>,
+}
+
+struct AuthState {
+    handle: AuthHandle,
+    method: Option<LoginMethod>,
 }
 
 impl Config {
-    pub fn new(component: ComponentHandle, cx: &mut Context<Self>) -> Self {
+    pub fn new(component: ComponentHandle, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let icon = cx.component_icon(component.id());
 
         let auth = component.auth().map(|handle| AuthState {
@@ -103,27 +63,28 @@ impl Config {
             .as_ref()
             .map_or(Ok(HashMap::new()), ConfigHandle::values)
         {
-            Ok(values) => (
-                values
-                    .into_iter()
-                    .map(|(k, v)| (k.into(), v.into()))
-                    .collect(),
-                None,
-            ),
+            Ok(values) => (values, None),
             Err(err) => (HashMap::new(), Some(err.to_string().into())),
         };
         let values_loaded = local_error.is_none();
 
-        let sections = config
+        let sections: Vec<Section> = config
             .iter()
-            .flat_map(|c| &c.schema().sections)
-            .map(Into::into)
+            .flat_map(|c| c.schema().sections())
+            .map(|section| Section::new(section, &values, window, cx))
             .collect();
 
-        let _tasks = vec![cx.listen_any(
+        let mut _tasks = vec![cx.listen_any(
             &[Topic::ComponentRegistered, Topic::ComponentState],
             Self::refresh_status_error,
         )];
+        let mut _subscriptions = Vec::new();
+        for field in sections.iter().flat_map(Section::fields) {
+            _subscriptions.push(field.bind(|this: &mut Self| &mut this.values, cx));
+            if let Some(config) = &config {
+                _tasks.extend(field.load_options(config, cx));
+            }
+        }
 
         let status_error = status_error(&component.status());
         let mut page = Self {
@@ -139,6 +100,7 @@ impl Config {
             status_error,
             scroll_handle: ScrollHandle::new(),
             _tasks,
+            _subscriptions,
         };
 
         page.load_login_method(cx);
@@ -172,7 +134,7 @@ impl Config {
         let Some(config) = self.config.clone() else {
             return;
         };
-        let fields = to_owned_values(&self.values);
+        let fields = self.values.clone();
         cx.spawn_and_update(
             async move { config.save(fields).await },
             |this, result, _| {
@@ -197,7 +159,7 @@ impl Config {
         }
     }
 
-    fn login_with_flow(&mut self, auth: AuthHandle, login_flow: AuthFlow, cx: &mut Context<Self>) {
+    fn login_with_flow(&mut self, auth: AuthHandle, login_flow: LoginFlow, cx: &mut Context<Self>) {
         let permit = match auth.begin_login() {
             Ok(permit) => permit,
             Err(err) => {
@@ -229,8 +191,9 @@ impl Config {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let login_dialog =
-            cx.new(|_| LoginDialog::new(auth, login_form, &self.name, self.icon.clone()));
+        let login_dialog = cx.new(|cx| {
+            LoginDialog::new(auth, login_form, &self.name, self.icon.clone(), window, cx)
+        });
         window.open_dialog(cx, move |dialog, _, cx| {
             LoginDialog::build(&login_dialog, dialog, cx)
         });
@@ -240,29 +203,9 @@ impl Config {
         let Some(auth) = self.auth.as_ref().map(|a| a.handle.clone()) else {
             return;
         };
-        let permit = match auth.begin_logout() {
-            Ok(permit) => permit,
-            Err(err) => {
-                self.local_error = Some(err.to_string().into());
-                cx.notify();
-                return;
-            }
-        };
-
-        cx.spawn_and_update(
-            async move {
-                if let Some(flow) = auth.logout_flow().await?
-                    && open_auth_webview(flow).await?.is_none()
-                {
-                    return Ok(());
-                }
-                permit.logout().await?;
-                anyhow::Ok(())
-            },
-            |this, result, _| {
-                this.local_error = result.err().map(|e| e.to_string().into());
-            },
-        )
+        cx.spawn_and_update(async move { auth.logout().await }, |this, result, _| {
+            this.local_error = result.err().map(|e| e.to_string().into());
+        })
         .detach();
     }
 
@@ -292,7 +235,6 @@ impl Config {
         &self,
         status: &Status,
         can_configure: bool,
-        autofocus_back: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme();
@@ -314,7 +256,6 @@ impl Config {
                             .variant_outline()
                             .size_sm()
                             .radius_pill()
-                            .when(autofocus_back, |this| this.auto_focus())
                             .on_click(|_, _, cx| cx.navigate_back()),
                     )
                     .child(
@@ -380,7 +321,7 @@ impl Config {
         &self,
         can_configure: bool,
         autofocus_field: Option<SharedString>,
-        cx: &mut Context<Self>,
+        cx: &App,
     ) -> impl IntoElement {
         let sections = self.sections.iter().map(|section| {
             self.render_section(section, can_configure, autofocus_field.as_ref(), cx)
@@ -413,7 +354,7 @@ impl Config {
         section: &Section,
         can_configure: bool,
         autofocus_field: Option<&SharedString>,
-        cx: &mut Context<Self>,
+        cx: &App,
     ) -> Div {
         let theme = cx.theme();
         let elements = section.elements.iter().map(|element| match element {
@@ -447,12 +388,20 @@ impl Config {
         field: &Field,
         can_configure: bool,
         autofocus_field: Option<&SharedString>,
-        cx: &mut Context<Self>,
+        cx: &App,
     ) -> AnyElement {
         field
-            .input(&self.values, |this| &mut this.values, cx)
+            .control()
             .w(rems(20.))
-            .when(!can_configure, Input::disabled)
+            .map(|control| match field.dynamic(cx) {
+                Some(DynamicOptions::Loading) => control.disabled(),
+                Some(DynamicOptions::Failed(error)) => control.error(error.clone()),
+                Some(DynamicOptions::Loaded { stale: true, .. }) => {
+                    control.description("Some selected values are no longer available.")
+                }
+                Some(DynamicOptions::Loaded { .. }) | None => control,
+            })
+            .when(!can_configure, FieldControl::disabled)
             .when(autofocus_field == Some(&field.id), |this| this.auto_focus())
             .reveal_on_focus(&self.scroll_handle)
             .into_any_element()
@@ -466,8 +415,7 @@ impl Render for Config {
         let autofocus_field = self
             .sections
             .iter()
-            .flat_map(|s| &s.elements)
-            .flat_map(Element::fields)
+            .flat_map(Section::fields)
             .next()
             .filter(|_| can_configure)
             .map(|f| f.id.clone());
@@ -477,20 +425,13 @@ impl Render for Config {
             .flex()
             .flex_col()
             .gap(rems(2.))
-            .child(self.render_header(&status, can_configure, autofocus_field.is_none(), cx))
+            .child(self.render_header(&status, can_configure, cx))
             .child(self.render_body(can_configure, autofocus_field, cx))
     }
 }
 
 fn status_error(status: &Status) -> Option<SharedString> {
     status.error().map(|error| error.to_string().into())
-}
-
-fn to_owned_values(values: &Values) -> HashMap<String, String> {
-    values
-        .iter()
-        .map(|(id, value)| (id.to_string(), value.to_string()))
-        .collect()
 }
 
 struct LoginDialog {
@@ -502,11 +443,26 @@ struct LoginDialog {
     values: Values,
     submitting: bool,
     submit_error: Option<SharedString>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl LoginDialog {
-    fn new(auth: AuthHandle, form: LoginForm, name: &str, icon: Option<Arc<Image>>) -> Self {
-        let fields = form.text_fields().map(Into::into).collect();
+    fn new(
+        auth: AuthHandle,
+        form: LoginForm,
+        name: &str,
+        icon: Option<Arc<Image>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let fields: Vec<Field> = form
+            .fields()
+            .map(|field| Field::new(field, None, window, cx))
+            .collect();
+        let _subscriptions = fields
+            .iter()
+            .map(|field| field.bind(|this: &mut Self| &mut this.values, cx))
+            .collect();
 
         Self {
             auth,
@@ -514,9 +470,10 @@ impl LoginDialog {
             title: format!("Log in to {name}").into(),
             icon,
             fields,
-            values: HashMap::new(),
+            values: Values::new(),
             submitting: false,
             submit_error: None,
+            _subscriptions,
         }
     }
 
@@ -571,7 +528,7 @@ impl LoginDialog {
             }
         };
 
-        let fields = to_owned_values(&self.values);
+        let fields = self.values.clone();
         self.submitting = true;
         self.submit_error = None;
 
@@ -593,49 +550,329 @@ impl LoginDialog {
 }
 
 impl Render for LoginDialog {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let fields = self.fields.iter().enumerate().map(|(i, f)| {
-            f.input(&self.values, |this| &mut this.values, cx)
+            f.control()
                 .size_lg()
                 .w_full()
                 .when(i == 0, |this| this.auto_focus())
-                .when(self.submitting, Input::disabled)
+                .when(self.submitting, FieldControl::disabled)
         });
 
         div().flex().flex_col().gap(rems(1.)).children(fields)
     }
 }
 
-impl From<&ConfigSection> for Section {
-    fn from(section: &ConfigSection) -> Self {
+struct Section {
+    name: SharedString,
+    elements: Vec<Element>,
+}
+
+impl Section {
+    fn new(section: &ConfigSection, values: &Values, window: &mut Window, cx: &mut App) -> Self {
         Section {
             name: section.name.to_uppercase().into(),
-            elements: section.elements.iter().map(Into::into).collect(),
+            elements: section
+                .elements
+                .iter()
+                .map(|element| Element::new(element, values, window, cx))
+                .collect(),
+        }
+    }
+
+    fn fields(&self) -> impl Iterator<Item = &Field> {
+        self.elements.iter().flat_map(Element::fields)
+    }
+}
+
+enum Element {
+    Field(Field),
+    Hbox(Vec<Field>),
+}
+
+impl Element {
+    fn new(element: &FormElement, values: &Values, window: &mut Window, cx: &mut App) -> Self {
+        let mut field = |field: FormField| Field::new(field, values.get(field.id()), window, cx);
+        match element {
+            FormElement::Text(text) => Element::Field(field(FormField::Text(text))),
+            FormElement::Combobox(combobox) => Element::Field(field(FormField::Combobox(combobox))),
+            FormElement::Hbox { .. } => Element::Hbox(element.fields().map(field).collect()),
+        }
+    }
+
+    fn fields(&self) -> &[Field] {
+        match self {
+            Element::Field(field) => std::slice::from_ref(field),
+            Element::Hbox(fields) => fields,
         }
     }
 }
 
-impl From<&FormElement> for Element {
-    fn from(element: &FormElement) -> Self {
-        match element {
-            FormElement::Text(field) => Element::Field(field.into()),
-            FormElement::Hbox { .. } => {
-                Element::Hbox(element.text_fields().map(Into::into).collect())
+struct Field {
+    id: SharedString,
+    label: SharedString,
+    description: Option<SharedString>,
+    control: Control,
+}
+
+impl Field {
+    fn new(
+        field: FormField,
+        value: Option<&FieldValue>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let placeholder = SharedString::from(field.placeholder().unwrap_or_default().to_owned());
+        let control = match field {
+            FormField::Text(_) => {
+                let text = value.and_then(FieldValue::as_text).unwrap_or_default();
+                Control::Input(cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .with_value(SharedString::from(text.to_owned()))
+                        .with_placeholder(placeholder)
+                }))
+            }
+            FormField::Combobox(field) => {
+                let mode = match field.is_multiple() {
+                    true => SelectionMode::Multiple,
+                    false => SelectionMode::Single,
+                };
+                let values = value
+                    .cloned()
+                    .map(FieldValue::into_list)
+                    .unwrap_or_default();
+                let items: Vec<_> = match field.options() {
+                    ComboboxOptions::Static(options) => options.iter().map(item).collect(),
+                    // Selected values are shown as they are until the options load.
+                    ComboboxOptions::Dynamic => values
+                        .iter()
+                        .map(|value| (value.clone(), value.clone()))
+                        .collect(),
+                };
+                let state = cx.new(|cx| {
+                    ComboboxState::new_with_mode(mode, window, cx)
+                        .with_items(items)
+                        .with_values(values)
+                        .with_placeholder(placeholder)
+                });
+                Control::Combobox {
+                    state,
+                    field: Arc::new(field.clone()),
+                    dynamic: field
+                        .is_dynamic()
+                        .then(|| cx.new(|_| DynamicOptions::Loading)),
+                }
+            }
+        };
+
+        Field {
+            label: if field.required() {
+                format!("{} *", field.label()).into()
+            } else {
+                field.label().to_owned().into()
+            },
+            id: field.id().to_owned().into(),
+            description: field.description().map(|text| text.to_owned().into()),
+            control,
+        }
+    }
+
+    fn control(&self) -> FieldControl {
+        let control = match &self.control {
+            Control::Input(state) => FieldControl::Input(Input::new(state)),
+            Control::Combobox { state, .. } => FieldControl::Combobox(Combobox::new(state)),
+        };
+        control
+            .label(self.label.clone())
+            .when_some(self.description.clone(), WithField::description)
+    }
+
+    fn bind<T: 'static>(
+        &self,
+        values_mut: fn(&mut T) -> &mut Values,
+        cx: &mut Context<T>,
+    ) -> Subscription {
+        let id = self.id.clone();
+        match &self.control {
+            Control::Input(state) => cx.subscribe(state, move |this, state, event, cx| {
+                if *event == InputEvent::Input {
+                    let value = FieldValue::Text(state.read(cx).value().to_string());
+                    values_mut(this).insert(id.to_string(), value);
+                    cx.notify();
+                }
+            }),
+            Control::Combobox {
+                state,
+                field,
+                dynamic,
+            } => {
+                let (field, dynamic) = (field.clone(), dynamic.clone());
+                cx.subscribe(state, move |this, state, event, cx| match event {
+                    ComboboxEvent::Change(values) => {
+                        let value = field.value(values.iter().cloned());
+                        values_mut(this).insert(id.to_string(), value);
+                        // Drops unavailable values from the list once deselected.
+                        if let Some(dynamic) = &dynamic {
+                            dynamic.update(cx, |dynamic, cx| {
+                                if let DynamicOptions::Loaded { stale: true, .. } = dynamic {
+                                    dynamic.refresh(&state, cx);
+                                }
+                            });
+                        }
+                        cx.notify();
+                    }
+                })
             }
         }
     }
+
+    fn dynamic<'a>(&self, cx: &'a App) -> Option<&'a DynamicOptions> {
+        match &self.control {
+            Control::Combobox { dynamic, .. } => dynamic.as_ref().map(|dynamic| dynamic.read(cx)),
+            Control::Input(_) => None,
+        }
+    }
+
+    fn load_options<T: 'static>(
+        &self,
+        config: &ConfigHandle,
+        cx: &mut Context<T>,
+    ) -> Option<Task<()>> {
+        let Control::Combobox {
+            state,
+            dynamic: Some(dynamic),
+            ..
+        } = &self.control
+        else {
+            return None;
+        };
+        let (config, id) = (config.clone(), self.id.clone());
+        let (state, dynamic) = (state.clone(), dynamic.clone());
+        Some(cx.spawn_and_update(
+            async move { config.options(&id).await },
+            move |_, result, cx| {
+                dynamic.update(cx, |dynamic, cx| {
+                    *dynamic = match result {
+                        Ok(options) => DynamicOptions::Loaded {
+                            options,
+                            stale: false,
+                        },
+                        Err(err) => DynamicOptions::Failed(err.to_string().into()),
+                    };
+                    dynamic.refresh(&state, cx);
+                });
+            },
+        ))
+    }
 }
 
-impl From<&TextField> for Field {
-    fn from(field: &TextField) -> Self {
-        Field {
-            id: field.id.clone().into(),
-            label: if field.required {
-                format!("{} *", field.label).into()
-            } else {
-                field.label.clone().into()
-            },
-            placeholder: field.placeholder.clone().map(Into::into),
+enum Control {
+    Input(Entity<InputState>),
+    Combobox {
+        state: Entity<ComboboxState<String>>,
+        field: Arc<ComboboxField>,
+        dynamic: Option<Entity<DynamicOptions>>,
+    },
+}
+
+enum DynamicOptions {
+    Loading,
+    Loaded {
+        options: Vec<ComboboxOption>,
+        /// Whether some selected values are not among `options`.
+        stale: bool,
+    },
+    Failed(SharedString),
+}
+
+impl DynamicOptions {
+    /// Lists the loaded options and selected values that are no longer
+    /// among them as unavailable.
+    fn refresh(&mut self, state: &Entity<ComboboxState<String>>, cx: &mut App) {
+        let Self::Loaded { options, stale } = self else {
+            return;
+        };
+        let unavailable: Vec<String> = state
+            .read(cx)
+            .values()
+            .filter(|value| options.iter().all(|option| option.value != **value))
+            .cloned()
+            .collect();
+        *stale = !unavailable.is_empty();
+        let items: Vec<_> = options
+            .iter()
+            .map(item)
+            .chain(unavailable.into_iter().map(|value| {
+                let label = format!("{value} (unavailable)");
+                (value, label)
+            }))
+            .collect();
+        state.update(cx, |state, cx| state.set_items(items, cx));
+    }
+}
+
+fn item(option: &ComboboxOption) -> (String, String) {
+    (option.value.clone(), option.label.clone())
+}
+
+#[allow(clippy::large_enum_variant)]
+enum FieldControl {
+    Input(Input),
+    Combobox(Combobox<String>),
+}
+
+impl FieldControl {
+    fn disabled(self) -> Self {
+        match self {
+            Self::Input(input) => Self::Input(input.disabled()),
+            Self::Combobox(combobox) => Self::Combobox(combobox.disabled()),
+        }
+    }
+}
+
+impl Styled for FieldControl {
+    fn style(&mut self) -> &mut StyleRefinement {
+        match self {
+            Self::Input(input) => input.style(),
+            Self::Combobox(combobox) => combobox.style(),
+        }
+    }
+}
+
+impl WithSize for FieldControl {
+    fn size(self, size: Size) -> Self {
+        match self {
+            Self::Input(input) => Self::Input(WithSize::size(input, size)),
+            Self::Combobox(combobox) => Self::Combobox(WithSize::size(combobox, size)),
+        }
+    }
+}
+
+impl WithFocus for FieldControl {
+    fn focus_props(&mut self) -> &mut FocusProps {
+        match self {
+            Self::Input(input) => input.focus_props(),
+            Self::Combobox(combobox) => combobox.focus_props(),
+        }
+    }
+}
+
+impl WithField for FieldControl {
+    fn field_props(&mut self) -> &mut FieldProps {
+        match self {
+            Self::Input(input) => input.field_props(),
+            Self::Combobox(combobox) => combobox.field_props(),
+        }
+    }
+}
+
+impl IntoElement for FieldControl {
+    type Element = AnyElement;
+
+    fn into_element(self) -> Self::Element {
+        match self {
+            Self::Input(input) => input.into_any_element(),
+            Self::Combobox(combobox) => combobox.into_any_element(),
         }
     }
 }

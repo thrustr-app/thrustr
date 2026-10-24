@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
-use domain::component::AuthFlow;
+use domain::component::LoginFlow;
 use smol::unblock;
 use std::process::{Command, Stdio};
 
 // TODO: tell apart user cancellation/window close from helper errors.
-pub async fn open_auth_webview(flow: AuthFlow) -> Result<Option<(String, String)>> {
+pub async fn open_auth_webview(flow: LoginFlow) -> Result<Option<(String, String)>> {
     unblock(move || run_helper(&flow.url, &flow.target)).await
 }
 

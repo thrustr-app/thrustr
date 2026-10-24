@@ -5,7 +5,7 @@ mod registry;
 mod storefront;
 mod timers;
 
-pub use auth::{AuthHandle, LoginPermit, LogoutPermit};
+pub use auth::{AuthHandle, LoginPermit};
 pub use config::ConfigHandle;
 pub use handle::{ComponentHandle, ComponentLink, OperationError};
 pub use registry::{ComponentRegistry, RegisterError, RegistryContext};

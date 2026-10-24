@@ -193,9 +193,7 @@ impl ComponentTimers {
 
         debug!(component, task, "running scheduled task");
         let result = self.scheduler.run(task, &job.args).await;
-        if let Err(error) = permit.finish(result).await {
-            debug!(component, task, %error, "finishing scheduled task failed");
-        }
+        permit.finish(result);
     }
 
     fn pending(&self) -> MutexGuard<'_, Pending> {

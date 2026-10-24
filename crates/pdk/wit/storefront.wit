@@ -4,8 +4,10 @@ interface storefront {
     use types.{error, game, game-version, game-version-details};
 
     get-games: async func() -> result<list<game>, error>;
-    get-game-versions: async func(game: game) -> result<list<game-version>, error>;
-    get-game-version-details: async func(game: game, version-id: string) -> result<game-version-details, error>;
+
+    get-game-versions: async func(game: game, path: list<string>) -> result<list<game-version>, error>;
+
+    get-game-version-details: async func(game: game, path: list<string>) -> result<game-version-details, error>;
 }
 
 world storefront-capability {

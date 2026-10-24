@@ -38,11 +38,22 @@ fn main() {
         .build(&event_loop)
         .expect("failed to create window");
 
+    let custom_scheme = !(target.starts_with("http://") || target.starts_with("https://"));
+    let redirect_target = target.clone();
+
     let webview = WebViewBuilder::new()
+        .with_incognito(true)
         .with_url(&url)
         .with_ipc_handler(|msg| {
             println!("{}", msg.body());
             std::process::exit(0);
+        })
+        .with_navigation_handler(move |nav_url| {
+            if custom_scheme && nav_url.starts_with(&redirect_target) {
+                println!("{}", serde_json::json!({ "url": nav_url, "body": "" }));
+                std::process::exit(0);
+            }
+            true
         })
         .with_on_page_load_handler(move |event, nav_url| {
             if let PageLoadEvent::Finished = event

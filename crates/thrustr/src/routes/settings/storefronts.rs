@@ -152,11 +152,7 @@ fn render_row(
                 .items_center()
                 .gap(rems(0.875))
                 .when_some(storefront.icon.clone(), |this, icon| {
-                    this.child(
-                        img(ImageSource::Image(icon))
-                            .size(rems(1.5))
-                            .rounded(theme.radius.md),
-                    )
+                    this.child(img(ImageSource::Image(icon)).size(rems(1.5)))
                 })
                 .child(
                     div()

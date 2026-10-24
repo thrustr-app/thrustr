@@ -35,7 +35,11 @@ impl Cache {
         cache::delete(key)
     }
 
-    pub fn list(prefix: Option<&str>) -> Vec<String> {
+    pub fn list() -> Vec<String> {
+        cache::list("")
+    }
+
+    pub fn list_with_prefix(prefix: &str) -> Vec<String> {
         cache::list(prefix)
     }
 }

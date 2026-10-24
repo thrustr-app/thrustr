@@ -2,15 +2,30 @@ package thrustr:plugin@0.1.0;
 
 interface types {
     variant error {
+        /// The user's configuration is invalid, e.g. a path that doesn't exist.
+        /// Deactivates the plugin until the user saves its configuration again.
         config(string),
+
+        /// Credentials are missing, expired or rejected. Deactivates the plugin
+        /// until the user logs in again.
         auth(string),
+
+        /// Anything else, such as network failures or bugs. The plugin stays
+        /// active.
         other(string),
+    }
+
+    variant field-value {
+        text(string),
+        %list(list<string>),
     }
 
     enum platform {
         windows,
         linux,
         macos,
+        android,
+        other,
     }
 
     record game {
@@ -26,6 +41,7 @@ interface types {
         id: string,
         pretty-name: option<string>,
         platform: platform,
+        children-label: option<string>,
     }
 
     record game-version-details {

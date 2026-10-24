@@ -127,12 +127,15 @@ pub trait ComponentStorage: Send + Sync {
 
     fn delete_data(&self, component_id: &str, key: &str) -> Result<()>;
 
-    fn list_data(&self, component_id: &str, prefix: Option<&str>) -> Result<Vec<String>>;
+    fn list_data(&self, component_id: &str, prefix: &str) -> Result<Vec<String>>;
 
-    fn get_config_value(&self, component_id: &str, field_id: &str) -> Result<Option<String>>;
+    fn get_config_value(&self, component_id: &str, field_id: &str) -> Result<Option<FieldValue>>;
 
-    fn get_config_values(&self, component_id: &str) -> Result<HashMap<String, String>>;
+    fn get_config_values(&self, component_id: &str) -> Result<HashMap<String, FieldValue>>;
 
-    fn set_config_values(&self, component_id: &str, fields: &HashMap<String, String>)
-    -> Result<()>;
+    fn set_config_values(
+        &self,
+        component_id: &str,
+        fields: &HashMap<String, FieldValue>,
+    ) -> Result<()>;
 }

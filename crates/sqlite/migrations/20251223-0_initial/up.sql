@@ -9,6 +9,7 @@ CREATE TABLE games (
   cover_url TEXT,
   summary TEXT,
   description TEXT,
+  removed BOOLEAN NOT NULL DEFAULT FALSE,
   UNIQUE (source_id, lookup_id)
 );
 
@@ -23,7 +24,7 @@ CREATE TABLE component_data (
 CREATE TABLE component_config (
   component_id TEXT NOT NULL,
   field_id TEXT NOT NULL,
-  value TEXT NOT NULL,
+  value JSON NOT NULL,
   PRIMARY KEY (component_id, field_id)
 ) WITHOUT ROWID;
 
@@ -40,7 +41,9 @@ CREATE TABLE artwork (
   )
 );
 
-CREATE INDEX idx_games_sort_name ON games (sort_name GLOB '[a-z]*', sort_name, id);
+CREATE INDEX idx_games_sort_name ON games (sort_name GLOB '[a-z]*', sort_name, id)
+WHERE
+  removed = FALSE;
 
 CREATE INDEX idx_artwork_hash ON artwork (hash);
 
@@ -71,7 +74,7 @@ VALUES
 END;
 
 CREATE TRIGGER games_fts_after_update AFTER
-UPDATE ON games BEGIN
+UPDATE OF search_text ON games WHEN old.search_text IS NOT new.search_text BEGIN
 INSERT INTO
   games_fts (games_fts, rowid, search_text)
 VALUES

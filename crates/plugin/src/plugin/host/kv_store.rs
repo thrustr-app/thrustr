@@ -30,9 +30,9 @@ impl KvStoreHost for PluginState {
             .map_err(|e| KvStoreError::Other(e.to_string()))
     }
 
-    fn list(&mut self, prefix: Option<String>) -> Result<Vec<String>, KvStoreError> {
+    fn list(&mut self, prefix: String) -> Result<Vec<String>, KvStoreError> {
         self.storage
-            .list_data(&self.id, prefix.as_deref())
+            .list_data(&self.id, &prefix)
             .map_err(|e| KvStoreError::Other(e.to_string()))
     }
 }

@@ -1,0 +1,42 @@
+plugin:
+  id: itchio
+  name: itch.io
+  version: "0.1.0"
+  authors:
+    - Thrustr
+  description: Plugin to interact with itch.io.
+  allowed-hosts:
+    - api.itch.io
+    - "*.r2.cloudflarestorage.com"
+
+config:
+  sections:
+    - name: Library
+      elements:
+        - type: combobox
+          id: classifications
+          label: Project types
+          description: Only projects of these types will be imported into the library.
+          placeholder: Select project types
+          multiple: true
+          required: true
+          default: [game]
+          options:
+            - { value: game, label: Games }
+            - { value: tool, label: Tools }
+            - { value: assets, label: Assets }
+            - { value: game_mod, label: Game mods }
+            - { value: physical_game, label: Physical games }
+            - { value: soundtrack, label: Soundtracks }
+            - { value: comic, label: Comics }
+            - { value: book, label: Books }
+            - { value: other, label: Other }
+
+        - type: combobox
+          id: collections
+          label: Collections
+          description: In addition to purchased games, the selected collections will be imported too. Note that you won't be able to install paid games that you don't own.
+          placeholder: Select collections
+          multiple: true
+          required: false
+          options: dynamic

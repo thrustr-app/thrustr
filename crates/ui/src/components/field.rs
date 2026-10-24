@@ -1,4 +1,4 @@
-use core::panic;
+use core::{mem, panic};
 use gpui::{
     AnyElement, App, Div, ElementId, FocusHandle, FontWeight, Hsla, InteractiveElement,
     IntoElement, ParentElement, Refineable, RenderOnce, SharedString, StatefulInteractiveElement,
@@ -81,6 +81,7 @@ impl RenderOnce for FieldMessage {
             .mt(rems(0.375))
             .text_size(theme.text.sm)
             .line_height(relative(1.25))
+            .font_weight(FontWeight::NORMAL)
             .text_color(if self.error {
                 theme.colors.danger
             } else {
@@ -114,10 +115,17 @@ impl FieldProps {
         focus_target: Option<FocusHandle>,
     ) -> Div {
         let id = id.into();
-        let width = control.style().max_size.width;
+        let style = control.style();
+        let width = style
+            .size
+            .width
+            .as_mut()
+            .map(|width| mem::replace(width, relative(1.).into()));
+        let max_width = style.max_size.width;
 
         div()
-            .when_some(width, |field, width| field.max_w(width))
+            .when_some(width, |field, width| field.w(width))
+            .when_some(max_width, |field, width| field.max_w(width))
             .when_some(self.label, |field, label| {
                 field.child(
                     FieldLabel::new(label)

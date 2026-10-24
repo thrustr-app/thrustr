@@ -61,28 +61,57 @@ pub mod wit {
 }
 
 pub use pdk_macros::export;
-pub use wit::auth::exports::thrustr::plugin::auth::{AuthFlow, LoginFlow, LoginForm, LoginRequest};
+pub use wit::auth::exports::thrustr::plugin::auth::{
+    LoginCallback, LoginFlow, LoginForm, LoginRequest,
+};
+pub use wit::config::exports::thrustr::plugin::config::ComboboxOption;
 pub use wit::plugin::thrustr::plugin::types::{
-    Error, Game, GameVersion, GameVersionDetails, Platform,
+    Error, FieldValue, Game, GameVersion, GameVersionDetails, Platform,
 };
 
 impl Error {
+    /// Credentials are missing, expired or rejected. Deactivates the plugin
+    /// until the user logs in again.
     pub fn auth(message: impl Into<String>) -> Self {
         Error::Auth(message.into())
     }
 
+    /// The user's configuration is invalid, e.g. a path that doesn't exist.
+    /// Deactivates the plugin until the user saves its configuration again.
     pub fn config(message: impl Into<String>) -> Self {
         Error::Config(message.into())
     }
 
+    /// Anything else, such as network failures or bugs. The plugin stays
+    /// active.
     pub fn other(message: impl Into<String>) -> Self {
         Error::Other(message.into())
+    }
+}
+
+impl FieldValue {
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            FieldValue::Text(text) => Some(text),
+            FieldValue::List(_) => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&[String]> {
+        match self {
+            FieldValue::Text(_) => None,
+            FieldValue::List(values) => Some(values),
+        }
     }
 }
 
 #[doc(hidden)]
 pub mod __private {
     pub use crate::scheduler::{Task, cancel, decode, millis, schedule, task_arg};
+
+    pub fn no_options(field_id: &str) -> crate::Error {
+        crate::Error::other(format!("the plugin provides no options for `{field_id}`"))
+    }
 
     pub struct Plugin;
     pub struct Auth;
@@ -103,11 +132,7 @@ pub trait Plugin: __private::Exported<__private::Plugin> {
 }
 
 pub trait Auth: Plugin + __private::Exported<__private::Auth> {
-    fn login_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
-        async { Ok(None) }
-    }
-
-    fn logout_flow() -> impl Future<Output = Result<Option<AuthFlow>, Error>> {
+    fn login_flow() -> impl Future<Output = Result<Option<LoginFlow>, Error>> {
         async { Ok(None) }
     }
 
@@ -120,19 +145,25 @@ pub trait Auth: Plugin + __private::Exported<__private::Auth> {
 
 #[allow(unused_variables)]
 pub trait Config: Plugin + __private::Exported<__private::Config> {
-    fn validate(fields: BTreeMap<String, String>) -> impl Future<Output = Result<(), Error>> {
+    fn validate(fields: BTreeMap<String, FieldValue>) -> impl Future<Output = Result<(), Error>> {
         async { Ok(()) }
     }
+
+    #[doc(hidden)]
+    fn options(field_id: String) -> impl Future<Output = Result<Vec<ComboboxOption>, Error>>;
 }
 
 pub trait Storefront: Plugin + __private::Exported<__private::Storefront> {
-    fn list_games() -> impl Future<Output = Result<Vec<Game>, Error>>;
+    fn games() -> impl Future<Output = Result<Vec<Game>, Error>>;
 
-    fn list_game_versions(game: Game) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
+    fn game_versions(
+        game: Game,
+        path: Vec<String>,
+    ) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
 
     fn game_version_details(
         game: Game,
-        version_id: String,
+        path: Vec<String>,
     ) -> impl Future<Output = Result<GameVersionDetails, Error>>;
 }
 
@@ -172,11 +203,8 @@ macro_rules! __export {
             struct Guest;
 
             impl $crate::wit::auth::exports::thrustr::plugin::auth::Guest for Guest {
-                async fn get_login_flow() -> std::result::Result<Option<$crate::AuthFlow>, $crate::Error> {
+                async fn get_login_flow() -> std::result::Result<Option<$crate::LoginFlow>, $crate::Error> {
                     <$ty as $crate::Auth>::login_flow().await
-                }
-                async fn get_logout_flow() -> std::result::Result<Option<$crate::AuthFlow>, $crate::Error> {
-                    <$ty as $crate::Auth>::logout_flow().await
                 }
                 async fn login(request: $crate::LoginRequest) -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Auth>::login(request).await
@@ -197,9 +225,14 @@ macro_rules! __export {
 
             impl $crate::wit::config::exports::thrustr::plugin::config::Guest for Guest {
                 async fn validate(
-                    fields: ::std::collections::BTreeMap<String, String>,
-                ) -> Result<(), $crate::Error> {
+                    fields: ::std::collections::BTreeMap<String, $crate::FieldValue>,
+                ) -> std::result::Result<(), $crate::Error> {
                     <$ty as $crate::Config>::validate(fields).await
+                }
+                async fn options(
+                    field_id: String,
+                ) -> std::result::Result<Vec<$crate::ComboboxOption>, $crate::Error> {
+                    <$ty as $crate::Config>::options(field_id).await
                 }
             }
 
@@ -240,18 +273,19 @@ macro_rules! __export {
 
             impl $crate::wit::storefront::exports::thrustr::plugin::storefront::Guest for Guest {
                 async fn get_games() -> std::result::Result<Vec<$crate::Game>, $crate::Error> {
-                    <$ty as $crate::Storefront>::list_games().await
+                    <$ty as $crate::Storefront>::games().await
                 }
                 async fn get_game_versions(
                     game: $crate::Game,
+                    path: Vec<String>,
                 ) -> std::result::Result<Vec<$crate::GameVersion>, $crate::Error> {
-                    <$ty as $crate::Storefront>::list_game_versions(game).await
+                    <$ty as $crate::Storefront>::game_versions(game, path).await
                 }
                 async fn get_game_version_details(
                     game: $crate::Game,
-                    version_id: String,
+                    path: Vec<String>,
                 ) -> std::result::Result<$crate::GameVersionDetails, $crate::Error> {
-                    <$ty as $crate::Storefront>::game_version_details(game, version_id).await
+                    <$ty as $crate::Storefront>::game_version_details(game, path).await
                 }
             }
 

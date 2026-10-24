@@ -53,7 +53,7 @@ fn ranked_search(
         "SELECT g.id AS id \
          FROM games_fts \
          JOIN games g ON g.id = games_fts.rowid \
-         WHERE games_fts MATCH ? \
+         WHERE games_fts MATCH ? AND g.removed = FALSE \
          ORDER BY (g.sort_name = ?) DESC, \
                   (g.sort_name LIKE ? ESCAPE '\\') DESC, \
                   length(g.sort_name) ASC, \

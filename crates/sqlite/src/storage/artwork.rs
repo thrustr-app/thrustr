@@ -18,14 +18,14 @@ impl ArtworkRepository for SqliteStorage {
             position: artwork.position as i32,
         };
 
-        let mut conn = self.conn()?;
-        diesel::insert_into(dsl::artwork)
-            .values(&row)
-            .on_conflict((dsl::game_id, dsl::kind, dsl::position))
-            .do_update()
-            .set((dsl::hash.eq(&row.hash), dsl::accent.eq(row.accent)))
-            .execute(&mut conn)?;
-
-        Ok(())
+        self.write(|conn| {
+            diesel::insert_into(dsl::artwork)
+                .values(&row)
+                .on_conflict((dsl::game_id, dsl::kind, dsl::position))
+                .do_update()
+                .set((dsl::hash.eq(&row.hash), dsl::accent.eq(row.accent)))
+                .execute(conn)?;
+            Ok(())
+        })
     }
 }

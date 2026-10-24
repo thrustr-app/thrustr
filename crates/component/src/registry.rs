@@ -2,10 +2,11 @@ use crate::{ComponentHandle, ComponentLink, StorefrontHandle};
 use artwork::ArtworkService;
 use dashmap::{DashMap, Entry};
 use domain::{
-    component::{Component, ComponentStorage},
+    component::{Component, ComponentStorage, StorefrontOperation},
     game::GameRepository,
 };
 use event::Topic;
+use futures::future;
 use runtime::TokioHandle;
 use std::sync::Arc;
 use thiserror::Error;
@@ -70,6 +71,21 @@ impl ComponentRegistry {
             .iter()
             .filter_map(|c| c.value().storefront())
             .collect()
+    }
+
+    /// Syncs every storefront that can sync right now, skipping the rest.
+    pub async fn sync_storefronts(&self) {
+        let syncs = self
+            .storefronts()
+            .into_iter()
+            .filter(|storefront| storefront.component().can(StorefrontOperation::Sync))
+            .map(|storefront| async move {
+                if let Err(error) = storefront.sync_games().await {
+                    debug!(component = storefront.component().id(), %error, "storefront sync failed");
+                }
+            });
+
+        future::join_all(syncs).await;
     }
 }
 
