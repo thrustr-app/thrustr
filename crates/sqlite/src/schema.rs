@@ -54,6 +54,13 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    app_state (key) {
+        key -> Text,
+        value -> Json,
+    }
+}
+
 diesel::joinable!(artwork -> games (game_id));
 
 diesel::allow_tables_to_appear_in_same_query!(games, artwork);

@@ -28,6 +28,8 @@ CREATE TABLE component_config (
   PRIMARY KEY (component_id, field_id)
 ) WITHOUT ROWID;
 
+CREATE TABLE app_state (key TEXT PRIMARY KEY, value JSON NOT NULL) WITHOUT ROWID;
+
 CREATE TABLE artwork (
   game_id INTEGER NOT NULL REFERENCES games (id) ON DELETE CASCADE,
   kind TEXT NOT NULL,
