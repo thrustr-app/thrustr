@@ -1947,6 +1947,7 @@ dependencies = [
  "async-trait",
  "semver",
  "serde",
+ "serde_json",
  "strum",
  "thiserror 2.0.21",
  "unicode-normalization",
