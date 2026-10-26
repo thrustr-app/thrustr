@@ -30,6 +30,33 @@ CREATE TABLE component_config (
 
 CREATE TABLE app_state (key TEXT PRIMARY KEY, value JSON NOT NULL) WITHOUT ROWID;
 
+CREATE TABLE downloads (
+  id INTEGER PRIMARY KEY,
+  game_id INTEGER NOT NULL UNIQUE REFERENCES games (id) ON DELETE CASCADE,
+  position INTEGER NOT NULL UNIQUE,
+  version_path JSON NOT NULL,
+  target_dir TEXT NOT NULL,
+  install_size INTEGER,
+  download_size INTEGER,
+  downloaded INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+
+CREATE TRIGGER downloads_compact AFTER DELETE ON downloads BEGIN
+UPDATE downloads
+SET
+  position = - position
+WHERE
+  position > OLD.position;
+
+UPDATE downloads
+SET
+  position = - position - 1
+WHERE
+  position < 0;
+
+END;
+
 CREATE TABLE artwork (
   game_id INTEGER NOT NULL REFERENCES games (id) ON DELETE CASCADE,
   kind TEXT NOT NULL,

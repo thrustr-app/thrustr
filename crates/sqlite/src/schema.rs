@@ -61,6 +61,21 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    downloads (id) {
+        id -> BigInt,
+        game_id -> BigInt,
+        position -> Integer,
+        version_path -> Json,
+        target_dir -> Text,
+        install_size -> Nullable<BigInt>,
+        download_size -> Nullable<BigInt>,
+        downloaded -> BigInt,
+        error -> Nullable<Text>,
+    }
+}
+
 diesel::joinable!(artwork -> games (game_id));
+diesel::joinable!(downloads -> games (game_id));
 
 diesel::allow_tables_to_appear_in_same_query!(games, artwork);

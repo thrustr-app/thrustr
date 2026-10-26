@@ -12,6 +12,10 @@ DROP TABLE IF EXISTS games_fts;
 
 DROP TABLE IF EXISTS artwork;
 
+DROP TRIGGER IF EXISTS downloads_compact;
+
+DROP TABLE IF EXISTS downloads;
+
 DROP TABLE IF EXISTS app_state;
 
 DROP TABLE IF EXISTS component_data;
