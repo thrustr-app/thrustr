@@ -5,6 +5,10 @@ edition = "2024"
 license.workspace = true
 
 [dependencies]
+# Local
+domain.workspace = true
+
+# External
 fs4.workspace = true
 thiserror.workspace = true
 

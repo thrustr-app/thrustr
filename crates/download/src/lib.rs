@@ -1,3 +1,7 @@
+mod queue;
+
+pub use queue::Queue;
+
 use std::{
     fs, io,
     path::{Path, PathBuf},
