@@ -1,3 +1,9 @@
+mod service;
+mod state;
+
+pub use service::DownloadService;
+pub use state::{Activity, DownloadState};
+
 use std::{
     fs, io,
     path::{Path, PathBuf},

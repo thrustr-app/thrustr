@@ -5,11 +5,12 @@ use crate::{
 use dashmap::DashMap;
 use domain::{
     component::{Storefront, StorefrontOperation},
+    download::DownloadReporter,
     game::{Game, GameId, GameVersion, GameVersionDetails, NewGame, SyncSummary},
 };
 use event::Topic;
 use runtime::clock::Moment;
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use tracing::{info, warn};
 
 const VERSION_DETAILS_TTL: Duration = Duration::from_hours(1);
@@ -118,6 +119,25 @@ impl StorefrontHandle {
 
         cache.insert(game_id, path, details.clone());
         Ok(details)
+    }
+
+    pub async fn download(
+        &self,
+        game_id: GameId,
+        path: Vec<String>,
+        target_dir: PathBuf,
+        reporter: Arc<dyn DownloadReporter>,
+    ) -> Result<()> {
+        let permit = Permit::begin(&self.component, StorefrontOperation::Download)?;
+
+        let game = self.load_game(game_id).await?;
+        let result = self
+            .storefront
+            .download(game, path, target_dir, reporter)
+            .await;
+        permit.finish(result.clone());
+
+        Ok(result?)
     }
 
     async fn load_game(&self, game_id: GameId) -> Result<Game> {

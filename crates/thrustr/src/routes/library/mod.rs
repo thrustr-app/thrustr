@@ -178,7 +178,7 @@ impl Route for Library {
         });
         page._tasks.push(task);
 
-        let task = cx.listen(Topic::ComponentState, |this, cx| {
+        let task = cx.listen(Topic::ComponentStateChanged, |this, cx| {
             if this.refresh_sync_state(cx) {
                 cx.notify();
             }

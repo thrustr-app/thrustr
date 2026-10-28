@@ -13,9 +13,10 @@ use tokio::sync::watch::{Receiver, Sender};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Topic {
     ComponentRegistered,
-    ComponentState,
+    ComponentStateChanged,
+    PluginRegistered,
+    Downloads,
     Games,
-    Plugin,
 }
 
 fn emitter() -> &'static DashMap<Topic, Sender<()>> {

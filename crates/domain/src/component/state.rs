@@ -401,9 +401,10 @@ mod tests {
     const SYNC: Operation = Operation::Storefront(StorefrontOperation::Sync);
     const VERSIONS: Operation = Operation::Storefront(StorefrontOperation::ListVersions);
     const DETAILS: Operation = Operation::Storefront(StorefrontOperation::VersionDetails);
+    const DOWNLOAD: Operation = Operation::Storefront(StorefrontOperation::Download);
     const TASK: Operation = Operation::Scheduler(SchedulerOperation::Run);
-    const OPERATIONS: [Operation; 8] = [
-        LOGIN, LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, TASK,
+    const OPERATIONS: [Operation; 9] = [
+        LOGIN, LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, DOWNLOAD, TASK,
     ];
 
     const ALL: Capabilities = Capabilities {
@@ -643,7 +644,9 @@ mod tests {
         check_allows(Status::Initializing, &[]);
         check_allows(
             Status::Active,
-            &[LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, TASK],
+            &[
+                LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, DOWNLOAD, TASK,
+            ],
         );
         check_allows(unauthenticated(), &[LOGIN, CONFIG, OPTIONS]);
         check_allows(failed(auth()), &[LOGIN, LOGOUT, CONFIG, OPTIONS]);
@@ -737,7 +740,9 @@ mod tests {
             CONFIG,
             Err(Rejection::Busy(LOGIN)),
         );
-        for operation in [LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, TASK] {
+        for operation in [
+            LOGOUT, CONFIG, OPTIONS, SYNC, VERSIONS, DETAILS, DOWNLOAD, TASK,
+        ] {
             check_start(
                 ALL,
                 Status::Active,
@@ -771,6 +776,13 @@ mod tests {
             LOGOUT,
             Err(Rejection::Busy(TASK)),
         );
+        check_start(
+            ALL,
+            Status::Active,
+            &[DOWNLOAD],
+            LOGOUT,
+            Err(Rejection::Busy(DOWNLOAD)),
+        );
     }
 
     #[test]
@@ -784,6 +796,9 @@ mod tests {
         check_start(ALL, Status::Active, &[VERSIONS], DETAILS, Ok(()));
         check_start(ALL, Status::Active, &[CONFIG], OPTIONS, Ok(()));
         check_start(ALL, Status::Active, &[OPTIONS], CONFIG, Ok(()));
+        check_start(ALL, Status::Active, &[DOWNLOAD], SYNC, Ok(()));
+        check_start(ALL, Status::Active, &[DOWNLOAD], VERSIONS, Ok(()));
+        check_start(ALL, Status::Active, &[SYNC, DETAILS], DOWNLOAD, Ok(()));
     }
 
     #[test]
@@ -872,6 +887,13 @@ mod tests {
             SYNC,
             Err(Rejection::Busy(SYNC)),
         );
+        check_start(
+            ALL,
+            Status::Active,
+            &[DOWNLOAD],
+            DOWNLOAD,
+            Err(Rejection::Busy(DOWNLOAD)),
+        );
     }
 
     #[test]
@@ -955,7 +977,7 @@ mod tests {
 
     #[test]
     fn auth_or_config_errors_deactivate_the_component() {
-        for operation in [SYNC, VERSIONS, DETAILS, TASK] {
+        for operation in [SYNC, VERSIONS, DETAILS, DOWNLOAD, TASK] {
             for error in [auth(), config()] {
                 check_finish(Status::Active, operation, Err(error.clone()), failed(error));
             }
@@ -964,7 +986,7 @@ mod tests {
 
     #[test]
     fn other_results_keep_the_component_active() {
-        for operation in [SYNC, VERSIONS, DETAILS, TASK] {
+        for operation in [SYNC, VERSIONS, DETAILS, DOWNLOAD, TASK] {
             check_finish(Status::Active, operation, Ok(()), Status::Active);
             check_finish(Status::Active, operation, Err(other()), Status::Active);
         }
