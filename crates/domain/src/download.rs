@@ -39,6 +39,10 @@ pub enum DownloadPhase {
 pub trait DownloadReporter: Send + Sync {
     /// Bytes of the current phase, counted however suits the storefront.
     fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>);
+    /// Bytes received from the network.
+    fn received(&self, bytes: u64);
+    /// Bytes written to disk.
+    fn written(&self, bytes: u64);
 }
 
 pub trait DownloadRepository: Send + Sync {

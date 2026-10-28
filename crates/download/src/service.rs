@@ -1,4 +1,4 @@
-use crate::{Activity, DownloadState};
+use crate::{Activity, DownloadState, Speed, throughput::Meter};
 use anyhow::{Result, anyhow};
 use component::{ComponentRegistry, OperationError};
 use domain::{
@@ -16,15 +16,20 @@ use serde_json::Value;
 use std::{
     convert::Infallible,
     pin::pin,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{
+        Arc, Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
-use tokio::{sync::watch, task::JoinHandle};
+use tokio::{sync::watch, task::JoinHandle, time::Instant};
 use tracing::{error, info, warn};
 
 const PAUSED_KEY: &str = "downloads.paused";
 const MAX_ATTEMPTS: u32 = 3;
 const SAVE_INTERVAL: Duration = Duration::from_secs(5);
+const SPEED_INTERVAL: Duration = Duration::from_secs(1);
+const SPEED_WINDOW: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct DownloadService {
@@ -196,13 +201,15 @@ impl Inner {
 
     async fn run(self: &Arc<Self>, download: Download) {
         let id = download.id;
+        let reporter = Arc::new(Reporter::new(self.clone(), id));
         // Outlives the select so a stopped call is dropped after saving progress.
-        let mut call = pin!(self.download(download));
+        let mut call = pin!(self.download(download, reporter.clone()));
         let outcome = tokio::select! {
             biased;
             result = &mut call => Some(result),
             () = self.stopped(id) => None,
             never = self.save_periodically(id) => match never {},
+            never = self.measure_speed(&reporter) => match never {},
         };
 
         let saved = match outcome {
@@ -223,7 +230,7 @@ impl Inner {
         if let Err(error) = saved {
             error!(%id, %error, "failed to save download");
         }
-        self.modify(DownloadState::clear_activity);
+        self.modify(DownloadState::clear_run);
     }
 
     async fn stopped(&self, id: DownloadId) {
@@ -243,7 +250,28 @@ impl Inner {
         }
     }
 
-    async fn download(self: &Arc<Self>, download: Download) -> Result<(), String> {
+    async fn measure_speed(&self, reporter: &Reporter) -> Infallible {
+        let mut network = Meter::new(SPEED_WINDOW);
+        let mut disk = Meter::new(SPEED_WINDOW);
+        loop {
+            let now = Instant::now();
+            let (received, written) = reporter.totals();
+            network.record(now, received);
+            disk.record(now, written);
+            let speed = Speed {
+                network: network.rate(),
+                disk: disk.rate(),
+            };
+            self.modify(|state| state.set_speed(reporter.id, speed));
+            clock::after(SPEED_INTERVAL).await;
+        }
+    }
+
+    async fn download(
+        self: &Arc<Self>,
+        download: Download,
+        reporter: Arc<dyn DownloadReporter>,
+    ) -> Result<(), String> {
         let Download {
             id,
             game_id,
@@ -252,10 +280,6 @@ impl Inner {
             ..
         } = download;
         let game = self.load_game(game_id).await?;
-        let reporter: Arc<dyn DownloadReporter> = Arc::new(Reporter {
-            inner: self.clone(),
-            id,
-        });
         let mut attempts = 0;
 
         loop {
@@ -325,12 +349,40 @@ impl Inner {
 struct Reporter {
     inner: Arc<Inner>,
     id: DownloadId,
+    received: AtomicU64,
+    written: AtomicU64,
+}
+
+impl Reporter {
+    fn new(inner: Arc<Inner>, id: DownloadId) -> Self {
+        Self {
+            inner,
+            id,
+            received: AtomicU64::new(0),
+            written: AtomicU64::new(0),
+        }
+    }
+
+    fn totals(&self) -> (u64, u64) {
+        (
+            self.received.load(Ordering::Relaxed),
+            self.written.load(Ordering::Relaxed),
+        )
+    }
 }
 
 impl DownloadReporter for Reporter {
     fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>) {
         self.inner
             .modify(|state| state.report(self.id, phase, processed, total));
+    }
+
+    fn received(&self, bytes: u64) {
+        self.received.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn written(&self, bytes: u64) {
+        self.written.fetch_add(bytes, Ordering::Relaxed);
     }
 }
 

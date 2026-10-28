@@ -8,11 +8,25 @@ pub enum Activity {
     Downloading,
 }
 
+/// Bytes per second, `None` while unknown.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Speed {
+    pub network: Option<u64>,
+    pub disk: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Run {
+    id: DownloadId,
+    activity: Activity,
+    speed: Speed,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct DownloadState {
     downloads: Vec<Download>,
     paused: bool,
-    activity: Option<(DownloadId, Activity)>,
+    run: Option<Run>,
 }
 
 impl DownloadState {
@@ -20,7 +34,7 @@ impl DownloadState {
         Self {
             downloads,
             paused,
-            activity: None,
+            run: None,
         }
     }
 
@@ -48,8 +62,19 @@ impl DownloadState {
     }
 
     pub fn activity(&self) -> Option<Activity> {
-        let (id, activity) = self.activity?;
-        (self.running_id()? == id).then_some(activity)
+        self.run().map(|run| run.activity)
+    }
+
+    pub fn speed(&self) -> Option<Speed> {
+        self.run()
+            .filter(|run| run.activity == Activity::Downloading)
+            .map(|run| run.speed)
+    }
+
+    fn run(&self) -> Option<&Run> {
+        self.run
+            .as_ref()
+            .filter(|run| self.running_id() == Some(run.id))
     }
 
     pub(crate) fn running_id(&self) -> Option<DownloadId> {
@@ -91,13 +116,38 @@ impl DownloadState {
 
     /// Returns whether the activity changed.
     pub(crate) fn set_activity(&mut self, id: DownloadId, activity: Activity) -> bool {
-        let changed = self.activity != Some((id, activity));
-        self.activity = Some((id, activity));
-        changed
+        match &mut self.run {
+            Some(run) if run.id == id => {
+                let changed = run.activity != activity;
+                run.activity = activity;
+                changed
+            }
+            run => {
+                *run = Some(Run {
+                    id,
+                    activity,
+                    speed: Speed::default(),
+                });
+                true
+            }
+        }
     }
 
-    pub(crate) fn clear_activity(&mut self) -> bool {
-        self.activity.take().is_some()
+    /// Records the speed of a download that has an activity. Returns whether
+    /// it changed.
+    pub(crate) fn set_speed(&mut self, id: DownloadId, speed: Speed) -> bool {
+        match &mut self.run {
+            Some(run) if run.id == id => {
+                let changed = run.speed != speed;
+                run.speed = speed;
+                changed
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn clear_run(&mut self) -> bool {
+        self.run.take().is_some()
     }
 
     /// Records progress of the running download. Returns whether it changed.
@@ -145,6 +195,7 @@ mod tests {
         Pause,
         Resume,
         SetActivity(u64, Activity),
+        SetSpeed(u64, Speed),
         Report(u64, DownloadPhase, u64, Option<u64>),
     }
 
@@ -196,6 +247,7 @@ mod tests {
                 true
             }
             SetActivity(id, activity) => state.set_activity(id.into(), activity),
+            SetSpeed(id, speed) => state.set_speed(id.into(), speed),
             Report(id, phase, processed, total) => state.report(id.into(), phase, processed, total),
         }
     }
@@ -210,8 +262,8 @@ mod tests {
     }
 
     /// `>` marks the active download and `!` a failed one. The running
-    /// download shows its `[activity]`, and reported progress shows as
-    /// `(phase processed/total)`.
+    /// download shows its `[activity]` and measured `{network disk}` speeds,
+    /// and reported progress shows as `(phase processed/total)`.
     fn render(state: &DownloadState) -> String {
         let active = state.active().map(|d| d.id);
         let running = state.running().map(|d| d.id);
@@ -225,6 +277,14 @@ mod tests {
                     Some(activity) if Some(d.id) == running => format!("[{activity:?}]"),
                     _ => String::new(),
                 };
+                let speed = match state.speed() {
+                    Some(speed) if Some(d.id) == running && speed != Speed::default() => {
+                        let rate =
+                            |rate: Option<u64>| rate.map_or("?".to_string(), |r| r.to_string());
+                        format!("{{{} {}}}", rate(speed.network), rate(speed.disk))
+                    }
+                    _ => String::new(),
+                };
                 let progress = match (d.phase, d.processed, d.total) {
                     (DownloadPhase::Downloading, 0, None) => String::new(),
                     (phase, processed, total) => {
@@ -232,7 +292,7 @@ mod tests {
                         format!("({phase:?} {processed}/{total})")
                     }
                 };
-                format!("{marker}{}{failed}{activity}{progress}", d.id)
+                format!("{marker}{}{failed}{activity}{speed}{progress}", d.id)
             })
             .collect::<Vec<_>>()
             .join(" ");
@@ -347,6 +407,83 @@ mod tests {
         SetActivity(id, Activity::Downloading)
     }
 
+    fn measured(id: u64) -> Op {
+        SetSpeed(
+            id,
+            Speed {
+                network: Some(1000),
+                disk: Some(500),
+            },
+        )
+    }
+
+    #[test]
+    fn a_speed_from_another_download_is_ignored() {
+        check(
+            &[Push(1), Push(2), downloading(1), measured(1)],
+            ">1[Downloading]{1000 500} 2",
+        );
+        check(
+            &[Push(1), Push(2), downloading(1), measured(2)],
+            ">1[Downloading] 2",
+        );
+        check(
+            &[Push(1), Push(2), downloading(1), measured(1), Pause],
+            "paused: >1 2",
+        );
+        check(
+            &[Push(1), Push(2), downloading(1), measured(1), Move(2, 0)],
+            ">2 1",
+        );
+    }
+
+    #[test]
+    fn a_speed_needs_a_run() {
+        check(&[Push(1), measured(1)], ">1");
+    }
+
+    #[test]
+    fn the_speed_only_shows_while_downloading() {
+        let retrying = [
+            Push(1),
+            downloading(1),
+            measured(1),
+            SetActivity(1, Activity::Retrying),
+        ];
+        check(&retrying, ">1[Retrying]");
+        check(
+            &[retrying.as_slice(), &[downloading(1)]].concat(),
+            ">1[Downloading]{1000 500}",
+        );
+    }
+
+    #[test]
+    fn a_new_run_starts_without_a_speed() {
+        check(
+            &[
+                Push(1),
+                Push(2),
+                downloading(1),
+                measured(1),
+                Move(2, 0),
+                downloading(2),
+            ],
+            ">2[Downloading] 1",
+        );
+    }
+
+    #[test]
+    fn a_speed_not_measured_yet_is_unknown() {
+        let network_only = Speed {
+            network: Some(1000),
+            disk: None,
+        };
+        check(
+            &[Push(1), downloading(1), SetSpeed(1, network_only)],
+            ">1[Downloading]{1000 ?}",
+        );
+    }
+
     #[test]
     fn only_the_running_download_shows_its_activity() {
         check(&[Push(1), Push(2), downloading(1)], ">1[Downloading] 2");
@@ -393,5 +530,7 @@ mod tests {
             check_changes(&[Push(1), op], op, false);
         }
         check_changes(&[Push(1)], Retry(1), false);
+        check_changes(&[Push(1), downloading(1)], measured(1), true);
+        check_changes(&[Push(1), downloading(1), measured(1)], measured(1), false);
     }
 }

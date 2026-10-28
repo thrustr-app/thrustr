@@ -26,3 +26,4 @@ async-trait.workspace = true
 semver.workspace = true
 sqlite.workspace = true
 tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

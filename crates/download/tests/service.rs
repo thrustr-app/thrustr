@@ -6,7 +6,7 @@ use domain::{
     download::{DownloadId, DownloadPhase, DownloadReporter, NewDownload},
     game::{Game, GameId, GameRepository, GameSource, GameVersion, GameVersionDetails, NewGame},
 };
-use download::{DownloadService, DownloadState};
+use download::{DownloadService, DownloadState, Speed};
 use net::{ConnectivityConfig, ConnectivityManager};
 use runtime::TokioHandle;
 use semver::Version;
@@ -28,6 +28,11 @@ struct Call {
 impl Call {
     fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>) {
         self.reporter.progress(phase, processed, total);
+    }
+
+    fn transfer(&self, received: u64, written: u64) {
+        self.reporter.received(received);
+        self.reporter.written(written);
     }
 
     #[track_caller]
@@ -285,8 +290,8 @@ impl Harness {
     }
 
     /// `>` marks the running download and `!` a failed one. The running
-    /// download shows its `[activity]`, and reported progress shows as
-    /// `(phase processed/total)`.
+    /// download shows its `[activity]` and known `{network disk}` speeds, and
+    /// reported progress shows as `(phase processed/total)`.
     fn render(&self, state: &DownloadState) -> String {
         let running = state.running().map(|d| d.id);
         let downloads = state
@@ -304,6 +309,14 @@ impl Harness {
                     Some(activity) if Some(d.id) == running => format!("[{activity:?}]"),
                     _ => String::new(),
                 };
+                let speed = match state.speed() {
+                    Some(speed) if Some(d.id) == running && speed != Speed::default() => {
+                        let rate =
+                            |rate: Option<u64>| rate.map_or("?".to_string(), |r| r.to_string());
+                        format!("{{{} {}}}", rate(speed.network), rate(speed.disk))
+                    }
+                    _ => String::new(),
+                };
                 let progress = match (d.phase, d.processed, d.total) {
                     (DownloadPhase::Downloading, 0, None) => String::new(),
                     (phase, processed, total) => {
@@ -311,7 +324,7 @@ impl Harness {
                         format!("({phase:?} {processed}/{total})")
                     }
                 };
-                format!("{marker}{name}{failed}{activity}{progress}")
+                format!("{marker}{name}{failed}{activity}{speed}{progress}")
             })
             .collect::<Vec<_>>()
             .join(" ");
@@ -391,6 +404,19 @@ async fn the_latest_progress_is_shown() {
 
     call.progress(DownloadPhase::Installing, 10, None);
     harness.check(">Hades[Downloading](Installing 10/?)").await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_speed_is_measured_while_downloading() {
+    let mut harness = Harness::new().await;
+    harness.enqueue(&["Hades"]);
+    let call = harness.call("Hades").await;
+    harness.check(">Hades[Downloading]").await;
+
+    call.transfer(2000, 1000);
+    harness.check(">Hades[Downloading]{2000 1000}").await;
+    harness.check(">Hades[Downloading]{1000 500}").await;
+    harness.check(">Hades[Downloading]{0 0}").await;
 }
 
 #[tokio::test]
