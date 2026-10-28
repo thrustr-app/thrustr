@@ -5,10 +5,11 @@ use crate::{
 use async_trait::async_trait;
 use domain::{
     component::{Error, Storefront},
+    download::DownloadReporter,
     game::{Game, GameSource, GameVersion, GameVersionDetails, NewGame},
     platform::Platform,
 };
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 pub struct PluginStorefront {
     runtime: Arc<PluginRuntime>,
@@ -57,6 +58,16 @@ impl Storefront for PluginStorefront {
         })?;
 
         Ok(details.into())
+    }
+
+    async fn download(
+        &self,
+        _game: Game,
+        _path: Vec<String>,
+        _target_dir: PathBuf,
+        _reporter: Arc<dyn DownloadReporter>,
+    ) -> Result<(), Error> {
+        Err(Error::Other("downloads are not supported yet".into()))
     }
 }
 

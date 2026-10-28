@@ -90,7 +90,7 @@ impl Route for Game {
             image_cache: RetainAllImageCache::new(cx),
             _load_task: load_task,
             _components_task: cx.listen_any(
-                &[Topic::ComponentRegistered, Topic::ComponentState],
+                &[Topic::ComponentRegistered, Topic::ComponentStateChanged],
                 |_, cx| cx.notify(),
             ),
         }
@@ -322,7 +322,7 @@ impl InstallDialog {
             _browse_task: None,
             _install_target_task: None,
             _components_task: cx.listen_any(
-                &[Topic::ComponentRegistered, Topic::ComponentState],
+                &[Topic::ComponentRegistered, Topic::ComponentStateChanged],
                 |_, cx| cx.notify(),
             ),
             _install_location_subscription,

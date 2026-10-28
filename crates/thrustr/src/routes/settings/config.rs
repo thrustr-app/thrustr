@@ -75,7 +75,7 @@ impl Config {
             .collect();
 
         let mut _tasks = vec![cx.listen_any(
-            &[Topic::ComponentRegistered, Topic::ComponentState],
+            &[Topic::ComponentRegistered, Topic::ComponentStateChanged],
             Self::refresh_status_error,
         )];
         let mut _subscriptions = Vec::new();

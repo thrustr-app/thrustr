@@ -38,7 +38,9 @@ CREATE TABLE downloads (
   target_dir TEXT NOT NULL,
   install_size INTEGER,
   download_size INTEGER,
-  downloaded INTEGER NOT NULL DEFAULT 0,
+  phase TEXT NOT NULL DEFAULT 'downloading',
+  processed INTEGER NOT NULL DEFAULT 0,
+  total INTEGER,
   error TEXT
 );
 

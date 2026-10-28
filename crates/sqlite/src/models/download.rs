@@ -3,6 +3,7 @@ use crate::schema::downloads;
 use diesel::{Selectable, prelude::*, sqlite::Sqlite};
 use domain::download::Download;
 use serde_json::Value;
+use std::str::FromStr;
 
 #[derive(Queryable, Selectable, Identifiable, Debug)]
 #[diesel(table_name = downloads)]
@@ -14,7 +15,9 @@ pub struct DownloadRow {
     pub target_dir: String,
     pub install_size: Option<i64>,
     pub download_size: Option<i64>,
-    pub downloaded: i64,
+    pub phase: String,
+    pub processed: i64,
+    pub total: Option<i64>,
     pub error: Option<String>,
 }
 
@@ -31,7 +34,7 @@ pub struct NewDownloadRow<'a> {
 }
 
 impl TryFrom<DownloadRow> for Download {
-    type Error = serde_json::Error;
+    type Error = anyhow::Error;
 
     fn try_from(row: DownloadRow) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -41,7 +44,9 @@ impl TryFrom<DownloadRow> for Download {
             target_dir: row.target_dir.into(),
             install_size: row.install_size.map(|size| size as u64),
             download_size: row.download_size.map(|size| size as u64),
-            downloaded: row.downloaded as u64,
+            phase: FromStr::from_str(&row.phase)?,
+            processed: row.processed as u64,
+            total: row.total.map(|total| total as u64),
             error: row.error,
         })
     }

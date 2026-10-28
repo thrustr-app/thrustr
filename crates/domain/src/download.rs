@@ -1,6 +1,7 @@
 use crate::{game::GameId, id::Id};
 use anyhow::Result;
 use std::path::PathBuf;
+use strum::{AsRefStr, Display, EnumString};
 
 pub type DownloadId = Id<Download>;
 
@@ -12,7 +13,9 @@ pub struct Download {
     pub target_dir: PathBuf,
     pub install_size: Option<u64>,
     pub download_size: Option<u64>,
-    pub downloaded: u64,
+    pub phase: DownloadPhase,
+    pub processed: u64,
+    pub total: Option<u64>,
     pub error: Option<String>,
 }
 
@@ -23,6 +26,19 @@ pub struct NewDownload {
     pub target_dir: PathBuf,
     pub install_size: Option<u64>,
     pub download_size: Option<u64>,
+}
+
+#[derive(AsRefStr, Display, EnumString, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[strum(serialize_all = "lowercase")]
+pub enum DownloadPhase {
+    #[default]
+    Downloading,
+    Installing,
+}
+
+pub trait DownloadReporter: Send + Sync {
+    /// Bytes of the current phase, counted however suits the storefront.
+    fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>);
 }
 
 pub trait DownloadRepository: Send + Sync {

@@ -6,11 +6,23 @@ license.workspace = true
 
 [dependencies]
 # Local
+component.workspace = true
 domain.workspace = true
+event.workspace = true
+net.workspace = true
+runtime.workspace = true
 
 # External
+anyhow.workspace = true
 fs4.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
+artwork.workspace = true
+async-trait.workspace = true
+semver.workspace = true
+sqlite.workspace = true
 tempfile.workspace = true

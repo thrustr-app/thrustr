@@ -70,7 +70,9 @@ diesel::table! {
         target_dir -> Text,
         install_size -> Nullable<BigInt>,
         download_size -> Nullable<BigInt>,
-        downloaded -> BigInt,
+        phase -> Text,
+        processed -> BigInt,
+        total -> Nullable<BigInt>,
         error -> Nullable<Text>,
     }
 }

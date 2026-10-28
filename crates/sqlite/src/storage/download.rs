@@ -38,7 +38,7 @@ impl DownloadRepository for SqliteStorage {
                 .get_result::<DownloadRow>(conn)?)
         })?;
 
-        Ok(row.try_into()?)
+        row.try_into()
     }
 
     fn list(&self) -> Result<Vec<Download>> {
@@ -51,10 +51,7 @@ impl DownloadRepository for SqliteStorage {
                 .load::<DownloadRow>(conn)?)
         })?;
 
-        Ok(rows
-            .into_iter()
-            .map(Download::try_from)
-            .collect::<Result<_, _>>()?)
+        rows.into_iter().map(Download::try_from).collect()
     }
 
     fn save(&self, download: &Download) -> Result<()> {
@@ -70,7 +67,9 @@ impl DownloadRepository for SqliteStorage {
                     dsl::target_dir.eq(target_dir),
                     dsl::install_size.eq(download.install_size.map(|size| size as i64)),
                     dsl::download_size.eq(download.download_size.map(|size| size as i64)),
-                    dsl::downloaded.eq(download.downloaded as i64),
+                    dsl::phase.eq(download.phase.as_ref()),
+                    dsl::processed.eq(download.processed as i64),
+                    dsl::total.eq(download.total.map(|total| total as i64)),
                     dsl::error.eq(download.error.as_deref()),
                 ))
                 .execute(conn)?;

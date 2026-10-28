@@ -71,7 +71,7 @@ impl PluginService {
             .component_registry
             .register(async |link| {
                 let plugin = self.manager.load_plugin(path.to_path_buf(), link).await?;
-                event::emit(Topic::Plugin);
+                event::emit(Topic::PluginRegistered);
                 anyhow::Ok(plugin)
             })
             .await?;
