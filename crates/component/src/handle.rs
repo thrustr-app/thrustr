@@ -272,14 +272,10 @@ impl WeakComponentHandle {
 ///
 /// Lets a component act on itself through the host (e.g. schedule timers
 /// tied to its current activation and status).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ComponentLink(Arc<OnceLock<WeakComponentHandle>>);
 
 impl ComponentLink {
-    pub(crate) fn new() -> Self {
-        Self(Arc::default())
-    }
-
     pub fn timers(&self) -> Timers<'_> {
         Timers::new(self)
     }

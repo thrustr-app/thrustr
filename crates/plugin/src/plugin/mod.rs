@@ -17,7 +17,7 @@ pub use capabilities::{PluginAuth, PluginConfig, PluginScheduler, PluginStorefro
 pub use host::{PluginCache, http_client};
 pub use manifest::*;
 pub use runtime::PluginRuntime;
-pub(crate) use runtime::guest_call;
+pub(crate) use runtime::{Fuel, guest_call};
 pub use state::PluginState;
 
 pub struct Plugin {

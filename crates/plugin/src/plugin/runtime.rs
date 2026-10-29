@@ -3,7 +3,7 @@ use crate::wit::{export_name, thrustr::plugin::types::Error as PluginError};
 use component::ComponentLink;
 use domain::component::{ComponentStorage, ConfigSchema, Error as ComponentError};
 use reqwest::Client;
-use runtime::TokioHandle;
+use runtime::{AbortOnDrop, TokioHandle};
 use std::sync::Arc;
 use wasmtime::component::{Instance, InstancePre};
 use wasmtime::{Engine, ResourceLimiter, Store};
@@ -12,6 +12,22 @@ type CallResult<R> = wasmtime::Result<Result<R, PluginError>>;
 
 const MAX_FUEL: u64 = 10_000_000_000;
 const FUEL_YIELD_INTERVAL: u64 = 10_000_000;
+
+#[derive(Debug, Clone, Copy)]
+pub enum Fuel {
+    Limited,
+    #[allow(dead_code, reason = "used by the plugin download export")]
+    Unlimited,
+}
+
+impl Fuel {
+    fn amount(self) -> u64 {
+        match self {
+            Fuel::Limited => MAX_FUEL,
+            Fuel::Unlimited => u64::MAX,
+        }
+    }
+}
 
 pub struct PluginRuntime {
     pub id: String,
@@ -46,7 +62,7 @@ impl PluginRuntime {
         Ok(Some(indices))
     }
 
-    pub async fn call<R, F, Fut>(self: &Arc<Self>, f: F) -> Result<R, ComponentError>
+    pub async fn call<R, F, Fut>(self: &Arc<Self>, fuel: Fuel, f: F) -> Result<R, ComponentError>
     where
         R: Send + 'static,
         F: FnOnce(Instance, Store<PluginState>) -> Fut + Send + 'static,
@@ -54,49 +70,58 @@ impl PluginRuntime {
     {
         let runtime = Arc::clone(self);
 
-        self.tokio_handle
-            .spawn(async move {
-                let state = PluginState::new(
-                    &runtime.id,
-                    runtime.storage.clone(),
-                    runtime.http_client.clone(),
-                    runtime.allowed_hosts.clone(),
-                    runtime.link.clone(),
-                    runtime.cache.clone(),
-                    runtime.config_schema.clone(),
-                );
-                let mut store = Store::new(&runtime.engine, state);
+        let task = self.tokio_handle.spawn(async move {
+            let state = PluginState::new(
+                &runtime.id,
+                runtime.storage.clone(),
+                runtime.http_client.clone(),
+                runtime.allowed_hosts.clone(),
+                runtime.link.clone(),
+                runtime.cache.clone(),
+                runtime.config_schema.clone(),
+            );
+            let mut store = Store::new(&runtime.engine, state);
 
-                store.limiter(|state| state.limits() as &mut dyn ResourceLimiter);
+            store.limiter(|state| state.limits() as &mut dyn ResourceLimiter);
 
-                store
-                    .set_fuel(MAX_FUEL)
-                    .and_then(|()| store.fuel_async_yield_interval(Some(FUEL_YIELD_INTERVAL)))
-                    .map_err(|e| ComponentError::Other(format!("Fuel setup failed: {e}")))?;
+            store
+                .set_fuel(fuel.amount())
+                .and_then(|()| store.fuel_async_yield_interval(Some(FUEL_YIELD_INTERVAL)))
+                .map_err(|e| ComponentError::Other(format!("fuel setup failed: {e}")))?;
 
-                let instance = runtime
-                    .pre
-                    .instantiate_async(&mut store)
-                    .await
-                    .map_err(|e| ComponentError::Other(format!("Instantiation failed: {e}")))?;
+            let instance = runtime
+                .pre
+                .instantiate_async(&mut store)
+                .await
+                .map_err(|e| ComponentError::Other(format!("instantiation failed: {e}")))?;
 
-                f(instance, store)
-                    .await
-                    .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                    .map_err(ComponentError::from)
-            })
+            f(instance, store)
+                .await
+                .map_err(|e| ComponentError::Other(format!("wasm call failed: {e}")))?
+                .map_err(ComponentError::from)
+        });
+
+        AbortOnDrop(task)
             .await
-            .map_err(|e| ComponentError::Other(format!("Plugin task failed: {e}")))?
+            .map_err(|e| ComponentError::Other(format!("plugin task failed: {e}")))?
     }
 }
 
 /// Instantiates the plugin, loads the export behind `indices` and runs one
 /// guest call on it.
 macro_rules! guest_call {
-    ($runtime:expr, $indices:expr, |$guest:ident, $accessor:ident| $call:expr) => {{
+    ($runtime:expr, $indices:expr, |$guest:ident, $accessor:ident| $call:expr) => {
+        $crate::plugin::guest_call!(
+            $runtime,
+            $indices,
+            $crate::plugin::Fuel::Limited,
+            |$guest, $accessor| $call
+        )
+    };
+    ($runtime:expr, $indices:expr, $fuel:expr, |$guest:ident, $accessor:ident| $call:expr) => {{
         let indices = $indices.clone();
         $runtime
-            .call(|instance, mut store| async move {
+            .call($fuel, |instance, mut store| async move {
                 let $guest = indices.load(&mut store, &instance)?;
                 store
                     .run_concurrent(async |$accessor| $call.await)

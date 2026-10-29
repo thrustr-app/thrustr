@@ -11,7 +11,7 @@ use domain::{
 };
 use event::Topic;
 use net::{ConnectivityManager, backoff};
-use runtime::{TokioHandle, clock};
+use runtime::{AbortOnDrop, TokioHandle, clock};
 use serde_json::Value;
 use std::{
     convert::Infallible,
@@ -22,7 +22,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{sync::watch, task::JoinHandle, time::Instant};
+use tokio::{sync::watch, time::Instant};
 use tracing::{error, info, warn};
 
 const PAUSED_KEY: &str = "downloads.paused";
@@ -34,7 +34,7 @@ const SPEED_WINDOW: Duration = Duration::from_secs(5);
 #[derive(Clone)]
 pub struct DownloadService {
     inner: Arc<Inner>,
-    _supervisor: Arc<AbortOnDrop>,
+    _supervisor: Arc<AbortOnDrop<()>>,
 }
 
 impl DownloadService {
@@ -113,14 +113,6 @@ impl DownloadService {
             true
         });
         Ok(())
-    }
-}
-
-struct AbortOnDrop(JoinHandle<()>);
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
     }
 }
 
