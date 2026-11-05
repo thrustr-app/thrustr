@@ -336,12 +336,12 @@ impl InstallDialog {
         let depth = self.levels.len();
         let storefront = self.storefront.clone();
         let game_id = self.game_id;
-        let path = self.selected_path();
+        let version_path = self.selected_version_path();
 
         let task = cx.spawn_and_update(
             async move {
                 let storefront = storefront.context("storefront is not available")?;
-                anyhow::Ok(storefront.list_game_versions(game_id, path).await?)
+                anyhow::Ok(storefront.list_game_versions(game_id, version_path).await?)
             },
             move |this, result, cx| {
                 let Some(level) = this.levels.get_mut(depth) else {
@@ -407,10 +407,10 @@ impl InstallDialog {
             return;
         };
         let game_id = self.game_id;
-        let path = self.selected_path();
+        let version_path = self.selected_version_path();
         self.details_loading = true;
         self._details_task = Some(cx.spawn_and_update(
-            async move { storefront.game_version_details(game_id, path).await },
+            async move { storefront.game_version_details(game_id, version_path).await },
             |this, result, _| {
                 this.details_loading = false;
                 match result {
@@ -425,7 +425,7 @@ impl InstallDialog {
         ));
     }
 
-    fn selected_path(&self) -> Vec<String> {
+    fn selected_version_path(&self) -> Vec<String> {
         self.levels
             .iter()
             .map_while(|level| level.selected.as_ref())

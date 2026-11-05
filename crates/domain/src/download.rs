@@ -32,8 +32,17 @@ pub struct NewDownload {
 #[strum(serialize_all = "lowercase")]
 pub enum DownloadPhase {
     #[default]
+    Preparing,
     Downloading,
     Installing,
+    Verifying,
+    Finalizing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadOutcome {
+    Completed,
+    Cancelled,
 }
 
 pub trait DownloadReporter: Send + Sync {

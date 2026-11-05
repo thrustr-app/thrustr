@@ -1,15 +1,16 @@
 use crate::{
-    plugin::{PluginRuntime, guest_call},
+    plugin::{DownloadCall, PluginRuntime, guest_call, guest_fn},
     wit::{exports::thrustr::plugin::storefront, thrustr::plugin::types},
 };
 use async_trait::async_trait;
 use domain::{
     component::{Error, Storefront},
-    download::DownloadReporter,
+    download::{DownloadOutcome, DownloadReporter},
     game::{Game, GameSource, GameVersion, GameVersionDetails, NewGame},
     platform::Platform,
 };
 use std::{path::PathBuf, sync::Arc};
+use tokio_util::sync::CancellationToken;
 
 pub struct PluginStorefront {
     runtime: Arc<PluginRuntime>,
@@ -39,10 +40,10 @@ impl Storefront for PluginStorefront {
     async fn game_versions(
         &self,
         game: Game,
-        path: Vec<String>,
+        version_path: Vec<String>,
     ) -> Result<Vec<GameVersion>, Error> {
         let versions = guest_call!(self.runtime, self.indices, |storefront, accessor| {
-            storefront.call_get_game_versions(accessor, game.into(), path)
+            storefront.call_get_game_versions(accessor, game.into(), version_path)
         })?;
 
         Ok(versions.into_iter().map(Into::into).collect())
@@ -51,10 +52,10 @@ impl Storefront for PluginStorefront {
     async fn game_version_details(
         &self,
         game: Game,
-        path: Vec<String>,
+        version_path: Vec<String>,
     ) -> Result<GameVersionDetails, Error> {
         let details = guest_call!(self.runtime, self.indices, |storefront, accessor| {
-            storefront.call_get_game_version_details(accessor, game.into(), path)
+            storefront.call_get_game_version_details(accessor, game.into(), version_path)
         })?;
 
         Ok(details.into())
@@ -62,12 +63,35 @@ impl Storefront for PluginStorefront {
 
     async fn download(
         &self,
-        _game: Game,
-        _path: Vec<String>,
-        _target_dir: PathBuf,
-        _reporter: Arc<dyn DownloadReporter>,
-    ) -> Result<(), Error> {
-        Err(Error::Other("downloads are not supported yet".into()))
+        game: Game,
+        version_path: Vec<String>,
+        target_dir: PathBuf,
+        reporter: Arc<dyn DownloadReporter>,
+        cancel: CancellationToken,
+    ) -> Result<DownloadOutcome, Error> {
+        let call = guest_fn!(self.indices, |storefront, accessor| async {
+            let reporter = accessor.with(|mut access| access.get().reporter())?;
+            storefront
+                .call_download(accessor, game.into(), version_path, reporter)
+                .await
+        });
+
+        let runtime = self.runtime.clone();
+        self.runtime
+            .spawn(async move {
+                tokio::fs::create_dir_all(&target_dir).await.map_err(|e| {
+                    Error::Other(format!("creating {} failed: {e}", target_dir.display()))
+                })?;
+                let download = DownloadCall {
+                    dir: target_dir,
+                    reporter,
+                };
+                Ok(match runtime.run(Some(download), &cancel, call).await? {
+                    Some(()) => DownloadOutcome::Completed,
+                    None => DownloadOutcome::Cancelled,
+                })
+            })
+            .await
     }
 }
 

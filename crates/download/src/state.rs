@@ -2,6 +2,7 @@ use domain::download::{Download, DownloadId, DownloadPhase};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Activity {
+    Preparing,
     WaitingForStorefront,
     WaitingForConnection,
     Retrying,
@@ -150,7 +151,7 @@ impl DownloadState {
         self.run.take().is_some()
     }
 
-    /// Records progress of the running download. Returns whether it changed.
+    /// Records progress of a download. Returns whether it changed.
     pub(crate) fn report(
         &mut self,
         id: DownloadId,
@@ -158,9 +159,6 @@ impl DownloadState {
         processed: u64,
         total: Option<u64>,
     ) -> bool {
-        if self.running_id() != Some(id) {
-            return false;
-        }
         let Some(download) = self.get_mut(id) else {
             return false;
         };
@@ -493,10 +491,14 @@ mod tests {
     }
 
     #[test]
-    fn progress_is_only_recorded_for_the_running_download() {
+    fn progress_is_recorded_for_the_download_it_belongs_to() {
         check(&[Push(1), Push(2), installing(1)], ">1(Installing 10/20) 2");
-        check(&[Push(1), Push(2), installing(2)], ">1 2");
-        check(&[Push(1), Pause, installing(1)], "paused: >1");
+        check(&[Push(1), Push(2), installing(2)], ">1 2(Installing 10/20)");
+        // A run publishes its last progress after it stopped.
+        check(
+            &[Push(1), Pause, installing(1)],
+            "paused: >1(Installing 10/20)",
+        );
     }
 
     #[test]

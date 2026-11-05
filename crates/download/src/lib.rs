@@ -1,3 +1,4 @@
+mod dirs;
 mod service;
 mod state;
 mod throughput;

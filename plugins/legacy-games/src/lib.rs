@@ -80,7 +80,7 @@ impl Storefront for LegacyGames {
         Ok(products.into_iter().flat_map(games).collect())
     }
 
-    async fn game_versions(game: Game, _path: Vec<String>) -> Result<Vec<GameVersion>> {
+    async fn game_versions(game: Game, _version_path: Vec<String>) -> Result<Vec<GameVersion>> {
         Ok(vec![GameVersion {
             id: game.lookup_id,
             pretty_name: Some(game.name),
@@ -89,7 +89,10 @@ impl Storefront for LegacyGames {
         }])
     }
 
-    async fn game_version_details(game: Game, _path: Vec<String>) -> Result<GameVersionDetails> {
+    async fn game_version_details(
+        game: Game,
+        _version_path: Vec<String>,
+    ) -> Result<GameVersionDetails> {
         let external_id = |key: &str| {
             game.external_ids
                 .get(key)

@@ -5,12 +5,13 @@ use crate::{
 use dashmap::DashMap;
 use domain::{
     component::{Storefront, StorefrontOperation},
-    download::DownloadReporter,
+    download::{DownloadOutcome, DownloadReporter},
     game::{Game, GameId, GameVersion, GameVersionDetails, NewGame, SyncSummary},
 };
 use event::Topic;
 use runtime::clock::Moment;
 use std::{path::PathBuf, sync::Arc, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 const VERSION_DETAILS_TTL: Duration = Duration::from_hours(1);
@@ -74,12 +75,12 @@ impl StorefrontHandle {
     pub async fn list_game_versions(
         &self,
         game_id: GameId,
-        path: Vec<String>,
+        version_path: Vec<String>,
     ) -> Result<Vec<GameVersion>> {
         let permit = Permit::begin(&self.component, StorefrontOperation::ListVersions)?;
 
         let game = self.load_game(game_id).await?;
-        let versions = match self.storefront.game_versions(game, path).await {
+        let versions = match self.storefront.game_versions(game, version_path).await {
             Ok(versions) => versions,
             Err(error) => {
                 permit.finish(Err(error.clone()));
@@ -94,10 +95,10 @@ impl StorefrontHandle {
     pub async fn game_version_details(
         &self,
         game_id: GameId,
-        path: Vec<String>,
+        version_path: Vec<String>,
     ) -> Result<GameVersionDetails> {
         let cache = self.component.version_details_cache();
-        if let Some(details) = cache.get(game_id, &path) {
+        if let Some(details) = cache.get(game_id, &version_path) {
             return Ok(details);
         }
 
@@ -106,7 +107,7 @@ impl StorefrontHandle {
         let game = self.load_game(game_id).await?;
         let details = match self
             .storefront
-            .game_version_details(game, path.clone())
+            .game_version_details(game, version_path.clone())
             .await
         {
             Ok(details) => details,
@@ -117,25 +118,30 @@ impl StorefrontHandle {
         };
         permit.finish(Ok(()));
 
-        cache.insert(game_id, path, details.clone());
+        cache.insert(game_id, version_path, details.clone());
         Ok(details)
     }
 
     pub async fn download(
         &self,
         game_id: GameId,
-        path: Vec<String>,
+        version_path: Vec<String>,
         target_dir: PathBuf,
         reporter: Arc<dyn DownloadReporter>,
-    ) -> Result<()> {
+        cancel: CancellationToken,
+    ) -> Result<DownloadOutcome> {
         let permit = Permit::begin(&self.component, StorefrontOperation::Download)?;
 
         let game = self.load_game(game_id).await?;
         let result = self
             .storefront
-            .download(game, path, target_dir, reporter)
+            .download(game, version_path, target_dir, reporter, cancel)
             .await;
-        permit.finish(result.clone());
+        match &result {
+            Ok(DownloadOutcome::Completed) => permit.finish(Ok(())),
+            Ok(DownloadOutcome::Cancelled) => drop(permit),
+            Err(error) => permit.finish(Err(error.clone())),
+        }
 
         Ok(result?)
     }
@@ -179,17 +185,18 @@ impl StorefrontHandle {
 pub(crate) struct VersionDetailsCache(DashMap<(GameId, Vec<String>), (Moment, GameVersionDetails)>);
 
 impl VersionDetailsCache {
-    fn get(&self, game_id: GameId, path: &[String]) -> Option<GameVersionDetails> {
-        let key = (game_id, path.to_vec());
+    fn get(&self, game_id: GameId, version_path: &[String]) -> Option<GameVersionDetails> {
+        let key = (game_id, version_path.to_vec());
         let now = Moment::now();
         self.0
             .remove_if(&key, |_, (expires_at, _)| expires_at.has_passed(now));
         self.0.get(&key).map(|entry| entry.1.clone())
     }
 
-    fn insert(&self, game_id: GameId, path: Vec<String>, details: GameVersionDetails) {
+    fn insert(&self, game_id: GameId, version_path: Vec<String>, details: GameVersionDetails) {
         if let Some(expires_at) = Moment::now().checked_add(VERSION_DETAILS_TTL) {
-            self.0.insert((game_id, path), (expires_at, details));
+            self.0
+                .insert((game_id, version_path), (expires_at, details));
         }
     }
 

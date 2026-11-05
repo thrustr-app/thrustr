@@ -252,6 +252,22 @@ pub enum Rejection {
     Expired,
 }
 
+impl Rejection {
+    pub fn is_temporary(&self) -> bool {
+        match self {
+            Self::Busy(_) | Self::Expired => true,
+            Self::Unsupported(_) => false,
+            Self::NotAllowed(status) => match status {
+                Status::Initializing | Status::Inactive(InactiveReason::Disabled) => true,
+                Status::Active
+                | Status::Inactive(InactiveReason::Unauthenticated | InactiveReason::Error(_)) => {
+                    false
+                }
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum Status {

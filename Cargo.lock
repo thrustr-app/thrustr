@@ -1090,6 +1090,7 @@ dependencies = [
  "strum",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -1950,6 +1951,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror 2.0.21",
+ "tokio-util",
  "unicode-normalization",
 ]
 
@@ -1976,6 +1978,7 @@ dependencies = [
  "domain",
  "event",
  "fs4",
+ "futures",
  "net",
  "runtime",
  "semver",
@@ -1984,6 +1987,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -5571,17 +5575,21 @@ dependencies = [
  "http-body-util",
  "hyper",
  "lru",
+ "rand 0.10.3",
  "reqwest",
  "runtime",
  "semver",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-http",
+ "winapi-util",
  "wiremock",
  "zip",
 ]

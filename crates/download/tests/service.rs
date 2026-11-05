@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use component::{ComponentRegistry, RegisterError, RegistryContext};
 use domain::{
     component::{Component, Error, Metadata, Origin, Storefront},
-    download::{DownloadId, DownloadPhase, DownloadReporter, NewDownload},
+    download::{DownloadId, DownloadOutcome, DownloadPhase, DownloadReporter, NewDownload},
     game::{Game, GameId, GameRepository, GameSource, GameVersion, GameVersionDetails, NewGame},
 };
 use download::{DownloadService, DownloadState, Speed};
@@ -11,9 +11,16 @@ use net::{ConnectivityConfig, ConnectivityManager};
 use runtime::TokioHandle;
 use semver::Version;
 use sqlite::SqliteStorage;
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use tempfile::TempDir;
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 
 const STOREFRONT: &str = "fake";
 const GAMES: [&str; 3] = ["Hades", "Celeste", "Inscryption"];
@@ -21,7 +28,9 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 
 struct Call {
     game: String,
+    dir: PathBuf,
     reporter: Arc<dyn DownloadReporter>,
+    cancel: CancellationToken,
     result: oneshot::Sender<Result<(), Error>>,
 }
 
@@ -35,6 +44,14 @@ impl Call {
         self.reporter.written(written);
     }
 
+    fn write(&self, files: &[&str]) {
+        for file in files {
+            let path = self.dir.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"data").unwrap();
+        }
+    }
+
     #[track_caller]
     fn finish(self, result: Result<(), Error>) {
         assert!(
@@ -44,11 +61,24 @@ impl Call {
         );
     }
 
-    /// Completes once the service drops the download.
-    async fn stopped(mut self) {
-        tokio::time::timeout(TIMEOUT, self.result.closed())
+    /// Completes once the service stops the download.
+    async fn stopped(self) {
+        self.stopped_with_io_in_flight().await;
+    }
+
+    /// Like [`Call::stopped`], but the download only returns once the call is
+    /// dropped, as if a write were still in flight.
+    async fn stopped_with_io_in_flight(mut self) -> Self {
+        let stopped = async {
+            tokio::select! {
+                () = self.cancel.cancelled() => {}
+                () = self.result.closed() => {}
+            }
+        };
+        tokio::time::timeout(TIMEOUT, stopped)
             .await
             .unwrap_or_else(|_| panic!("the download of {} should stop", self.game));
+        self
     }
 }
 
@@ -65,7 +95,7 @@ impl Storefront for FakeStorefront {
     async fn game_versions(
         &self,
         _game: Game,
-        _path: Vec<String>,
+        _version_path: Vec<String>,
     ) -> Result<Vec<GameVersion>, Error> {
         Ok(vec![])
     }
@@ -73,7 +103,7 @@ impl Storefront for FakeStorefront {
     async fn game_version_details(
         &self,
         _game: Game,
-        _path: Vec<String>,
+        _version_path: Vec<String>,
     ) -> Result<GameVersionDetails, Error> {
         Ok(GameVersionDetails {
             install_size: None,
@@ -84,22 +114,27 @@ impl Storefront for FakeStorefront {
     async fn download(
         &self,
         game: Game,
-        _path: Vec<String>,
-        _target_dir: PathBuf,
+        _version_path: Vec<String>,
+        target_dir: PathBuf,
         reporter: Arc<dyn DownloadReporter>,
-    ) -> Result<(), Error> {
+        cancel: CancellationToken,
+    ) -> Result<DownloadOutcome, Error> {
         let (result, finished) = oneshot::channel();
         let call = Call {
             game: game.name,
+            dir: target_dir,
             reporter,
+            cancel: cancel.clone(),
             result,
         };
         if self.calls.send(call).is_err() {
             return Err(Error::Other("the test is over".into()));
         }
-        finished
-            .await
-            .unwrap_or_else(|_| Err(Error::Other("the test dropped the download".into())))
+        match finished.await {
+            Ok(result) => result.map(|()| DownloadOutcome::Completed),
+            Err(_) if cancel.is_cancelled() => Ok(DownloadOutcome::Cancelled),
+            Err(_) => Err(Error::Other("the test dropped the download".into())),
+        }
     }
 }
 
@@ -147,7 +182,7 @@ fn new_game(name: &str) -> NewGame {
 }
 
 struct Harness {
-    _dir: TempDir,
+    dir: TempDir,
     storage: Arc<SqliteStorage>,
     registry: ComponentRegistry,
     connectivity: ConnectivityManager,
@@ -196,7 +231,7 @@ impl Harness {
         let service = start(&storage, &registry, &connectivity);
 
         Self {
-            _dir: dir,
+            dir,
             storage,
             registry,
             connectivity,
@@ -239,7 +274,14 @@ impl Harness {
     }
 
     fn try_enqueue(&self, name: &str) -> anyhow::Result<()> {
-        self.service.enqueue(&new_download(self.games[name]))?;
+        let game_id = self.games[name];
+        self.service.enqueue(&NewDownload {
+            game_id,
+            version_path: vec!["windows".to_string()],
+            target_dir: self.target_dir(name),
+            install_size: Some(200),
+            download_size: Some(100),
+        })?;
         Ok(())
     }
 
@@ -247,6 +289,33 @@ impl Harness {
         for name in names {
             self.try_enqueue(name).unwrap();
         }
+    }
+
+    fn target_dir(&self, name: &str) -> PathBuf {
+        self.dir.path().join("games").join(name)
+    }
+
+    fn files(&self, name: &str) -> Vec<String> {
+        fn list(root: &Path, dir: &Path, files: &mut Vec<String>) {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    list(root, &path, files);
+                } else {
+                    let relative = path.strip_prefix(root).unwrap();
+                    files.push(relative.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+
+        let dir = self.target_dir(name);
+        let mut files = Vec::new();
+        list(&dir, &dir, &mut files);
+        files.sort();
+        files
     }
 
     fn pause(&self) {
@@ -366,16 +435,6 @@ fn start(
     .unwrap()
 }
 
-fn new_download(game_id: GameId) -> NewDownload {
-    NewDownload {
-        game_id,
-        version_path: vec!["windows".to_string()],
-        target_dir: format!("/games/{game_id}").into(),
-        install_size: Some(200),
-        download_size: Some(100),
-    }
-}
-
 #[tokio::test]
 async fn queued_downloads_run_in_order() {
     let mut harness = Harness::new().await;
@@ -391,7 +450,7 @@ async fn queued_downloads_run_in_order() {
     harness.check("").await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn the_latest_progress_is_shown() {
     let mut harness = Harness::new().await;
     harness.enqueue(&["Hades"]);
@@ -404,6 +463,19 @@ async fn the_latest_progress_is_shown() {
 
     call.progress(DownloadPhase::Installing, 10, None);
     harness.check(">Hades[Downloading](Installing 10/?)").await;
+}
+
+#[tokio::test]
+async fn the_last_progress_is_kept_once_stopped() {
+    let mut harness = Harness::new().await;
+    harness.enqueue(&["Hades"]);
+    let call = harness.call("Hades").await;
+    harness.check(">Hades[Downloading]").await;
+
+    call.progress(DownloadPhase::Installing, 40, Some(80));
+    harness.pause();
+    call.stopped().await;
+    harness.check("paused: Hades(Installing 40/80)").await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -531,6 +603,17 @@ async fn a_offline_network_error_waits_for_the_connection() {
 }
 
 #[tokio::test]
+async fn a_download_waiting_for_the_connection_can_be_paused() {
+    let mut harness = Harness::new().await;
+    harness.enqueue(&["Hades"]);
+    harness.call("Hades").await.finish(Err(network_error()));
+    harness.check(">Hades[WaitingForConnection]").await;
+
+    harness.pause();
+    harness.check("paused: Hades").await;
+}
+
+#[tokio::test]
 async fn a_restarted_service_resumes_the_running_download() {
     let mut harness = Harness::new().await;
     harness.enqueue(&["Hades"]);
@@ -550,6 +633,10 @@ async fn the_queue_survives_a_restart() {
 
     harness.pause();
     call.stopped().await;
+    harness.resume();
+    // The stopped run saved before the next one started.
+    let _running = harness.call("Hades").await;
+    harness.pause();
     harness.restart();
     harness
         .check("paused: Hades(Installing 40/80) Celeste")
@@ -567,4 +654,64 @@ async fn a_game_can_only_be_queued_once() {
 
     assert!(harness.try_enqueue("Hades").is_err());
     harness.check(">Hades[Downloading]").await;
+}
+
+#[tokio::test]
+async fn a_finished_download_keeps_only_the_game() {
+    let mut harness = Harness::new().await;
+    harness.enqueue(&["Hades"]);
+    let call = harness.call("Hades").await;
+    call.write(&["game.exe", "data/level.pak", ".thrustr/state"]);
+
+    call.finish(Ok(()));
+    harness.check("").await;
+    assert_eq!(harness.files("Hades"), ["data/level.pak", "game.exe"]);
+}
+
+#[tokio::test]
+async fn a_failed_download_keeps_its_files_for_a_retry() {
+    let mut harness = Harness::new().await;
+    harness.enqueue(&["Hades"]);
+    let call = harness.call("Hades").await;
+    call.write(&["game.exe", ".thrustr/state"]);
+
+    call.finish(Err(auth_error()));
+    harness.check("Hades!").await;
+    assert_eq!(harness.files("Hades"), [".thrustr/state", "game.exe"]);
+}
+
+#[tokio::test]
+async fn a_cancelled_download_is_deleted_once_stopped() {
+    let mut harness = Harness::new().await;
+    harness.enqueue(&["Hades"]);
+    let call = harness.call("Hades").await;
+    call.write(&["game.exe", ".thrustr/state"]);
+
+    harness.cancel("Hades");
+    let in_flight = call.stopped_with_io_in_flight().await;
+    assert_eq!(harness.files("Hades"), [".thrustr/state", "game.exe"]);
+
+    drop(in_flight);
+    // Downloading it again waits for the deletion.
+    harness.enqueue(&["Hades"]);
+    harness.call("Hades").await;
+    assert!(harness.files("Hades").is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_new_run_waits_until_the_previous_one_stops_touching_files() {
+    let mut harness = Harness::new().await;
+    harness.enqueue(&["Hades", "Celeste"]);
+    let call = harness.call("Hades").await;
+
+    harness.move_to("Celeste", 0);
+    let in_flight = call.stopped_with_io_in_flight().await;
+    let started = tokio::time::timeout(TIMEOUT, harness.calls.recv()).await;
+    assert!(
+        started.is_err(),
+        "a download started while a write was in flight"
+    );
+
+    drop(in_flight);
+    harness.call("Celeste").await;
 }

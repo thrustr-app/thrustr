@@ -1,10 +1,14 @@
-use crate::{Activity, DownloadState, Speed, throughput::Meter};
+use crate::{
+    Activity, DownloadState, Speed,
+    dirs::{self, DirLock, DirLocks},
+    throughput::Meter,
+};
 use anyhow::{Result, anyhow};
 use component::{ComponentRegistry, OperationError};
 use domain::{
-    component::{InactiveReason, Rejection, Status},
     download::{
-        Download, DownloadId, DownloadPhase, DownloadReporter, DownloadRepository, NewDownload,
+        Download, DownloadId, DownloadOutcome, DownloadPhase, DownloadReporter, DownloadRepository,
+        NewDownload,
     },
     game::{Game, GameId, GameRepository},
     state::AppStateRepository,
@@ -15,7 +19,8 @@ use runtime::{AbortOnDrop, TokioHandle, clock};
 use serde_json::Value;
 use std::{
     convert::Infallible,
-    pin::pin,
+    future,
+    path::PathBuf,
     sync::{
         Arc, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicU64, Ordering},
@@ -23,7 +28,10 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::watch, time::Instant};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+
+type Progress = (DownloadPhase, u64, Option<u64>);
 
 const PAUSED_KEY: &str = "downloads.paused";
 const MAX_ATTEMPTS: u32 = 3;
@@ -55,6 +63,8 @@ impl DownloadService {
         let inner = Arc::new(Inner {
             state: watch::Sender::new(state),
             writes: Mutex::new(()),
+            dirs: DirLocks::default(),
+            tokio_handle: tokio_handle.clone(),
             downloads,
             games,
             app_state,
@@ -88,7 +98,21 @@ impl DownloadService {
     }
 
     pub fn cancel(&self, id: DownloadId) -> Result<()> {
-        self.inner.remove(id)
+        let dir = self
+            .inner
+            .state
+            .borrow()
+            .get(id)
+            .map(|d| d.target_dir.clone());
+        let delete = dir.map(|dir| {
+            let lock = self.inner.dirs.lock(&dir);
+            self.inner.clone().delete(dir, lock)
+        });
+        self.inner.remove(id)?;
+        if let Some(delete) = delete {
+            self.inner.tokio_handle.spawn(delete);
+        }
+        Ok(())
     }
 
     pub fn move_to(&self, id: DownloadId, position: u32) -> Result<()> {
@@ -120,6 +144,8 @@ struct Inner {
     state: watch::Sender<DownloadState>,
     /// Held while writing storage and the respective state change.
     writes: Mutex<()>,
+    dirs: DirLocks,
+    tokio_handle: TokioHandle,
     downloads: Arc<dyn DownloadRepository>,
     games: Arc<dyn GameRepository>,
     app_state: Arc<dyn AppStateRepository>,
@@ -169,6 +195,14 @@ impl Inner {
         self.modify(|state| state.set_activity(id, activity));
     }
 
+    async fn delete(self: Arc<Self>, dir: PathBuf, lock: impl Future<Output = DirLock>) {
+        let _lock = lock.await;
+        let path = dir.clone();
+        if let Err(error) = self.blocking(move |_| Ok(dirs::remove_dir(&path)?)).await {
+            error!(dir = %dir.display(), %error, "failed to delete a cancelled download");
+        }
+    }
+
     async fn blocking<T: Send + 'static>(
         self: &Arc<Self>,
         f: impl FnOnce(&Self) -> Result<T> + Send + 'static,
@@ -193,20 +227,38 @@ impl Inner {
 
     async fn run(self: &Arc<Self>, download: Download) {
         let id = download.id;
-        let reporter = Arc::new(Reporter::new(self.clone(), id));
-        // Outlives the select so a stopped call is dropped after saving progress.
-        let mut call = pin!(self.download(download, reporter.clone()));
+        let dir = download.target_dir.clone();
+
+        self.set_activity(id, Activity::Preparing);
+        let _lock = tokio::select! {
+            lock = self.dirs.lock(&dir) => lock,
+            () = self.stopped(id) => {
+                self.modify(DownloadState::clear_run);
+                return;
+            }
+        };
+
+        let reporter = Arc::new(Reporter::new(id));
+        let cancel = CancellationToken::new();
         let outcome = tokio::select! {
             biased;
-            result = &mut call => Some(result),
-            () = self.stopped(id) => None,
+            outcome = self.download(download, reporter.clone(), &cancel) => outcome,
+            never = self.cancel_once_stopped(id, &cancel) => match never {},
             never = self.save_periodically(id) => match never {},
             never = self.measure_speed(&reporter) => match never {},
         };
+        self.modify(|state| reporter.publish(state));
 
         let saved = match outcome {
             Some(Ok(())) => {
                 info!(%id, "download finished");
+                let scratch = dir.clone();
+                if let Err(error) = self
+                    .blocking(move |_| Ok(dirs::remove_scratch(&scratch)?))
+                    .await
+                {
+                    warn!(%id, dir = %dir.display(), %error, "failed to remove the scratch dir");
+                }
                 self.blocking(move |inner| inner.remove(id)).await
             }
             Some(Err(error)) => {
@@ -233,6 +285,12 @@ impl Inner {
             .await;
     }
 
+    async fn cancel_once_stopped(&self, id: DownloadId, cancel: &CancellationToken) -> Infallible {
+        self.stopped(id).await;
+        cancel.cancel();
+        future::pending().await
+    }
+
     async fn save_periodically(self: &Arc<Self>, id: DownloadId) -> Infallible {
         loop {
             clock::after(SAVE_INTERVAL).await;
@@ -254,16 +312,18 @@ impl Inner {
                 network: network.rate(),
                 disk: disk.rate(),
             };
-            self.modify(|state| state.set_speed(reporter.id, speed));
+            self.modify(|state| reporter.publish(state) | state.set_speed(reporter.id, speed));
             clock::after(SPEED_INTERVAL).await;
         }
     }
 
+    /// `None` if `cancel` stopped it.
     async fn download(
         self: &Arc<Self>,
         download: Download,
         reporter: Arc<dyn DownloadReporter>,
-    ) -> Result<(), String> {
+        cancel: &CancellationToken,
+    ) -> Option<Result<(), String>> {
         let Download {
             id,
             game_id,
@@ -271,7 +331,10 @@ impl Inner {
             target_dir,
             ..
         } = download;
-        let game = self.load_game(game_id).await?;
+        let game = match cancel.run_until_cancelled(self.load_game(game_id)).await? {
+            Ok(game) => game,
+            Err(error) => return Some(Err(error)),
+        };
         let mut attempts = 0;
 
         loop {
@@ -280,52 +343,69 @@ impl Inner {
 
             let Some(component) = self.registry.component(&game.source.id) else {
                 self.set_activity(id, Activity::WaitingForStorefront);
-                let _ = registered.changed().await;
+                let _ = cancel.run_until_cancelled(registered.changed()).await?;
                 continue;
             };
             let Some(storefront) = component.storefront() else {
                 let name = component.metadata().name;
-                return Err(format!("{name} can't download games"));
+                return Some(Err(format!("{name} can't download games")));
             };
 
             self.set_activity(id, Activity::Downloading);
+
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "the queue is what runs downloads"
+            )]
             let result = storefront
                 .download(
                     game.id,
                     version_path.clone(),
                     target_dir.clone(),
                     reporter.clone(),
+                    cancel.clone(),
                 )
                 .await;
-            let Err(error) = result else {
-                return Ok(());
+            let error = match result {
+                Ok(DownloadOutcome::Completed) => return Some(Ok(())),
+                Ok(DownloadOutcome::Cancelled) => return None,
+                Err(error) => error,
             };
 
             match classify(&error) {
                 Failure::Wait => {
                     self.set_activity(id, Activity::WaitingForStorefront);
-                    tokio::select! {
-                        _ = registered.changed() => {}
-                        _ = status_changed.changed() => {}
-                    }
+                    let changed = async {
+                        tokio::select! {
+                            _ = registered.changed() => {}
+                            _ = status_changed.changed() => {}
+                        }
+                    };
+                    cancel.run_until_cancelled(changed).await?;
                 }
                 Failure::Transient => {
-                    self.connectivity.report_error().await;
+                    cancel
+                        .run_until_cancelled(self.connectivity.report_error())
+                        .await?;
                     if self.connectivity.state().is_offline() {
                         self.set_activity(id, Activity::WaitingForConnection);
-                        self.connectivity.wait_until_online().await;
+                        cancel
+                            .run_until_cancelled(self.connectivity.wait_until_online())
+                            .await?;
                         continue;
                     }
 
                     attempts += 1;
                     if attempts >= MAX_ATTEMPTS {
-                        return Err(error.to_string());
+                        return Some(Err(error.to_string()));
                     }
                     warn!(%id, attempts, %error, "download failed, retrying");
                     self.set_activity(id, Activity::Retrying);
-                    clock::after(backoff(attempts)).await;
+                    cancel
+                        .run_until_cancelled(clock::after(backoff(attempts)))
+                        .await?;
                 }
-                Failure::Fatal => return Err(error.to_string()),
+                Failure::Fatal => return Some(Err(error.to_string())),
             }
         }
     }
@@ -339,19 +419,19 @@ impl Inner {
 }
 
 struct Reporter {
-    inner: Arc<Inner>,
     id: DownloadId,
     received: AtomicU64,
     written: AtomicU64,
+    progress: Mutex<Option<Progress>>,
 }
 
 impl Reporter {
-    fn new(inner: Arc<Inner>, id: DownloadId) -> Self {
+    fn new(id: DownloadId) -> Self {
         Self {
-            inner,
             id,
             received: AtomicU64::new(0),
             written: AtomicU64::new(0),
+            progress: Mutex::new(None),
         }
     }
 
@@ -361,12 +441,22 @@ impl Reporter {
             self.written.load(Ordering::Relaxed),
         )
     }
+
+    fn publish(&self, state: &mut DownloadState) -> bool {
+        let progress = self
+            .progress
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        progress
+            .is_some_and(|(phase, processed, total)| state.report(self.id, phase, processed, total))
+    }
 }
 
 impl DownloadReporter for Reporter {
     fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>) {
-        self.inner
-            .modify(|state| state.report(self.id, phase, processed, total));
+        *self.progress.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some((phase, processed, total));
     }
 
     fn received(&self, bytes: u64) {
@@ -387,13 +477,7 @@ enum Failure {
 
 fn classify(error: &OperationError) -> Failure {
     match error {
-        OperationError::Rejected { rejection, .. } => match rejection {
-            Rejection::Busy(_)
-            | Rejection::Expired
-            | Rejection::NotAllowed(Status::Initializing)
-            | Rejection::NotAllowed(Status::Inactive(InactiveReason::Disabled)) => Failure::Wait,
-            Rejection::NotAllowed(_) | Rejection::Unsupported(_) => Failure::Fatal,
-        },
+        OperationError::Rejected { rejection, .. } if rejection.is_temporary() => Failure::Wait,
         OperationError::Component(error) if !error.is_fatal() => Failure::Transient,
         _ => Failure::Fatal,
     }
