@@ -1,9 +1,12 @@
 use crate::{
     component::{Error, Operation},
+    download::{DownloadOutcome, DownloadReporter},
     game::{Game, GameVersion, GameVersionDetails, NewGame},
 };
 use async_trait::async_trait;
+use std::{path::PathBuf, sync::Arc};
 use strum::Display;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[strum(serialize_all = "lowercase")]
@@ -13,6 +16,7 @@ pub enum StorefrontOperation {
     ListVersions,
     #[strum(to_string = "version details")]
     VersionDetails,
+    Download,
 }
 
 impl From<StorefrontOperation> for Operation {
@@ -24,11 +28,25 @@ impl From<StorefrontOperation> for Operation {
 #[async_trait]
 pub trait Storefront: Send + Sync {
     async fn games(&self) -> Result<Vec<NewGame>, Error>;
-    async fn game_versions(&self, game: Game, path: Vec<String>)
-    -> Result<Vec<GameVersion>, Error>;
+
+    async fn game_versions(
+        &self,
+        game: Game,
+        version_path: Vec<String>,
+    ) -> Result<Vec<GameVersion>, Error>;
+
     async fn game_version_details(
         &self,
         game: Game,
-        path: Vec<String>,
+        version_path: Vec<String>,
     ) -> Result<GameVersionDetails, Error>;
+
+    async fn download(
+        &self,
+        game: Game,
+        version_path: Vec<String>,
+        target_dir: PathBuf,
+        reporter: Arc<dyn DownloadReporter>,
+        cancel: CancellationToken,
+    ) -> Result<DownloadOutcome, Error>;
 }

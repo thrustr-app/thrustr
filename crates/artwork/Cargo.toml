@@ -17,13 +17,13 @@ blake3.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
-image = "0.25"
+image.workspace = true
 lru.workspace = true
 reqwest.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-webp = "0.3"
+webp.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

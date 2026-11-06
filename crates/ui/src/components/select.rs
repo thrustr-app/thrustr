@@ -1,9 +1,9 @@
 use crate::{
-    FieldProps, FocusProps, Icon, SCROLLBAR_WIDTH, Size, Tab, TabPrev, WithField, WithFocus,
-    WithScrollbar, WithSize,
+    FieldProps, FocusProps, Icon, Size, Tab, TabPrev, WithField, WithFocus, WithScrollbar,
+    WithSize,
     components::menu::{
-        self, Cancel, Confirm, MENU_MAX_HEIGHT, MENU_PADDING, SelectFirst, SelectLast, SelectNext,
-        SelectNextPage, SelectPrev, SelectPrevPage, Step,
+        self, Cancel, Confirm, MENU_MAX_HEIGHT, MENU_PADDING, MENU_SCROLLBAR, SelectFirst,
+        SelectLast, SelectNext, SelectNextPage, SelectPrev, SelectPrevPage, Step,
     },
 };
 use gpui::{
@@ -359,9 +359,9 @@ impl SelectState {
     }
 
     fn set_trigger_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
-        let resized = bounds.size.width != self.trigger_bounds.size.width;
+        let resized = bounds.size != self.trigger_bounds.size;
         self.trigger_bounds = bounds;
-        // The menu takes its width from the trigger.
+        // The menu takes its width from the trigger and attaches to its edges.
         if resized && self.is_open() {
             cx.notify();
         }
@@ -473,9 +473,9 @@ impl<T: 'static> Menu<T> {
         cx: &mut App,
     ) -> impl IntoElement {
         let theme = cx.theme();
-        let (width, scroll_handle) = {
+        let (trigger, scroll_handle) = {
             let state = self.state.read(cx);
-            (state.trigger_bounds.size.width, state.scroll_handle.clone())
+            (state.trigger_bounds.size, state.scroll_handle.clone())
         };
 
         let items = self.options.items.iter().enumerate().map(|(ix, item)| {
@@ -504,16 +504,18 @@ impl<T: 'static> Menu<T> {
                 .flex_col()
                 .max_h(MENU_MAX_HEIGHT)
                 .p(MENU_PADDING)
-                .when(scrollable, |content| content.pr(SCROLLBAR_WIDTH))
+                .when(scrollable, |content| content.pr(MENU_SCROLLBAR.width()))
                 .children(items)
                 .overflow_y_scrollbar()
+                .variant(MENU_SCROLLBAR)
+                .always_visible()
                 .handle(&scroll_handle)
                 .on_click(self.listener(|menu, _: &ClickEvent, window, cx| {
                     menu.choose_highlighted(window, cx)
                 }));
 
         menu::popover(
-            width,
+            trigger,
             content,
             self.listener(|menu, event: &MouseDownEvent, _, cx| menu.dismiss(event.position, cx)),
             window,

@@ -188,7 +188,7 @@ impl ComponentHandle {
         })?;
 
         debug!(component = self.id(), %operation, "operation started");
-        event::emit(Topic::ComponentState);
+        event::emit(Topic::ComponentStateChanged);
         Ok(running)
     }
 
@@ -197,7 +197,7 @@ impl ComponentHandle {
         self.state_write().cancel(running);
 
         debug!(component = self.id(), %operation, "operation cancelled");
-        event::emit(Topic::ComponentState);
+        event::emit(Topic::ComponentStateChanged);
     }
 
     fn finish_initialization(
@@ -240,7 +240,7 @@ impl ComponentHandle {
             warn!(component = self.id(), %error, "operation failed");
         }
 
-        event::emit(Topic::ComponentState);
+        event::emit(Topic::ComponentStateChanged);
     }
 
     fn state_read(&self) -> RwLockReadGuard<'_, State> {
@@ -272,14 +272,10 @@ impl WeakComponentHandle {
 ///
 /// Lets a component act on itself through the host (e.g. schedule timers
 /// tied to its current activation and status).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ComponentLink(Arc<OnceLock<WeakComponentHandle>>);
 
 impl ComponentLink {
-    pub(crate) fn new() -> Self {
-        Self(Arc::default())
-    }
-
     pub fn timers(&self) -> Timers<'_> {
         Timers::new(self)
     }

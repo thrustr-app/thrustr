@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use domain::download::DownloadReporter;
 use http_body::{Body, Frame, SizeHint};
 use http_body_util::BodyExt;
 use reqwest::{Client, redirect::Policy};
@@ -34,13 +35,19 @@ type SendRequestFuture =
 pub struct OutboundHttp {
     client: Client,
     allowed_hosts: AllowedHosts,
+    reporter: Option<Arc<dyn DownloadReporter>>,
 }
 
 impl OutboundHttp {
-    pub fn new(client: Client, allowed_hosts: Arc<[String]>) -> Self {
+    pub fn new(
+        client: Client,
+        allowed_hosts: Arc<[String]>,
+        reporter: Option<Arc<dyn DownloadReporter>>,
+    ) -> Self {
         Self {
             client,
             allowed_hosts: AllowedHosts::new(allowed_hosts),
+            reporter,
         }
     }
 }
@@ -56,7 +63,12 @@ impl WasiHttpHooks for OutboundHttp {
             return Box::new(async { Err(Error::HttpRequestDenied) });
         }
 
-        Box::new(dispatch(self.client.clone(), request, options))
+        Box::new(dispatch(
+            self.client.clone(),
+            request,
+            options,
+            self.reporter.clone(),
+        ))
     }
 }
 
@@ -64,6 +76,7 @@ async fn dispatch(
     client: Client,
     request: http::Request<WasiBody>,
     options: Option<RequestOptions>,
+    reporter: Option<Arc<dyn DownloadReporter>>,
 ) -> Result<(http::Response<WasiBody>, IoFuture), Error> {
     let Timeouts {
         head,
@@ -86,7 +99,14 @@ async fn dispatch(
         let body = body
             .map_err(move |err| captured.take().unwrap_or_else(|| response_error(err)))
             .boxed_unsync();
-        IdleTimeoutBody::new(body, between_bytes).boxed_unsync()
+        IdleTimeoutBody::new(body, between_bytes)
+            .map_frame(move |frame| {
+                if let (Some(reporter), Some(data)) = (&reporter, frame.data_ref()) {
+                    reporter.received(data.len() as u64);
+                }
+                frame
+            })
+            .boxed_unsync()
     });
 
     Ok((response, Box::new(async { Ok(()) })))
@@ -353,11 +373,30 @@ fn matches_pattern(pattern: &str, host: &str) -> bool {
 mod tests {
     use super::{AllowedHosts, Error, OutboundHttp, WasiBody, http_client};
     use bytes::Bytes;
+    use domain::download::{DownloadPhase, DownloadReporter};
     use http::{Method, Request, StatusCode, header::CONTENT_LENGTH};
     use http_body_util::{BodyExt, Empty, Full};
-    use std::net::SocketAddr;
+    use std::{
+        net::SocketAddr,
+        sync::{Arc, Mutex},
+    };
     use wasmtime_wasi_http::WasiHttpHooks;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+
+    #[derive(Default)]
+    struct Recorder {
+        received: Mutex<Vec<u64>>,
+    }
+
+    impl DownloadReporter for Recorder {
+        fn report(&self, _phase: DownloadPhase) {}
+
+        fn received(&self, bytes: u64) {
+            self.received.lock().unwrap().push(bytes);
+        }
+
+        fn written(&self, _bytes: u64) {}
+    }
 
     #[track_caller]
     fn check_allowed(patterns: &[&str], host: &str, expected: bool) {
@@ -414,7 +453,16 @@ mod tests {
     }
 
     async fn send(allowed: &str, request: Request<WasiBody>) -> Result<(StatusCode, Bytes), Error> {
-        let mut hooks = OutboundHttp::new(http_client(), [allowed.to_string()][..].into());
+        send_counted(allowed, request, None).await
+    }
+
+    async fn send_counted(
+        allowed: &str,
+        request: Request<WasiBody>,
+        reporter: Option<Arc<dyn DownloadReporter>>,
+    ) -> Result<(StatusCode, Bytes), Error> {
+        let mut hooks =
+            OutboundHttp::new(http_client(), [allowed.to_string()][..].into(), reporter);
 
         let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));
         let (response, _io) = Box::into_pin(sending).await?;
@@ -503,5 +551,29 @@ mod tests {
         let error = send("127.0.0.1", request).await.unwrap_err();
 
         assert!(matches!(error, Error::ConnectionRefused), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn the_response_bytes_of_a_download_are_counted() {
+        let server = MockServer::start().await;
+        Mock::given(path("/game.zip"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![7; 300_000]))
+            .mount(&server)
+            .await;
+        let recorder = Arc::new(Recorder::default());
+        let request = Request::builder()
+            .uri(format!("{}/game.zip", server.uri()))
+            .body(empty_body())
+            .unwrap();
+
+        let (_, body) = send_counted("127.0.0.1", request, Some(recorder.clone()))
+            .await
+            .unwrap();
+
+        assert_eq!(body.len(), 300_000);
+        assert_eq!(
+            recorder.received.lock().unwrap().iter().sum::<u64>(),
+            300_000
+        );
     }
 }

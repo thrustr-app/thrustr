@@ -10,15 +10,15 @@ domain.workspace = true
 
 # External
 anyhow.workspace = true
-diesel = { version = "2.3", features = ["sqlite", "serde_json", "r2d2", "returning_clauses_for_sqlite_3_35"] }
-diesel_migrations = "2.3"
-libsqlite3-sys = { version = "0.37", features = ["bundled"] }
+diesel.workspace = true
+diesel_migrations.workspace = true
+libsqlite3-sys.workspace = true
 parking_lot.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 
 [build-dependencies]
-cc = "1"
+cc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

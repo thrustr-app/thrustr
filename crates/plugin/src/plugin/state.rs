@@ -1,14 +1,21 @@
 use crate::{
-    plugin::host::{OutboundHttp, PluginCache},
+    plugin::{
+        PluginRuntime,
+        host::{FsView, OutboundHttp, PluginCache, Writer},
+    },
     wit::thrustr::plugin::types::Host,
 };
 use component::ComponentLink;
-use domain::component::{ComponentStorage, ConfigSchema};
-use reqwest::Client;
-use std::sync::Arc;
+use domain::{
+    component::{ComponentStorage, ConfigSchema},
+    download::DownloadReporter,
+};
+use std::{path::PathBuf, sync::Arc};
 use wasmtime::component::HasData;
 use wasmtime::{StoreLimits, StoreLimitsBuilder};
-use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
+use wasmtime_wasi::{
+    FsPerms, ResourceTable, WasiCtx, WasiCtxView, WasiView, filesystem::WasiFilesystemCtxView,
+};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 const MAX_MEMORY: usize = 256 * 1024 * 1024;
@@ -24,36 +31,62 @@ pub struct PluginState {
     pub(crate) link: ComponentLink,
     pub(crate) cache: Arc<PluginCache>,
     pub(crate) config_schema: Option<Arc<ConfigSchema>>,
+    pub(crate) reporter: Option<Arc<dyn DownloadReporter>>,
+    writer: Writer,
+}
+
+pub(crate) struct DownloadCall {
+    pub(crate) dir: PathBuf,
+    pub(crate) reporter: Arc<dyn DownloadReporter>,
 }
 
 impl PluginState {
-    pub fn new(
-        id: &str,
-        storage: Arc<dyn ComponentStorage>,
-        http_client: Client,
-        allowed_hosts: Arc<[String]>,
-        link: ComponentLink,
-        cache: Arc<PluginCache>,
-        config_schema: Option<Arc<ConfigSchema>>,
-    ) -> Self {
-        let ctx = WasiCtx::builder().inherit_stdout().build();
+    pub(crate) fn new(
+        runtime: &PluginRuntime,
+        download: Option<DownloadCall>,
+        writer: Writer,
+    ) -> wasmtime::Result<Self> {
+        let mut ctx = WasiCtx::builder();
+        // Stock Wasmtime fs calls run inline, so none outlives a cancelled call.
+        ctx.inherit_stdout().allow_blocking_current_thread(true);
+        let reporter = match download {
+            Some(download) => {
+                ctx.preopened_dir(&download.dir, "/download", FsPerms::ReadWrite)?;
+                Some(download.reporter)
+            }
+            None => None,
+        };
 
-        Self {
-            ctx,
+        Ok(Self {
+            ctx: ctx.build(),
             http_ctx: WasiHttpCtx::new(),
-            hooks: OutboundHttp::new(http_client, allowed_hosts),
+            hooks: OutboundHttp::new(
+                runtime.http_client.clone(),
+                runtime.allowed_hosts.clone(),
+                reporter.clone(),
+            ),
             table: ResourceTable::new(),
             limits: StoreLimitsBuilder::new().memory_size(MAX_MEMORY).build(),
-            id: id.to_owned(),
-            storage,
-            link,
-            cache,
-            config_schema,
-        }
+            id: runtime.id.clone(),
+            storage: runtime.storage.clone(),
+            link: runtime.link.clone(),
+            cache: runtime.cache.clone(),
+            config_schema: runtime.config_schema.clone(),
+            reporter,
+            writer,
+        })
     }
 
     pub(crate) fn limits(&mut self) -> &mut StoreLimits {
         &mut self.limits
+    }
+
+    pub(crate) fn fs(&mut self) -> FsView<'_> {
+        let fs = WasiFilesystemCtxView {
+            ctx: self.ctx.filesystem(),
+            table: &mut self.table,
+        };
+        FsView::new(fs, &self.writer)
     }
 }
 

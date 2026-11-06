@@ -1,7 +1,7 @@
 use crate::{
     plugin::{
         Plugin, PluginAuth, PluginCache, PluginConfig, PluginManifest, PluginRuntime,
-        PluginScheduler, PluginState, PluginStorefront, http_client,
+        PluginScheduler, PluginState, PluginStorefront, add_fs_to_linker, http_client,
     },
     wit::{PluginHost, exports::thrustr::plugin::base},
 };
@@ -21,6 +21,8 @@ use wasmtime::{
     Config as WasmtimeConfig, Engine,
     component::{Component as WasmComponent, Linker},
 };
+use wasmtime_wasi::p2::add_to_linker_async as add_wasip2_to_linker;
+use wasmtime_wasi_http::p3::add_to_linker as add_http_to_linker;
 use zip::ZipArchive;
 
 #[derive(Clone)]
@@ -42,13 +44,10 @@ impl PluginManager {
         let engine = Engine::new(&config).expect("failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
 
-        wasmtime_wasi::p2::add_to_linker_async(&mut linker)
-            .expect("failed to add WASIp2 to linker");
-
-        wasmtime_wasi::p3::add_to_linker(&mut linker).expect("failed to add WASIp3 to linker");
-
-        wasmtime_wasi_http::p3::add_to_linker(&mut linker)
-            .expect("failed to add WASIp3 HTTP to linker");
+        add_wasip2_to_linker(&mut linker).expect("failed to add WASIp2 to linker");
+        add_fs_to_linker(&mut linker).expect("failed to add the plugin filesystem to linker");
+        add_wasip3_to_linker(&mut linker).expect("failed to add WASIp3 to linker");
+        add_http_to_linker(&mut linker).expect("failed to add WASIp3 HTTP to linker");
 
         PluginHost::add_to_linker::<_, PluginState>(&mut linker, |state| state)
             .expect("failed to add plugin imports to linker");
@@ -122,6 +121,15 @@ impl PluginManager {
 
         Ok(plugin)
     }
+}
+
+fn add_wasip3_to_linker(linker: &mut Linker<PluginState>) -> wasmtime::Result<()> {
+    use wasmtime_wasi::p3;
+
+    p3::cli::add_to_linker(linker)?;
+    p3::clocks::add_to_linker(linker)?;
+    p3::random::add_to_linker(linker)?;
+    p3::sockets::add_to_linker(linker)
 }
 
 fn load_component(engine: &Engine, plugin_id: &str, wasm_bytes: &[u8]) -> Result<WasmComponent> {
