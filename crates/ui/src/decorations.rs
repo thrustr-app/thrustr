@@ -39,6 +39,13 @@ impl<T: Styled> ClientDecorations for T {}
 struct GlobalResizeEdge(ResizeEdge);
 impl Global for GlobalResizeEdge {}
 
+// FIXME: resizing is flaky on Linux, tested via Hyper-V VM on X11 and Wayland. The cursor
+// usually does not take the appropriate shape, and draggin an edge sometimes doesn't resize.
+// This should be tested properly on an actual Linux machine as the VM approach is quite
+// annoying.
+// This implementation is pretty much the same as Zed's, so I'm thinking maybe it has to do with
+// how often Zed refreshes? This behaviour was already present and observed before this commit,
+// just adding this comment to tackle it soon-ish™.
 pub fn client_side_decorations(
     element: impl IntoElement,
     window: &mut Window,
@@ -52,8 +59,14 @@ pub fn client_side_decorations(
     };
 
     match decorations {
-        Decorations::Client { .. } => window.set_client_inset(CLIENT_SIDE_DECORATION_SHADOW),
-        Decorations::Server => window.set_client_inset(px(0.)),
+        Decorations::Client { .. } => {
+            window.set_client_inset(CLIENT_SIDE_DECORATION_SHADOW);
+            window.set_client_corner_radii(window_corner_radii(tiling));
+        }
+        Decorations::Server => {
+            window.set_client_inset(px(0.));
+            window.set_client_corner_radii(Corners::default());
+        }
     }
 
     let border = cx.theme().colors.border;
@@ -149,6 +162,22 @@ fn resize_cursor(edge: ResizeEdge) -> CursorStyle {
         ResizeEdge::Left | ResizeEdge::Right => CursorStyle::ResizeLeftRight,
         ResizeEdge::TopLeft | ResizeEdge::BottomRight => CursorStyle::ResizeUpLeftDownRight,
         ResizeEdge::TopRight | ResizeEdge::BottomLeft => CursorStyle::ResizeUpRightDownLeft,
+    }
+}
+
+fn window_corner_radii(tiling: Tiling) -> Corners<Pixels> {
+    let radius = |rounded| {
+        if rounded {
+            CLIENT_SIDE_DECORATION_ROUNDING
+        } else {
+            px(0.)
+        }
+    };
+    Corners {
+        top_left: radius(!tiling.top && !tiling.left),
+        top_right: radius(!tiling.top && !tiling.right),
+        bottom_right: radius(!tiling.bottom && !tiling.right),
+        bottom_left: radius(!tiling.bottom && !tiling.left),
     }
 }
 

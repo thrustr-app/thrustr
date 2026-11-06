@@ -1,8 +1,9 @@
-use crate::{Icon, Size, WithSize};
+use crate::{Icon, ScrollbarVariant, Size, WithSize};
 use gpui::{
-    Animation, AnimationExt, App, Bounds, Div, InteractiveElement, IntoElement, MouseDownEvent,
-    ParentElement, Pixels, Rems, Styled, Window, actions, anchored, canvas, deferred, div,
-    ease_out_quint, point, prelude::FluentBuilder, px, relative, rems,
+    Anchor, AnchoredPositionMode, Animation, AnimationExt, App, Bounds, Div, InteractiveElement,
+    IntoElement, MouseDownEvent, ParentElement, Pixels, Point, Rems, Styled, Window, actions,
+    anchored, canvas, deferred, div, ease_out_quint, point, prelude::FluentBuilder, px, relative,
+    rems,
 };
 use std::time::Duration;
 use theme::{Theme, ThemeExt};
@@ -10,6 +11,7 @@ use theme::{Theme, ThemeExt};
 pub(crate) const BORDER: Pixels = px(1.);
 pub(crate) const MENU_PADDING: Rems = rems(0.25);
 pub(crate) const MENU_MAX_HEIGHT: Rems = rems(16.);
+pub(crate) const MENU_SCROLLBAR: ScrollbarVariant = ScrollbarVariant::Thin;
 const MENU_GAP: Rems = rems(0.25);
 const MENU_SLIDE: Pixels = px(6.);
 const MENU_OPEN_DURATION: Duration = Duration::from_millis(150);
@@ -81,7 +83,7 @@ pub(crate) fn track_bounds(
 }
 
 pub(crate) fn popover(
-    width: Pixels,
+    trigger: gpui::Size<Pixels>,
     content: impl IntoElement,
     on_dismiss: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
     window: &Window,
@@ -92,7 +94,7 @@ pub(crate) fn popover(
 
     let menu = div()
         .relative()
-        .w(width)
+        .w(trigger.width)
         .occlude()
         .rounded(theme.radius.md)
         .border_1()
@@ -108,9 +110,11 @@ pub(crate) fn popover(
             |menu, delta| menu.opacity(delta).top(MENU_SLIDE * (delta - 1.)),
         );
 
-    div().absolute().top_full().left(-BORDER).child(deferred(
+    div().absolute().top(-BORDER).left(-BORDER).child(deferred(
         anchored()
-            .offset(point(px(0.), BORDER + gap))
+            .position_mode(AnchoredPositionMode::Local)
+            .attach(Bounds::new(Point::default(), trigger), Anchor::BottomLeft)
+            .offset(point(px(0.), gap))
             .snap_to_window_with_margin(gap)
             .child(menu),
     ))
