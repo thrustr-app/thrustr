@@ -949,7 +949,7 @@ mod tests {
     }
 
     impl DownloadReporter for Disk {
-        fn progress(&self, _phase: DownloadPhase, _processed: u64, _total: Option<u64>) {}
+        fn report(&self, _phase: DownloadPhase) {}
 
         fn received(&self, _bytes: u64) {}
 
@@ -1139,7 +1139,7 @@ mod tests {
     struct Panics;
 
     impl DownloadReporter for Panics {
-        fn progress(&self, _phase: DownloadPhase, _processed: u64, _total: Option<u64>) {}
+        fn report(&self, _phase: DownloadPhase) {}
 
         fn received(&self, _bytes: u64) {}
 

@@ -31,8 +31,6 @@ use tokio::{sync::watch, time::Instant};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-type Progress = (DownloadPhase, u64, Option<u64>);
-
 const PAUSED_KEY: &str = "downloads.paused";
 const MAX_ATTEMPTS: u32 = 3;
 const SAVE_INTERVAL: Duration = Duration::from_secs(5);
@@ -422,7 +420,7 @@ struct Reporter {
     id: DownloadId,
     received: AtomicU64,
     written: AtomicU64,
-    progress: Mutex<Option<Progress>>,
+    progress: Mutex<Option<DownloadPhase>>,
 }
 
 impl Reporter {
@@ -448,15 +446,13 @@ impl Reporter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        progress
-            .is_some_and(|(phase, processed, total)| state.report(self.id, phase, processed, total))
+        progress.is_some_and(|phase| state.report(self.id, phase))
     }
 }
 
 impl DownloadReporter for Reporter {
-    fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>) {
-        *self.progress.lock().unwrap_or_else(PoisonError::into_inner) =
-            Some((phase, processed, total));
+    fn report(&self, phase: DownloadPhase) {
+        *self.progress.lock().unwrap_or_else(PoisonError::into_inner) = Some(phase);
     }
 
     fn received(&self, bytes: u64) {

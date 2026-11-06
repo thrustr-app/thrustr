@@ -1,7 +1,7 @@
 use crate::id::from_row_id;
 use crate::schema::downloads;
 use diesel::{Selectable, prelude::*, sqlite::Sqlite};
-use domain::download::Download;
+use domain::download::{Download, DownloadPhase, DownloadPhaseKind, PhaseProgress};
 use serde_json::Value;
 use std::str::FromStr;
 
@@ -31,6 +31,7 @@ pub struct NewDownloadRow<'a> {
     pub target_dir: &'a str,
     pub install_size: Option<i64>,
     pub download_size: Option<i64>,
+    pub phase: &'a str,
 }
 
 impl TryFrom<DownloadRow> for Download {
@@ -44,10 +45,24 @@ impl TryFrom<DownloadRow> for Download {
             target_dir: row.target_dir.into(),
             install_size: row.install_size.map(|size| size as u64),
             download_size: row.download_size.map(|size| size as u64),
-            phase: FromStr::from_str(&row.phase)?,
-            processed: row.processed as u64,
-            total: row.total.map(|total| total as u64),
+            phase: phase(
+                FromStr::from_str(&row.phase)?,
+                PhaseProgress {
+                    processed: row.processed as u64,
+                    total: row.total.map(|total| total as u64),
+                },
+            ),
             error: row.error,
         })
+    }
+}
+
+fn phase(kind: DownloadPhaseKind, progress: PhaseProgress) -> DownloadPhase {
+    match kind {
+        DownloadPhaseKind::Preparing => DownloadPhase::Preparing,
+        DownloadPhaseKind::Downloading => DownloadPhase::Downloading(progress),
+        DownloadPhaseKind::Installing => DownloadPhase::Installing(progress),
+        DownloadPhaseKind::Verifying => DownloadPhase::Verifying(progress),
+        DownloadPhaseKind::Finalizing => DownloadPhase::Finalizing,
     }
 }

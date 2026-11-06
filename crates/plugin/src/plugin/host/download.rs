@@ -2,9 +2,10 @@ use crate::{
     plugin::PluginState,
     wit::thrustr::plugin::download::{
         DownloadPhase as PluginPhase, Host as DownloadHost, HostReporter,
+        PhaseProgress as PluginProgress,
     },
 };
-use domain::download::DownloadPhase;
+use domain::download::{DownloadPhase, PhaseProgress};
 use wasmtime::component::Resource;
 use wasmtime_wasi::WasiView;
 
@@ -20,15 +21,9 @@ impl PluginState {
 impl DownloadHost for PluginState {}
 
 impl HostReporter for PluginState {
-    fn report_progress(
-        &mut self,
-        _reporter: Resource<Reporter>,
-        phase: PluginPhase,
-        processed: u64,
-        total: Option<u64>,
-    ) {
+    fn report(&mut self, _reporter: Resource<Reporter>, phase: PluginPhase) {
         if let Some(reporter) = &self.reporter {
-            reporter.progress(phase.into(), processed, total);
+            reporter.report(phase.into());
         }
     }
 
@@ -42,10 +37,19 @@ impl From<PluginPhase> for DownloadPhase {
     fn from(value: PluginPhase) -> Self {
         match value {
             PluginPhase::Preparing => DownloadPhase::Preparing,
-            PluginPhase::Downloading => DownloadPhase::Downloading,
-            PluginPhase::Installing => DownloadPhase::Installing,
-            PluginPhase::Verifying => DownloadPhase::Verifying,
+            PluginPhase::Downloading(progress) => DownloadPhase::Downloading(progress.into()),
+            PluginPhase::Installing(progress) => DownloadPhase::Installing(progress.into()),
+            PluginPhase::Verifying(progress) => DownloadPhase::Verifying(progress.into()),
             PluginPhase::Finalizing => DownloadPhase::Finalizing,
+        }
+    }
+}
+
+impl From<PluginProgress> for PhaseProgress {
+    fn from(value: PluginProgress) -> Self {
+        Self {
+            processed: value.processed,
+            total: value.total,
         }
     }
 }

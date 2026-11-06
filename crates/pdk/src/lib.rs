@@ -68,7 +68,7 @@ pub use wit::config::exports::thrustr::plugin::config::ComboboxOption;
 pub use wit::plugin::thrustr::plugin::types::{
     Error, FieldValue, Game, GameVersion, GameVersionDetails, Platform,
 };
-pub use wit::storefront::thrustr::plugin::download::{DownloadPhase, Reporter};
+pub use wit::storefront::thrustr::plugin::download::{DownloadPhase, PhaseProgress, Reporter};
 
 impl Error {
     /// Credentials are missing, expired or rejected. Deactivates the plugin

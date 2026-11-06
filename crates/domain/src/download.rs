@@ -1,7 +1,7 @@
 use crate::{game::GameId, id::Id};
 use anyhow::Result;
-use std::path::PathBuf;
-use strum::{AsRefStr, Display, EnumString};
+use std::{fmt, path::PathBuf};
+use strum::{AsRefStr, Display, EnumDiscriminants, EnumString};
 
 pub type DownloadId = Id<Download>;
 
@@ -14,8 +14,6 @@ pub struct Download {
     pub install_size: Option<u64>,
     pub download_size: Option<u64>,
     pub phase: DownloadPhase,
-    pub processed: u64,
-    pub total: Option<u64>,
     pub error: Option<String>,
 }
 
@@ -28,15 +26,55 @@ pub struct NewDownload {
     pub download_size: Option<u64>,
 }
 
-#[derive(AsRefStr, Display, EnumString, Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[strum(serialize_all = "lowercase")]
+/// Progress within a phase, in bytes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PhaseProgress {
+    pub processed: u64,
+    pub total: Option<u64>,
+}
+
+#[derive(EnumDiscriminants, Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[strum_discriminants(name(DownloadPhaseKind), derive(AsRefStr, Display, EnumString))]
+#[strum_discriminants(strum(serialize_all = "lowercase"))]
 pub enum DownloadPhase {
     #[default]
     Preparing,
-    Downloading,
-    Installing,
-    Verifying,
+    Downloading(PhaseProgress),
+    Installing(PhaseProgress),
+    Verifying(PhaseProgress),
     Finalizing,
+}
+
+impl DownloadPhase {
+    pub fn kind(&self) -> DownloadPhaseKind {
+        self.into()
+    }
+
+    pub fn progress(&self) -> Option<PhaseProgress> {
+        match *self {
+            Self::Downloading(progress)
+            | Self::Installing(progress)
+            | Self::Verifying(progress) => Some(progress),
+            Self::Preparing | Self::Finalizing => None,
+        }
+    }
+}
+
+impl fmt::Display for DownloadPhase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.kind())?;
+        match self.progress() {
+            Some(PhaseProgress {
+                processed,
+                total: Some(total),
+            }) => write!(f, " ({processed} / {total})"),
+            Some(PhaseProgress {
+                processed,
+                total: None,
+            }) => write!(f, " ({processed})"),
+            None => Ok(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,8 +84,8 @@ pub enum DownloadOutcome {
 }
 
 pub trait DownloadReporter: Send + Sync {
-    /// Bytes of the current phase, counted however suits the storefront.
-    fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>);
+    /// The current phase and its progress.
+    fn report(&self, phase: DownloadPhase);
     /// Bytes received from the network.
     fn received(&self, bytes: u64);
     /// Bytes written to disk.

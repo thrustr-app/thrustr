@@ -9,7 +9,7 @@ use diesel::{
     dsl::{count_star, max},
     sql_types::Integer,
 };
-use domain::download::{Download, DownloadId, DownloadRepository, NewDownload};
+use domain::download::{Download, DownloadId, DownloadPhase, DownloadRepository, NewDownload};
 use std::path::Path;
 
 impl DownloadRepository for SqliteStorage {
@@ -33,6 +33,7 @@ impl DownloadRepository for SqliteStorage {
                     target_dir,
                     install_size: download.install_size.map(|size| size as i64),
                     download_size: download.download_size.map(|size| size as i64),
+                    phase: DownloadPhase::default().kind().as_ref(),
                 })
                 .returning(DownloadRow::as_returning())
                 .get_result::<DownloadRow>(conn)?)
@@ -59,6 +60,7 @@ impl DownloadRepository for SqliteStorage {
 
         let target_dir = path_to_str(&download.target_dir)?;
         let version_path = serde_json::to_value(&download.version_path)?;
+        let progress = download.phase.progress().unwrap_or_default();
 
         self.write(|conn| {
             diesel::update(dsl::downloads.find(to_row_id(download.id)))
@@ -67,9 +69,9 @@ impl DownloadRepository for SqliteStorage {
                     dsl::target_dir.eq(target_dir),
                     dsl::install_size.eq(download.install_size.map(|size| size as i64)),
                     dsl::download_size.eq(download.download_size.map(|size| size as i64)),
-                    dsl::phase.eq(download.phase.as_ref()),
-                    dsl::processed.eq(download.processed as i64),
-                    dsl::total.eq(download.total.map(|total| total as i64)),
+                    dsl::phase.eq(download.phase.kind().as_ref()),
+                    dsl::processed.eq(progress.processed as i64),
+                    dsl::total.eq(progress.total.map(|total| total as i64)),
                     dsl::error.eq(download.error.as_deref()),
                 ))
                 .execute(conn)?;

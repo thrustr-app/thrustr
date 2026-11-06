@@ -152,21 +152,12 @@ impl DownloadState {
     }
 
     /// Records progress of a download. Returns whether it changed.
-    pub(crate) fn report(
-        &mut self,
-        id: DownloadId,
-        phase: DownloadPhase,
-        processed: u64,
-        total: Option<u64>,
-    ) -> bool {
+    pub(crate) fn report(&mut self, id: DownloadId, phase: DownloadPhase) -> bool {
         let Some(download) = self.get_mut(id) else {
             return false;
         };
-        let changed =
-            (download.phase, download.processed, download.total) != (phase, processed, total);
+        let changed = download.phase != phase;
         download.phase = phase;
-        download.processed = processed;
-        download.total = total;
         changed
     }
 
@@ -182,6 +173,7 @@ impl DownloadState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::download::{DownloadPhaseKind, PhaseProgress};
 
     #[derive(Debug, Clone, Copy)]
     enum Op {
@@ -194,7 +186,7 @@ mod tests {
         Resume,
         SetActivity(u64, Activity),
         SetSpeed(u64, Speed),
-        Report(u64, DownloadPhase, u64, Option<u64>),
+        Report(u64, DownloadPhase),
     }
 
     use Op::*;
@@ -207,9 +199,7 @@ mod tests {
             target_dir: format!("/games/{id}").into(),
             install_size: None,
             download_size: None,
-            phase: DownloadPhase::Downloading,
-            processed: 0,
-            total: None,
+            phase: DownloadPhase::Preparing,
             error: None,
         }
     }
@@ -246,7 +236,7 @@ mod tests {
             }
             SetActivity(id, activity) => state.set_activity(id.into(), activity),
             SetSpeed(id, speed) => state.set_speed(id.into(), speed),
-            Report(id, phase, processed, total) => state.report(id.into(), phase, processed, total),
+            Report(id, phase) => state.report(id.into(), phase),
         }
     }
 
@@ -283,11 +273,12 @@ mod tests {
                     }
                     _ => String::new(),
                 };
-                let progress = match (d.phase, d.processed, d.total) {
-                    (DownloadPhase::Downloading, 0, None) => String::new(),
-                    (phase, processed, total) => {
+                let progress = match (d.phase.kind(), d.phase.progress()) {
+                    (DownloadPhaseKind::Preparing, _) => String::new(),
+                    (kind, None) => format!("({kind:?})"),
+                    (kind, Some(PhaseProgress { processed, total })) => {
                         let total = total.map_or("?".to_string(), |total| total.to_string());
-                        format!("({phase:?} {processed}/{total})")
+                        format!("({kind:?} {processed}/{total})")
                     }
                 };
                 format!("{marker}{}{failed}{activity}{speed}{progress}", d.id)
@@ -397,8 +388,12 @@ mod tests {
         }
     }
 
+    fn progress(processed: u64, total: Option<u64>) -> PhaseProgress {
+        PhaseProgress { processed, total }
+    }
+
     fn installing(id: u64) -> Op {
-        Report(id, DownloadPhase::Installing, 10, Some(20))
+        Report(id, DownloadPhase::Installing(progress(10, Some(20))))
     }
 
     fn downloading(id: u64) -> Op {
@@ -518,8 +513,8 @@ mod tests {
         check(
             &[
                 Push(1),
-                Report(1, DownloadPhase::Downloading, 40, Some(80)),
-                Report(1, DownloadPhase::Installing, 10, None),
+                Report(1, DownloadPhase::Downloading(progress(40, Some(80)))),
+                Report(1, DownloadPhase::Installing(progress(10, None))),
             ],
             ">1(Installing 10/?)",
         );

@@ -3,7 +3,10 @@ use async_trait::async_trait;
 use component::{ComponentRegistry, RegisterError, RegistryContext};
 use domain::{
     component::{Component, Error, Metadata, Origin, Storefront},
-    download::{DownloadId, DownloadOutcome, DownloadPhase, DownloadReporter, NewDownload},
+    download::{
+        DownloadId, DownloadOutcome, DownloadPhase, DownloadPhaseKind, DownloadReporter,
+        NewDownload, PhaseProgress,
+    },
     game::{Game, GameId, GameRepository, GameSource, GameVersion, GameVersionDetails, NewGame},
 };
 use download::{DownloadService, DownloadState, Speed};
@@ -34,9 +37,13 @@ struct Call {
     result: oneshot::Sender<Result<(), Error>>,
 }
 
+fn progress(processed: u64, total: Option<u64>) -> PhaseProgress {
+    PhaseProgress { processed, total }
+}
+
 impl Call {
-    fn progress(&self, phase: DownloadPhase, processed: u64, total: Option<u64>) {
-        self.reporter.progress(phase, processed, total);
+    fn report(&self, phase: DownloadPhase) {
+        self.reporter.report(phase);
     }
 
     fn transfer(&self, received: u64, written: u64) {
@@ -386,11 +393,12 @@ impl Harness {
                     }
                     _ => String::new(),
                 };
-                let progress = match (d.phase, d.processed, d.total) {
-                    (DownloadPhase::Downloading, 0, None) => String::new(),
-                    (phase, processed, total) => {
+                let progress = match (d.phase.kind(), d.phase.progress()) {
+                    (DownloadPhaseKind::Preparing, _) => String::new(),
+                    (kind, None) => format!("({kind:?})"),
+                    (kind, Some(PhaseProgress { processed, total })) => {
                         let total = total.map_or("?".to_string(), |total| total.to_string());
-                        format!("({phase:?} {processed}/{total})")
+                        format!("({kind:?} {processed}/{total})")
                     }
                 };
                 format!("{marker}{name}{failed}{activity}{speed}{progress}")
@@ -456,12 +464,12 @@ async fn the_latest_progress_is_shown() {
     harness.enqueue(&["Hades"]);
     let call = harness.call("Hades").await;
 
-    call.progress(DownloadPhase::Downloading, 40, Some(80));
+    call.report(DownloadPhase::Downloading(progress(40, Some(80))));
     harness
         .check(">Hades[Downloading](Downloading 40/80)")
         .await;
 
-    call.progress(DownloadPhase::Installing, 10, None);
+    call.report(DownloadPhase::Installing(progress(10, None)));
     harness.check(">Hades[Downloading](Installing 10/?)").await;
 }
 
@@ -472,7 +480,7 @@ async fn the_last_progress_is_kept_once_stopped() {
     let call = harness.call("Hades").await;
     harness.check(">Hades[Downloading]").await;
 
-    call.progress(DownloadPhase::Installing, 40, Some(80));
+    call.report(DownloadPhase::Installing(progress(40, Some(80))));
     harness.pause();
     call.stopped().await;
     harness.check("paused: Hades(Installing 40/80)").await;
@@ -629,7 +637,7 @@ async fn the_queue_survives_a_restart() {
     let mut harness = Harness::new().await;
     harness.enqueue(&["Hades", "Celeste"]);
     let call = harness.call("Hades").await;
-    call.progress(DownloadPhase::Installing, 40, Some(80));
+    call.report(DownloadPhase::Installing(progress(40, Some(80))));
 
     harness.pause();
     call.stopped().await;

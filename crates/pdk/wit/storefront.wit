@@ -1,16 +1,22 @@
 package thrustr:plugin@0.1.0;
 
 interface download {
-    enum download-phase {
+    /// Progress within a phase, in bytes.
+    record phase-progress {
+        processed: u64,
+        total: option<u64>,
+    }
+
+    variant download-phase {
         preparing,
-        downloading,
-        installing,
-        verifying,
+        downloading(phase-progress),
+        installing(phase-progress),
+        verifying(phase-progress),
         finalizing,
     }
 
     resource reporter {
-        report-progress: func(phase: download-phase, processed: u64, total: option<u64>);
+        report: func(phase: download-phase);
     }
 }
 

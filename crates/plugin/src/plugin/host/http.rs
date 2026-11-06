@@ -389,7 +389,7 @@ mod tests {
     }
 
     impl DownloadReporter for Recorder {
-        fn progress(&self, _phase: DownloadPhase, _processed: u64, _total: Option<u64>) {}
+        fn report(&self, _phase: DownloadPhase) {}
 
         fn received(&self, bytes: u64) {
             self.received.lock().unwrap().push(bytes);
