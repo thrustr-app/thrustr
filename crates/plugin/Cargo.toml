@@ -32,9 +32,9 @@ serde-saphyr.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-wasmtime = "50"
-wasmtime-wasi = "50"
-wasmtime-wasi-http = "50"
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+wasmtime-wasi-http.workspace = true
 zip.workspace = true
 
 [target.'cfg(windows)'.dependencies]

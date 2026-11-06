@@ -48,7 +48,7 @@ struct Param {
 /// Invalid tasks are reported and omitted so the rest of the expansion
 /// still type-checks instead of cascading errors.
 pub(crate) fn expand(item: ItemImpl) -> TokenStream {
-    let (_, path, _) = item.trait_.expect("export should pass a trait impl");
+    let (path, _) = item.trait_.expect("export should pass a trait impl");
     let ty = item.self_ty;
 
     let mut errors = Vec::new();

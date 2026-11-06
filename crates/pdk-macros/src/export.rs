@@ -4,7 +4,7 @@ use quote::quote;
 use syn::{Error, ItemImpl};
 
 pub(crate) fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
-    let Some((None, path, _)) = &item.trait_ else {
+    let (Some((path, _)), None) = (&item.trait_, &item.modifiers.polarity) else {
         return Err(Error::new_spanned(
             item.impl_token,
             "`#[pdk::export]` must be placed on `impl pdk::<Trait> for <Type>`",

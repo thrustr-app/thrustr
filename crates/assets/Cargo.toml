@@ -7,4 +7,4 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 gpui.workspace = true
-rust-embed = { version = "8.12", features = ["include-exclude"] }
+rust-embed.workspace = true
