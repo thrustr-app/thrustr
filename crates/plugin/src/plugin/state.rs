@@ -1,7 +1,7 @@
 use crate::{
     plugin::{
-        PluginRuntime,
-        host::{FsView, OutboundHttp, PluginCache, Writer},
+        PluginId, PluginRuntime,
+        host::{FsView, OutboundHttp, PluginCache, QueuedFds, Writer},
     },
     wit::thrustr::plugin::types::Host,
 };
@@ -10,9 +10,8 @@ use domain::{
     component::{ComponentStorage, ConfigSchema},
     download::DownloadReporter,
 };
-use std::{path::PathBuf, sync::Arc};
-use wasmtime::component::HasData;
-use wasmtime::{StoreLimits, StoreLimitsBuilder};
+use std::{fs, path::PathBuf, sync::Arc};
+use wasmtime::{StoreLimits, StoreLimitsBuilder, component::HasData, error::Context};
 use wasmtime_wasi::{
     FsPerms, ResourceTable, WasiCtx, WasiCtxView, WasiView, filesystem::WasiFilesystemCtxView,
 };
@@ -20,19 +19,23 @@ use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 const MAX_MEMORY: usize = 256 * 1024 * 1024;
 
+pub(crate) const DOWNLOAD_MOUNT: &str = "/download";
+pub(crate) const DATA_MOUNT: &str = "/data";
+
 pub struct PluginState {
     ctx: WasiCtx,
     http_ctx: WasiHttpCtx,
     hooks: OutboundHttp,
     table: ResourceTable,
     limits: StoreLimits,
-    pub(crate) id: String,
+    pub(crate) id: PluginId,
     pub(crate) storage: Arc<dyn ComponentStorage>,
     pub(crate) link: ComponentLink,
     pub(crate) cache: Arc<PluginCache>,
     pub(crate) config_schema: Option<Arc<ConfigSchema>>,
     pub(crate) reporter: Option<Arc<dyn DownloadReporter>>,
     writer: Writer,
+    queued_fds: QueuedFds,
 }
 
 pub(crate) struct DownloadCall {
@@ -49,9 +52,22 @@ impl PluginState {
         let mut ctx = WasiCtx::builder();
         // Stock Wasmtime fs calls run inline, so none outlives a cancelled call.
         ctx.inherit_stdout().allow_blocking_current_thread(true);
+
+        let data_dir = &runtime.data_dir;
+        if ctx
+            .preopened_dir(data_dir, DATA_MOUNT, FsPerms::ReadWrite)
+            .is_err()
+        {
+            fs::create_dir_all(data_dir).with_context(|| {
+                format!("failed to create data directory {}", data_dir.display())
+            })?;
+            ctx.preopened_dir(data_dir, DATA_MOUNT, FsPerms::ReadWrite)
+                .with_context(|| format!("failed to open data directory {}", data_dir.display()))?;
+        }
+
         let reporter = match download {
             Some(download) => {
-                ctx.preopened_dir(&download.dir, "/download", FsPerms::ReadWrite)?;
+                ctx.preopened_dir(&download.dir, DOWNLOAD_MOUNT, FsPerms::ReadWrite)?;
                 Some(download.reporter)
             }
             None => None,
@@ -74,6 +90,7 @@ impl PluginState {
             config_schema: runtime.config_schema.clone(),
             reporter,
             writer,
+            queued_fds: QueuedFds::default(),
         })
     }
 
@@ -86,7 +103,7 @@ impl PluginState {
             ctx: self.ctx.filesystem(),
             table: &mut self.table,
         };
-        FsView::new(fs, &self.writer)
+        FsView::new(fs, &self.writer, &mut self.queued_fds)
     }
 }
 

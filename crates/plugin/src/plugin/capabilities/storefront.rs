@@ -100,7 +100,7 @@ impl PluginStorefront {
         NewGame {
             name: game.name,
             source: GameSource {
-                id: self.runtime.id.clone(),
+                id: self.runtime.id.to_string(),
                 lookup_id: game.lookup_id,
                 external_ids: game.external_ids,
             },

@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::{Result, bail};
 use component::ComponentLink;
-use config::paths::plugins_cache_dir;
+use config::paths::{plugin_data_dir, plugins_cache_dir};
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use reqwest::Client;
 use runtime::TokioHandle;
@@ -66,24 +66,23 @@ impl PluginManager {
     }
 
     pub async fn load_plugin(&self, path: PathBuf, link: ComponentLink) -> Result<Plugin> {
-        let (manifest, wasm_bytes, icon) = self
+        let engine = self.engine.clone();
+        let (manifest, icon, component, data_dir) = self
             .tokio_handle
-            .spawn_blocking(move || read_plugin_archive(path))
+            .spawn_blocking(move || -> Result<_> {
+                let (manifest, wasm_bytes, icon) = read_plugin_archive(path)?;
+                let id = manifest.plugin.id.as_str();
+                let data_dir = plugin_data_dir().join(id);
+                let component = load_component(&engine, id, &wasm_bytes)?;
+                Ok((manifest, icon, component, data_dir))
+            })
             .await??;
+
         let PluginManifest {
             plugin: info,
             auth: login_form,
             config: config_schema,
         } = manifest;
-
-        let component = self
-            .tokio_handle
-            .spawn_blocking({
-                let engine = self.engine.clone();
-                let plugin_id = info.id.clone();
-                move || load_component(&engine, &plugin_id, &wasm_bytes)
-            })
-            .await??;
 
         let config_schema = config_schema.map(Arc::new);
 
@@ -96,6 +95,7 @@ impl PluginManager {
             tokio_handle: self.tokio_handle.clone(),
             http_client: self.http_client.clone(),
             link,
+            data_dir,
             cache: Arc::new(PluginCache::new()),
             config_schema: config_schema.clone(),
         });

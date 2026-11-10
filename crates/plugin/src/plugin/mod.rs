@@ -37,7 +37,7 @@ pub struct Plugin {
 impl Component for Plugin {
     fn metadata(&self) -> Metadata<'_> {
         Metadata {
-            id: &self.info.id,
+            id: self.info.id.as_str(),
             name: &self.info.name,
             description: self.info.description.as_deref(),
             version: &self.info.version,

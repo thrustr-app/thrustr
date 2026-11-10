@@ -1,10 +1,10 @@
-use crate::plugin::{DownloadCall, PluginCache, PluginState, host::Writer};
+use crate::plugin::{DownloadCall, PluginCache, PluginId, PluginState, host::Writer};
 use crate::wit::{export_name, thrustr::plugin::types::Error as PluginError};
 use component::ComponentLink;
 use domain::component::{ComponentStorage, ConfigSchema, Error as ComponentError};
 use reqwest::Client;
 use runtime::{AbortOnDrop, TokioHandle};
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tokio_util::sync::CancellationToken;
 use wasmtime::component::{Instance, InstancePre};
 use wasmtime::{Engine, ResourceLimiter, Store};
@@ -15,7 +15,7 @@ const MAX_FUEL: u64 = 10_000_000_000;
 const FUEL_YIELD_INTERVAL: u64 = 10_000_000;
 
 pub struct PluginRuntime {
-    pub id: String,
+    pub id: PluginId,
     pub allowed_hosts: Arc<[String]>,
     pub engine: Engine,
     pub pre: InstancePre<PluginState>,
@@ -23,6 +23,7 @@ pub struct PluginRuntime {
     pub tokio_handle: TokioHandle,
     pub http_client: Client,
     pub link: ComponentLink,
+    pub data_dir: PathBuf,
     pub cache: Arc<PluginCache>,
     pub config_schema: Option<Arc<ConfigSchema>>,
 }
