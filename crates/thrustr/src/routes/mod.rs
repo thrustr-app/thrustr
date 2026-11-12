@@ -7,6 +7,7 @@ use gpui::{
 use std::{path::Path, sync::Arc};
 
 mod collections;
+mod downloads;
 mod game;
 mod home;
 mod library;
@@ -14,6 +15,7 @@ mod root;
 mod settings;
 
 pub use collections::*;
+pub use downloads::*;
 pub use game::*;
 pub use home::*;
 pub use library::*;
@@ -109,6 +111,7 @@ enum Section {
     Home,
     Library,
     Collections,
+    Downloads,
     Game(GameId),
     Settings,
 }
@@ -124,6 +127,7 @@ impl Page {
             Self::Home => mount::<Home>((), state, window, cx),
             Self::Library => mount::<Library>((), state, window, cx),
             Self::Collections => mount::<Collections>((), state, window, cx),
+            Self::Downloads => mount::<Downloads>((), state, window, cx),
             Self::Game(id) => mount::<Game>(*id, state, window, cx),
             Self::Settings(Some(sub)) => mount::<Settings>(sub.clone(), state, window, cx),
             Self::Settings(None) => mount::<EmptyView>((), state, window, cx),
@@ -135,6 +139,7 @@ impl Page {
             Self::Home => Section::Home,
             Self::Library => Section::Library,
             Self::Collections => Section::Collections,
+            Self::Downloads => Section::Downloads,
             Self::Game(id) => Section::Game(*id),
             Self::Settings(_) => Section::Settings,
         }

@@ -3,7 +3,7 @@ use crate::{
     adapters::{ColorExt, PlatformExt},
     context::{EventListenerExt, SpawnTaskExt},
     format::format_size,
-    globals::{ComponentRegistryExt, GameServiceExt},
+    globals::{ComponentRegistryExt, DownloadServiceExt, GameServiceExt},
     navigation::NavigatorExt,
 };
 use anyhow::Context as _;
@@ -11,6 +11,7 @@ use component::StorefrontHandle;
 use config::paths;
 use domain::{
     component::StorefrontOperation,
+    download::NewDownload,
     game::{GameId, GameVersionDetails},
     platform::Platform,
 };
@@ -112,11 +113,18 @@ impl Game {
         let title: SharedString = format!("Install {}", self.name).into();
         let install_dialog = cx.new(|cx| InstallDialog::new(self, source_id, window, cx));
         window.open_dialog(cx, move |dialog, _, cx| {
+            let state = install_dialog.read(cx);
+            let entity = install_dialog.clone();
             dialog
                 .w(rems(36.))
                 .title(title.clone())
                 .ok_text("Install")
-                .when(!install_dialog.read(cx).can_install(), Dialog::disabled)
+                .when(!state.can_install(), Dialog::disabled)
+                .when(state.installing, Dialog::loading)
+                .when_some(state.install_error.clone(), Dialog::error)
+                .on_ok(move |_, window, cx| {
+                    entity.update(cx, |this, cx| this.install(window, cx));
+                })
                 .child(install_dialog.clone())
         });
     }
@@ -284,6 +292,8 @@ struct InstallDialog {
     install_location: Entity<InputState>,
     install_target: Option<Result<InstallTarget, SharedString>>,
     labels: Labels,
+    installing: bool,
+    install_error: Option<SharedString>,
     _details_task: Option<Task<()>>,
     _browse_task: Option<Task<()>>,
     _install_target_task: Option<Task<()>>,
@@ -318,6 +328,8 @@ impl InstallDialog {
             install_location,
             install_target: None,
             labels: Labels::default(),
+            installing: false,
+            install_error: None,
             _details_task: None,
             _browse_task: None,
             _install_target_task: None,
@@ -524,6 +536,38 @@ impl InstallDialog {
             && !self.details_loading
             && self.target().is_some()
             && self.missing_space().is_none()
+    }
+
+    fn install(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(target) = self.target() else {
+            return;
+        };
+        let download = NewDownload {
+            game_id: self.game_id,
+            version_path: self.selected_version_path(),
+            target_dir: target.dir.clone(),
+            install_size: self.details.as_ref().and_then(|d| d.install_size),
+            download_size: self.details.as_ref().and_then(|d| d.download_size),
+        };
+        let service = cx.download_service();
+
+        self.installing = true;
+        self.install_error = None;
+        cx.notify();
+
+        cx.spawn_and_update_in(
+            window,
+            async move { service.enqueue(&download) },
+            |this, result, window, cx| match result {
+                Ok(_) => window.close_dialog(cx),
+                Err(e) => {
+                    error!("failed to queue the download: {e:#}");
+                    this.installing = false;
+                    this.install_error = Some(format!("{e:#}").into());
+                }
+            },
+        )
+        .detach();
     }
 }
 
