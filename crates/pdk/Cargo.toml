@@ -9,6 +9,7 @@ form_urlencoded.workspace = true
 pdk-macros.workspace = true
 postcard.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 wasip3.workspace = true
 wit-bindgen.workspace = true

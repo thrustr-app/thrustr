@@ -1,3 +1,4 @@
+use serde::{Serialize, de::DeserializeOwned};
 use std::{fmt, future::poll_fn, mem, pin::pin};
 use wasip3::{
     http::{
@@ -27,6 +28,8 @@ pub struct Request {
     query: String,
     headers: Vec<(String, Vec<u8>)>,
     body: Vec<u8>,
+    /// From a builder method, returned by `send`.
+    error: Option<Error>,
 }
 
 impl Request {
@@ -37,6 +40,7 @@ impl Request {
             query: String::new(),
             headers: Vec::new(),
             body: Vec::new(),
+            error: None,
         }
     }
 
@@ -65,8 +69,25 @@ impl Request {
         self
     }
 
-    pub async fn send(self) -> Result<Response, Error> {
+    pub fn json<T: Serialize + ?Sized>(mut self, body: &T) -> Self {
+        match serde_json::to_vec(body) {
+            Ok(body) => {
+                if !self.has_header("content-type") {
+                    self = self.header("content-type", "application/json");
+                }
+                self.body = body;
+            }
+            Err(error) => self.error = Some(Error::Json(error)),
+        }
+        self
+    }
+
+    pub async fn send(mut self) -> Result<Response, Error> {
+        if let Some(error) = self.error.take() {
+            return Err(error);
+        }
         let target = self.target();
+        let has_len = self.has_header("content-length");
         let Self {
             method,
             url,
@@ -78,9 +99,6 @@ impl Request {
         let invalid = |what: &str| Error::InvalidRequest(format!("{what} in `{url}`"));
         let (scheme, authority, path) = target.ok_or_else(|| invalid("bad URL"))?;
 
-        let has_len = headers
-            .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("content-length"));
         if !body.is_empty() && !has_len {
             headers.push(("content-length".into(), body.len().to_string().into()));
         }
@@ -109,6 +127,12 @@ impl Request {
         let response = alongside(write, client::send(request)).await;
 
         Ok(Response::new(response.map_err(Error::Http)?))
+    }
+
+    fn has_header(&self, name: &str) -> bool {
+        self.headers
+            .iter()
+            .any(|(other, _)| other.eq_ignore_ascii_case(name))
     }
 
     fn target(&self) -> Option<(Scheme, String, String)> {
@@ -182,6 +206,10 @@ impl Response {
     pub async fn bytes(self) -> Result<Vec<u8>, Error> {
         self.body.bytes().await
     }
+
+    pub async fn json<T: DeserializeOwned>(self) -> Result<T, Error> {
+        Ok(serde_json::from_slice(&self.bytes().await?)?)
+    }
 }
 
 pub struct Body {
@@ -233,6 +261,9 @@ pub enum Error {
 
     #[error("HTTP request failed: {0:?}")]
     Http(ErrorCode),
+
+    #[error("invalid JSON: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl From<Error> for crate::Error {
