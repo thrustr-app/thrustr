@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 pub mod cache;
 pub mod config;
 pub mod dirs;
+pub mod http;
 pub mod kv_store;
 mod scheduler;
 
