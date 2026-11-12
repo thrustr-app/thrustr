@@ -1,3 +1,4 @@
+use super::windows::is_device_name;
 use domain::component::{ConfigSchema, LoginForm};
 use semver::Version;
 use serde::Deserialize;
@@ -68,7 +69,7 @@ impl TryFrom<String> for PluginId {
         if !(id.starts_with(alphanumeric) && id.ends_with(alphanumeric)) {
             return Err(InvalidId::Ends);
         }
-        if is_reserved(&id) {
+        if is_device_name(&id) {
             return Err(InvalidId::Reserved);
         }
 
@@ -79,15 +80,6 @@ impl TryFrom<String> for PluginId {
 impl fmt::Display for PluginId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-fn is_reserved(id: &str) -> bool {
-    let stem = id.split_once('.').map_or(id, |(stem, _)| stem);
-    match stem.as_bytes() {
-        b"con" | b"prn" | b"aux" | b"nul" => true,
-        [b'c', b'o', b'm', n] | [b'l', b'p', b't', n] => n.is_ascii_digit(),
-        _ => false,
     }
 }
 
@@ -155,15 +147,10 @@ mod tests {
 
     #[test]
     fn windows_device_names_are_rejected() {
-        for name in ["con", "prn", "aux", "nul"] {
-            check(name, Err(InvalidId::Reserved));
-            check(&format!("{name}.store"), Err(InvalidId::Reserved));
-        }
-        for prefix in ["com", "lpt"] {
-            for n in 0..=9 {
-                check(&format!("{prefix}{n}"), Err(InvalidId::Reserved));
-                check(&format!("{prefix}{n}.store"), Err(InvalidId::Reserved));
-            }
-        }
+        check("con", Err(InvalidId::Reserved));
+        check("nul.store", Err(InvalidId::Reserved));
+        check("com1", Err(InvalidId::Reserved));
+        check("lpt0.store", Err(InvalidId::Reserved));
+        check("console", Ok(()));
     }
 }

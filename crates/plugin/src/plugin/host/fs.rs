@@ -1,4 +1,4 @@
-use crate::plugin::{PluginState, state::DOWNLOAD_MOUNT};
+use crate::plugin::{PluginState, state::DOWNLOAD_MOUNT, windows};
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use domain::download::DownloadReporter;
@@ -297,6 +297,7 @@ impl HostDescriptor for FsView<'_> {
         fd: Resource<Descriptor>,
         path: String,
     ) -> FsResult<()> {
+        check_name(&path)?;
         HostDescriptor::create_directory_at(&mut self.fs, fd, path).await
     }
 
@@ -336,6 +337,7 @@ impl HostDescriptor for FsView<'_> {
         new_path: String,
     ) -> FsResult<()> {
         self.check_same_mount(&fd, &new_descriptor)?;
+        check_name(&new_path)?;
         HostDescriptor::link_at(
             &mut self.fs,
             fd,
@@ -355,6 +357,9 @@ impl HostDescriptor for FsView<'_> {
         oflags: OpenFlags,
         flags: DescriptorFlags,
     ) -> FsResult<Resource<Descriptor>> {
+        if oflags.contains(OpenFlags::CREATE) {
+            check_name(&path)?;
+        }
         let queued = self.queued.contains(&fd);
         // Only truncating depends on previous writes.
         if oflags.contains(OpenFlags::TRUNCATE) {
@@ -391,6 +396,7 @@ impl HostDescriptor for FsView<'_> {
         new_path: String,
     ) -> FsResult<()> {
         self.check_same_mount(&fd, &new_fd)?;
+        check_name(&new_path)?;
         if self.queued.contains(&fd) {
             self.writer.drain().await?;
         }
@@ -403,6 +409,7 @@ impl HostDescriptor for FsView<'_> {
         src_path: String,
         dest_path: String,
     ) -> FsResult<()> {
+        check_name(&dest_path)?;
         HostDescriptor::symlink_at(&mut self.fs, fd, src_path, dest_path).await
     }
 
@@ -461,6 +468,22 @@ impl HostDirectoryEntryStream for FsView<'_> {
     fn drop(&mut self, stream: Resource<DirectoryEntryStream>) -> wasmtime::Result<()> {
         HostDirectoryEntryStream::drop(&mut self.fs, stream)
     }
+}
+
+fn check_name(path: &str) -> FsResult<()> {
+    if cfg!(windows) && path.split(['/', '\\']).any(is_invalid_on_windows) {
+        return Err(ErrorCode::Invalid.into());
+    }
+    Ok(())
+}
+
+fn is_invalid_on_windows(name: &str) -> bool {
+    if matches!(name, "" | "." | "..") {
+        return false;
+    }
+    let forbidden = |c: char| c < ' ' || r#"<>:"|?*"#.contains(c);
+
+    windows::is_device_name(name) || name.ends_with(['.', ' ']) || name.contains(forbidden)
 }
 
 fn borrow<T: 'static>(resource: &Resource<T>) -> Resource<T> {
@@ -1958,6 +1981,79 @@ mod tests {
             missing.unwrap_err().downcast_ref(),
             Some(&ErrorCode::NoEntry)
         );
+    }
+
+    async fn check_creating(name: &str, refused: bool) {
+        let mut h = Harness::new(&["game.bin"], Calls::Inline);
+        let (mut view, root) = h.view();
+        let (at, game) = (|| borrow(&root), || "game.bin".to_string());
+        let no_flags = PathFlags::empty();
+
+        let results = [
+            (
+                "open_at",
+                open_at(&mut view, &root, name, OpenFlags::CREATE)
+                    .await
+                    .map(drop),
+            ),
+            (
+                "create_directory_at",
+                HostDescriptor::create_directory_at(&mut view, at(), name.into()).await,
+            ),
+            (
+                "link_at",
+                HostDescriptor::link_at(&mut view, at(), no_flags, game(), at(), name.into()).await,
+            ),
+            (
+                "symlink_at",
+                HostDescriptor::symlink_at(&mut view, at(), game(), name.into()).await,
+            ),
+            (
+                "rename_at",
+                HostDescriptor::rename_at(&mut view, at(), game(), at(), name.into()).await,
+            ),
+        ];
+
+        for (call, result) in results {
+            let code = result.err().and_then(|error| error.downcast_ref().copied());
+            let invalid = code == Some(ErrorCode::Invalid);
+            assert_eq!(
+                invalid,
+                refused,
+                "{call} `{}`: {code:?}",
+                name.escape_debug()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn names_windows_cannot_use_are_refused() {
+        let mut names = [
+            "stream:of",
+            "dir/stream:of",
+            "trailing.",
+            "trailing ",
+            "con",
+            "dir/nul.txt",
+        ]
+        .map(String::from)
+        .to_vec();
+        let forbidden = (1..32u8).map(char::from).chain(r#"<>:"|?*"#.chars());
+        names.extend(forbidden.map(|c| format!("a{c}b")));
+
+        for name in names {
+            check_creating(&name, cfg!(windows)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn other_names_are_created_everywhere() {
+        let names = [
+            "game.exe", "a b.txt", ".hidden", "console", "COM10", "nul_", "x.con", "名前",
+        ];
+        for name in names {
+            check_creating(name, false).await;
+        }
     }
 
     #[tokio::test]

@@ -12,6 +12,7 @@ mod host;
 mod manifest;
 mod runtime;
 mod state;
+mod windows;
 
 pub use capabilities::{PluginAuth, PluginConfig, PluginScheduler, PluginStorefront};
 pub(crate) use host::add_fs_to_linker;

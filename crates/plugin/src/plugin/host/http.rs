@@ -3,6 +3,7 @@ use domain::download::DownloadReporter;
 use http_body::{Body, Frame, SizeHint};
 use http_body_util::BodyExt;
 use reqwest::{Client, redirect::Policy};
+use runtime::AbortOnDrop;
 use std::{
     fmt,
     future::Future,
@@ -12,11 +13,15 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio::time::{Instant, Sleep};
+use tokio::{
+    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
+    time::{Instant, Sleep},
+};
 use wasmtime_wasi_http::{Error, RequestOptions, WasiBody, WasiHttpHooks};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 const TCP_KEEPALIVE: Duration = Duration::from_secs(60);
+const READ_AHEAD: usize = 4 * 1024 * 1024;
 
 pub fn http_client() -> Client {
     Client::builder()
@@ -99,17 +104,22 @@ async fn dispatch(
         let body = body
             .map_err(move |err| captured.take().unwrap_or_else(|| response_error(err)))
             .boxed_unsync();
-        IdleTimeoutBody::new(body, between_bytes)
-            .map_frame(move |frame| {
-                if let (Some(reporter), Some(data)) = (&reporter, frame.data_ref()) {
-                    reporter.received(data.len() as u64);
-                }
-                frame
-            })
-            .boxed_unsync()
+        response_body(body, between_bytes, reporter)
     });
 
     Ok((response, Box::new(async { Ok(()) })))
+}
+
+fn response_body(
+    body: WasiBody,
+    idle_timeout: Duration,
+    reporter: Option<Arc<dyn DownloadReporter>>,
+) -> WasiBody {
+    let body = IdleTimeoutBody::new(body, idle_timeout);
+    match reporter {
+        Some(reporter) => ReadAheadBody::new(body, reporter).boxed_unsync(),
+        None => body.boxed_unsync(),
+    }
 }
 
 struct Timeouts {
@@ -131,10 +141,14 @@ impl Timeouts {
 }
 
 /// Fails if no response data arrives within the timeout.
+///
+/// Only time spent waiting on the network counts, so a slow consumer never
+/// causes a timeout.
 struct IdleTimeoutBody {
     inner: WasiBody,
     idle_timeout: Duration,
     deadline: Pin<Box<Sleep>>,
+    waiting: bool,
 }
 
 impl IdleTimeoutBody {
@@ -143,6 +157,7 @@ impl IdleTimeoutBody {
             inner,
             idle_timeout,
             deadline: Box::pin(tokio::time::sleep(idle_timeout)),
+            waiting: false,
         }
     }
 }
@@ -156,9 +171,14 @@ impl Body for IdleTimeoutBody {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Bytes>, Error>>> {
         if let Poll::Ready(frame) = Pin::new(&mut self.inner).poll_frame(cx) {
+            self.waiting = false;
+            return Poll::Ready(frame);
+        }
+
+        if !self.waiting {
+            self.waiting = true;
             let deadline = Instant::now() + self.idle_timeout;
             self.deadline.as_mut().reset(deadline);
-            return Poll::Ready(frame);
         }
 
         match self.deadline.as_mut().poll(cx) {
@@ -173,6 +193,57 @@ impl Body for IdleTimeoutBody {
 
     fn size_hint(&self) -> SizeHint {
         self.inner.size_hint()
+    }
+}
+
+struct ReadAheadBody {
+    frames: mpsc::UnboundedReceiver<Received>,
+    _receiving: AbortOnDrop<()>,
+}
+
+type Received = (Result<Frame<Bytes>, Error>, Option<OwnedSemaphorePermit>);
+
+impl ReadAheadBody {
+    fn new(mut body: IdleTimeoutBody, reporter: Arc<dyn DownloadReporter>) -> Self {
+        let (sender, frames) = mpsc::unbounded_channel();
+        let room = Arc::new(Semaphore::new(READ_AHEAD));
+
+        let receiving = tokio::spawn(async move {
+            while let Some(frame) = body.frame().await {
+                let len = frame
+                    .as_ref()
+                    .ok()
+                    .and_then(Frame::data_ref)
+                    .map_or(0, Bytes::len);
+                reporter.received(len as u64);
+
+                let wanted = len.min(READ_AHEAD) as u32;
+                let permit = room.clone().acquire_many_owned(wanted).await.ok();
+                let failed = frame.is_err();
+                if sender.send((frame, permit)).is_err() || failed {
+                    break;
+                }
+            }
+        });
+
+        Self {
+            frames,
+            _receiving: AbortOnDrop(receiving),
+        }
+    }
+}
+
+impl Body for ReadAheadBody {
+    type Data = Bytes;
+    type Error = Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Error>>> {
+        self.frames
+            .poll_recv(cx)
+            .map(|received| received.map(|(frame, _room)| frame))
     }
 }
 
@@ -371,32 +442,22 @@ fn matches_pattern(pattern: &str, host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{AllowedHosts, Error, OutboundHttp, WasiBody, http_client};
+    use super::{
+        AllowedHosts, Error, OutboundHttp, READ_AHEAD, WasiBody, http_client, response_body,
+    };
     use bytes::Bytes;
     use domain::download::{DownloadPhase, DownloadReporter};
-    use http::{Method, Request, StatusCode, header::CONTENT_LENGTH};
-    use http_body_util::{BodyExt, Empty, Full};
-    use std::{
-        net::SocketAddr,
-        sync::{Arc, Mutex},
+    use futures::{future::join, stream};
+    use http::{Method, Request, Response, StatusCode, header::CONTENT_LENGTH};
+    use http_body::Frame;
+    use http_body_util::{BodyExt, Empty, Full, StreamBody};
+    use std::{net::SocketAddr, sync::Arc, time::Duration};
+    use tokio::{
+        sync::{mpsc, watch},
+        time::{Instant, sleep_until, timeout},
     };
     use wasmtime_wasi_http::WasiHttpHooks;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
-
-    #[derive(Default)]
-    struct Recorder {
-        received: Mutex<Vec<u64>>,
-    }
-
-    impl DownloadReporter for Recorder {
-        fn report(&self, _phase: DownloadPhase) {}
-
-        fn received(&self, bytes: u64) {
-            self.received.lock().unwrap().push(bytes);
-        }
-
-        fn written(&self, _bytes: u64) {}
-    }
 
     #[track_caller]
     fn check_allowed(patterns: &[&str], host: &str, expected: bool) {
@@ -453,16 +514,7 @@ mod tests {
     }
 
     async fn send(allowed: &str, request: Request<WasiBody>) -> Result<(StatusCode, Bytes), Error> {
-        send_counted(allowed, request, None).await
-    }
-
-    async fn send_counted(
-        allowed: &str,
-        request: Request<WasiBody>,
-        reporter: Option<Arc<dyn DownloadReporter>>,
-    ) -> Result<(StatusCode, Bytes), Error> {
-        let mut hooks =
-            OutboundHttp::new(http_client(), [allowed.to_string()][..].into(), reporter);
+        let mut hooks = OutboundHttp::new(http_client(), [allowed.to_string()][..].into(), None);
 
         let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));
         let (response, _io) = Box::into_pin(sending).await?;
@@ -553,27 +605,175 @@ mod tests {
         assert!(matches!(error, Error::ConnectionRefused), "{error:?}");
     }
 
-    #[tokio::test]
-    async fn the_response_bytes_of_a_download_are_counted() {
+    struct Recorder {
+        received: watch::Sender<u64>,
+    }
+
+    impl Recorder {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                received: watch::channel(0).0,
+            })
+        }
+
+        fn received(&self) -> usize {
+            *self.received.borrow() as usize
+        }
+
+        async fn wait_until_received(&self, bytes: usize) {
+            let mut received = self.received.subscribe();
+            let waiting = received.wait_for(|&received| received as usize >= bytes);
+            timeout(Duration::from_secs(10), waiting)
+                .await
+                .unwrap_or_else(|_| panic!("only {} of {bytes} bytes arrived", self.received()))
+                .unwrap();
+        }
+    }
+
+    impl DownloadReporter for Recorder {
+        fn report(&self, _phase: DownloadPhase) {}
+
+        fn received(&self, bytes: u64) {
+            self.received.send_modify(|received| *received += bytes);
+        }
+
+        fn written(&self, _bytes: u64) {}
+    }
+
+    async fn serve_game(len: usize) -> (MockServer, Request<WasiBody>) {
         let server = MockServer::start().await;
         Mock::given(path("/game.zip"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![7; 300_000]))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![7; len]))
             .mount(&server)
             .await;
-        let recorder = Arc::new(Recorder::default());
         let request = Request::builder()
             .uri(format!("{}/game.zip", server.uri()))
             .body(empty_body())
             .unwrap();
 
-        let (_, body) = send_counted("127.0.0.1", request, Some(recorder.clone()))
-            .await
-            .unwrap();
+        (server, request)
+    }
 
-        assert_eq!(body.len(), 300_000);
-        assert_eq!(
-            recorder.received.lock().unwrap().iter().sum::<u64>(),
-            300_000
+    async fn download(request: Request<WasiBody>, recorder: &Arc<Recorder>) -> Response<WasiBody> {
+        let allowed = ["127.0.0.1".to_string()][..].into();
+        let mut hooks = OutboundHttp::new(http_client(), allowed, Some(recorder.clone()));
+
+        let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));
+        let (response, _io) = Box::into_pin(sending).await.unwrap();
+
+        response
+    }
+
+    #[tokio::test]
+    async fn a_download_is_received_ahead_of_the_plugin_up_to_a_limit() {
+        const SLACK: usize = READ_AHEAD / 4;
+        let (_server, request) = serve_game(4 * READ_AHEAD).await;
+        let recorder = Recorder::new();
+
+        let response = download(request, &recorder).await;
+        recorder.wait_until_received(READ_AHEAD).await;
+
+        let ahead = recorder.received();
+        assert!(
+            ahead <= READ_AHEAD + SLACK,
+            "{ahead} bytes were received ahead"
         );
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body.len(), 4 * READ_AHEAD);
+        assert_eq!(recorder.received(), 4 * READ_AHEAD);
+    }
+
+    #[tokio::test]
+    async fn the_response_bytes_of_a_download_are_counted() {
+        let (_server, request) = serve_game(300_000).await;
+        let recorder = Recorder::new();
+
+        let response = download(request, &recorder).await;
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body.len(), 300_000);
+        assert_eq!(recorder.received(), 300_000);
+    }
+
+    const IDLE_TIMEOUT: Duration = Duration::from_secs(1);
+
+    #[derive(Clone, Copy, Debug)]
+    enum Mode {
+        Request,
+        Download,
+    }
+
+    /// The server sends a frame at each time in `arrivals` and the plugin reads
+    /// the next one at each time in `reads`, or right away once those run out.
+    /// Times are in milliseconds. Returns how many frames the plugin read.
+    async fn stream_response(mode: Mode, arrivals: &[u64], reads: &[u64]) -> Result<usize, Error> {
+        let start = Instant::now();
+        let at = |ms: u64| sleep_until(start + Duration::from_millis(ms));
+
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let network = stream::unfold(receiver, |mut receiver| async move {
+            let data = receiver.recv().await?;
+            Some((Ok(Frame::data(data)), receiver))
+        });
+        let reporter = match mode {
+            Mode::Request => None,
+            Mode::Download => Some(Recorder::new() as Arc<dyn DownloadReporter>),
+        };
+        let mut body = response_body(
+            StreamBody::new(network).boxed_unsync(),
+            IDLE_TIMEOUT,
+            reporter,
+        );
+
+        let server = async move {
+            let data = Bytes::from(vec![7; READ_AHEAD]);
+            for &arrival in arrivals {
+                at(arrival).await;
+                let _ = sender.send(data.clone());
+            }
+        };
+        let plugin = async move {
+            let mut read = 0;
+            loop {
+                if let Some(&ms) = reads.get(read) {
+                    at(ms).await;
+                }
+                match body.frame().await {
+                    Some(frame) => frame?,
+                    None => return Ok(read),
+                };
+                read += 1;
+            }
+        };
+
+        join(server, plugin).await.1
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_response_that_stops_arriving_times_out() {
+        for mode in [Mode::Request, Mode::Download] {
+            let outcome = stream_response(mode, &[0, 2500], &[]).await;
+
+            assert!(
+                matches!(outcome, Err(Error::ConnectionReadTimeout)),
+                "{mode:?}: {outcome:?}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_plugin_does_not_time_out_a_request() {
+        let outcome = stream_response(Mode::Request, &[0, 2500], &[0, 2000]).await;
+
+        assert!(matches!(outcome, Ok(2)), "{outcome:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_plugin_does_not_time_out_a_download() {
+        // The first frame fills the read-ahead buffer, so the second one has to
+        // wait for the plugin to make room before the third arrives.
+        let outcome = stream_response(Mode::Download, &[0, 0, 2500], &[2000]).await;
+
+        assert!(matches!(outcome, Ok(3)), "{outcome:?}");
     }
 }
