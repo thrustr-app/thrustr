@@ -1,10 +1,11 @@
-use crate::plugin::{PluginCache, PluginState};
+use crate::plugin::{DownloadCall, PluginCache, PluginId, PluginState, host::Writer};
 use crate::wit::{export_name, thrustr::plugin::types::Error as PluginError};
 use component::ComponentLink;
 use domain::component::{ComponentStorage, ConfigSchema, Error as ComponentError};
 use reqwest::Client;
-use runtime::TokioHandle;
-use std::sync::Arc;
+use runtime::{AbortOnDrop, TokioHandle};
+use std::{path::PathBuf, sync::Arc};
+use tokio_util::sync::CancellationToken;
 use wasmtime::component::{Instance, InstancePre};
 use wasmtime::{Engine, ResourceLimiter, Store};
 
@@ -14,7 +15,7 @@ const MAX_FUEL: u64 = 10_000_000_000;
 const FUEL_YIELD_INTERVAL: u64 = 10_000_000;
 
 pub struct PluginRuntime {
-    pub id: String,
+    pub id: PluginId,
     pub allowed_hosts: Arc<[String]>,
     pub engine: Engine,
     pub pre: InstancePre<PluginState>,
@@ -22,6 +23,7 @@ pub struct PluginRuntime {
     pub tokio_handle: TokioHandle,
     pub http_client: Client,
     pub link: ComponentLink,
+    pub data_dir: PathBuf,
     pub cache: Arc<PluginCache>,
     pub config_schema: Option<Arc<ConfigSchema>>,
 }
@@ -53,57 +55,103 @@ impl PluginRuntime {
         Fut: Future<Output = CallResult<R>> + Send + 'static,
     {
         let runtime = Arc::clone(self);
+        self.spawn(async move {
+            let result = runtime.run(None, &CancellationToken::new(), f).await?;
+            Ok(result.expect("the call isn't cancelled"))
+        })
+        .await
+    }
 
-        self.tokio_handle
-            .spawn(async move {
-                let state = PluginState::new(
-                    &runtime.id,
-                    runtime.storage.clone(),
-                    runtime.http_client.clone(),
-                    runtime.allowed_hosts.clone(),
-                    runtime.link.clone(),
-                    runtime.cache.clone(),
-                    runtime.config_schema.clone(),
-                );
-                let mut store = Store::new(&runtime.engine, state);
-
-                store.limiter(|state| state.limits() as &mut dyn ResourceLimiter);
-
-                store
-                    .set_fuel(MAX_FUEL)
-                    .and_then(|()| store.fuel_async_yield_interval(Some(FUEL_YIELD_INTERVAL)))
-                    .map_err(|e| ComponentError::Other(format!("Fuel setup failed: {e}")))?;
-
-                let instance = runtime
-                    .pre
-                    .instantiate_async(&mut store)
-                    .await
-                    .map_err(|e| ComponentError::Other(format!("Instantiation failed: {e}")))?;
-
-                f(instance, store)
-                    .await
-                    .map_err(|e| ComponentError::Other(format!("Wasm call failed: {e}")))?
-                    .map_err(ComponentError::from)
-            })
+    /// Runs `task` on the plugin runtime, aborting it if dropped.
+    pub(crate) async fn spawn<T: Send + 'static>(
+        &self,
+        task: impl Future<Output = Result<T, ComponentError>> + Send + 'static,
+    ) -> Result<T, ComponentError> {
+        AbortOnDrop(self.tokio_handle.spawn(task))
             .await
-            .map_err(|e| ComponentError::Other(format!("Plugin task failed: {e}")))?
+            .map_err(|e| ComponentError::Other(format!("plugin task failed: {e}")))?
+    }
+
+    /// Instantiates the plugin in a new store and runs `f` on it, or returns
+    /// `None` if cancelled. Either way, returns once its writes have stopped.
+    pub(crate) async fn run<R, F, Fut>(
+        &self,
+        download: Option<DownloadCall>,
+        cancel: &CancellationToken,
+        f: F,
+    ) -> Result<Option<R>, ComponentError>
+    where
+        F: FnOnce(Instance, Store<PluginState>) -> Fut,
+        Fut: Future<Output = CallResult<R>>,
+    {
+        let writer = Writer::new(download.as_ref().map(|d| d.reporter.clone()));
+        let call = async {
+            let (instance, store) = self
+                .instantiate(download, writer.clone())
+                .await
+                .map_err(|e| ComponentError::Other(format!("plugin setup failed: {e:#}")))?;
+
+            f(instance, store)
+                .await
+                .map_err(|e| ComponentError::Other(format!("wasm call failed: {e}")))?
+                .map_err(ComponentError::from)
+        };
+
+        let Some(result) = cancel.run_until_cancelled(call).await else {
+            writer.abandon();
+            let _ = writer.drain().await;
+            return Ok(None);
+        };
+        let written = writer.drain().await;
+        written.map_err(|e| ComponentError::Other(format!("writing failed: {e}")))?;
+        result.map(Some)
+    }
+
+    async fn instantiate(
+        &self,
+        download: Option<DownloadCall>,
+        writer: Writer,
+    ) -> wasmtime::Result<(Instance, Store<PluginState>)> {
+        let fuel = if download.is_some() {
+            u64::MAX
+        } else {
+            MAX_FUEL
+        };
+
+        let mut store = Store::new(&self.engine, PluginState::new(self, download, writer)?);
+        store.limiter(|state| state.limits() as &mut dyn ResourceLimiter);
+        store.set_fuel(fuel)?;
+        store.fuel_async_yield_interval(Some(FUEL_YIELD_INTERVAL))?;
+
+        let instance = self.pre.instantiate_async(&mut store).await?;
+        Ok((instance, store))
     }
 }
 
-/// Instantiates the plugin, loads the export behind `indices` and runs one
-/// guest call on it.
+/// Runs one regular guest call on the export behind `indices`.
 macro_rules! guest_call {
-    ($runtime:expr, $indices:expr, |$guest:ident, $accessor:ident| $call:expr) => {{
-        let indices = $indices.clone();
+    ($runtime:expr, $indices:expr, |$guest:ident, $accessor:ident| $call:expr) => {
         $runtime
-            .call(|instance, mut store| async move {
-                let $guest = indices.load(&mut store, &instance)?;
-                store
-                    .run_concurrent(async |$accessor| $call.await)
-                    .await
-                    .and_then(|result| result)
-            })
+            .call($crate::plugin::guest_fn!($indices, |$guest, $accessor| {
+                $call
+            }))
             .await
-    }};
+    };
 }
 pub(crate) use guest_call;
+
+/// Builds a guest call on the export behind `indices`.
+macro_rules! guest_fn {
+    ($indices:expr, |$guest:ident, $accessor:ident| $call:expr) => {{
+        let indices = $indices.clone();
+        |instance: ::wasmtime::component::Instance,
+         mut store: ::wasmtime::Store<$crate::plugin::PluginState>| async move {
+            let $guest = indices.load(&mut store, &instance)?;
+            store
+                .run_concurrent(async |$accessor| $call.await)
+                .await
+                .and_then(|result| result)
+        }
+    }};
+}
+pub(crate) use guest_fn;

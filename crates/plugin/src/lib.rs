@@ -10,6 +10,9 @@ mod wit {
     bindgen!({
         path: "../pdk/wit",
         world: "plugin-host",
+        with: {
+            "thrustr:plugin/download.reporter": crate::plugin::Reporter,
+        },
     });
 
     /// Must match the `package` declaration in `crates/pdk/wit/*.wit`.

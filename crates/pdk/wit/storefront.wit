@@ -1,15 +1,40 @@
 package thrustr:plugin@0.1.0;
 
+interface download {
+    /// Progress within a phase, in bytes.
+    record phase-progress {
+        processed: u64,
+        total: option<u64>,
+    }
+
+    variant download-phase {
+        preparing,
+        downloading(phase-progress),
+        installing(phase-progress),
+        verifying(phase-progress),
+        finalizing,
+    }
+
+    resource reporter {
+        report: func(phase: download-phase);
+    }
+}
+
 interface storefront {
     use types.{error, game, game-version, game-version-details};
+    use download.{reporter};
 
     get-games: async func() -> result<list<game>, error>;
 
-    get-game-versions: async func(game: game, path: list<string>) -> result<list<game-version>, error>;
+    get-game-versions: async func(game: game, version-path: list<string>) -> result<list<game-version>, error>;
 
-    get-game-version-details: async func(game: game, path: list<string>) -> result<game-version-details, error>;
+    get-game-version-details: async func(game: game, version-path: list<string>) -> result<game-version-details, error>;
+
+    download: async func(game: game, version-path: list<string>, reporter: borrow<reporter>) -> result<_, error>;
 }
 
 world storefront-capability {
+    import download;
+
     export storefront;
 }

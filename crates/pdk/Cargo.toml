@@ -5,10 +5,14 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-pdk-macros = { path = "../pdk-macros" }
-postcard = { version = "1", default-features = false, features = ["alloc"] }
+form_urlencoded.workspace = true
+pdk-macros.workspace = true
+postcard.workspace = true
 serde.workspace = true
-wit-bindgen = "0.63"
+serde_json.workspace = true
+thiserror.workspace = true
+wasip3.workspace = true
+wit-bindgen.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

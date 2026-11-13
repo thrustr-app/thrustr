@@ -19,7 +19,7 @@ impl ConfigStoreHost for PluginState {
 
         let stored = self
             .storage
-            .get_config_value(&self.id, &field_id)
+            .get_config_value(self.id.as_str(), &field_id)
             .map_err(|e| ConfigStoreError::Other(e.to_string()))?;
 
         Ok(field

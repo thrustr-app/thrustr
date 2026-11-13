@@ -52,6 +52,7 @@ fn sidebar(window: &Window, cx: &App) -> impl IntoElement {
                 .item(sidebar_item(Page::Home))
                 .item(sidebar_item(Page::Library))
                 .item(sidebar_item(Page::Collections))
+                .bottom_item(sidebar_item(Page::Downloads))
                 .bottom_item(sidebar_item(Page::Settings(None))),
         )
 }

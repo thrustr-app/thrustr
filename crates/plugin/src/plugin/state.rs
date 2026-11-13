@@ -1,17 +1,26 @@
 use crate::{
-    plugin::host::{OutboundHttp, PluginCache},
+    plugin::{
+        PluginId, PluginRuntime,
+        host::{FsView, OutboundHttp, PluginCache, QueuedFds, Writer},
+    },
     wit::thrustr::plugin::types::Host,
 };
 use component::ComponentLink;
-use domain::component::{ComponentStorage, ConfigSchema};
-use reqwest::Client;
-use std::sync::Arc;
-use wasmtime::component::HasData;
-use wasmtime::{StoreLimits, StoreLimitsBuilder};
-use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxView, WasiView};
+use domain::{
+    component::{ComponentStorage, ConfigSchema},
+    download::DownloadReporter,
+};
+use std::{fs, path::PathBuf, sync::Arc};
+use wasmtime::{StoreLimits, StoreLimitsBuilder, component::HasData, error::Context};
+use wasmtime_wasi::{
+    FsPerms, ResourceTable, WasiCtx, WasiCtxView, WasiView, filesystem::WasiFilesystemCtxView,
+};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 const MAX_MEMORY: usize = 256 * 1024 * 1024;
+
+pub(crate) const DOWNLOAD_MOUNT: &str = "/download";
+pub(crate) const DATA_MOUNT: &str = "/data";
 
 pub struct PluginState {
     ctx: WasiCtx,
@@ -19,41 +28,82 @@ pub struct PluginState {
     hooks: OutboundHttp,
     table: ResourceTable,
     limits: StoreLimits,
-    pub(crate) id: String,
+    pub(crate) id: PluginId,
     pub(crate) storage: Arc<dyn ComponentStorage>,
     pub(crate) link: ComponentLink,
     pub(crate) cache: Arc<PluginCache>,
     pub(crate) config_schema: Option<Arc<ConfigSchema>>,
+    pub(crate) reporter: Option<Arc<dyn DownloadReporter>>,
+    writer: Writer,
+    queued_fds: QueuedFds,
+}
+
+pub(crate) struct DownloadCall {
+    pub(crate) dir: PathBuf,
+    pub(crate) reporter: Arc<dyn DownloadReporter>,
 }
 
 impl PluginState {
-    pub fn new(
-        id: &str,
-        storage: Arc<dyn ComponentStorage>,
-        http_client: Client,
-        allowed_hosts: Arc<[String]>,
-        link: ComponentLink,
-        cache: Arc<PluginCache>,
-        config_schema: Option<Arc<ConfigSchema>>,
-    ) -> Self {
-        let ctx = WasiCtx::builder().inherit_stdout().build();
+    pub(crate) fn new(
+        runtime: &PluginRuntime,
+        download: Option<DownloadCall>,
+        writer: Writer,
+    ) -> wasmtime::Result<Self> {
+        let mut ctx = WasiCtx::builder();
+        // Stock Wasmtime fs calls run inline, so none outlives a cancelled call.
+        ctx.inherit_stdout().allow_blocking_current_thread(true);
 
-        Self {
-            ctx,
+        let data_dir = &runtime.data_dir;
+        if ctx
+            .preopened_dir(data_dir, DATA_MOUNT, FsPerms::ReadWrite)
+            .is_err()
+        {
+            fs::create_dir_all(data_dir).with_context(|| {
+                format!("failed to create data directory {}", data_dir.display())
+            })?;
+            ctx.preopened_dir(data_dir, DATA_MOUNT, FsPerms::ReadWrite)
+                .with_context(|| format!("failed to open data directory {}", data_dir.display()))?;
+        }
+
+        let reporter = match download {
+            Some(download) => {
+                ctx.preopened_dir(&download.dir, DOWNLOAD_MOUNT, FsPerms::ReadWrite)?;
+                Some(download.reporter)
+            }
+            None => None,
+        };
+
+        Ok(Self {
+            ctx: ctx.build(),
             http_ctx: WasiHttpCtx::new(),
-            hooks: OutboundHttp::new(http_client, allowed_hosts),
+            hooks: OutboundHttp::new(
+                runtime.http_client.clone(),
+                runtime.allowed_hosts.clone(),
+                reporter.clone(),
+            ),
             table: ResourceTable::new(),
             limits: StoreLimitsBuilder::new().memory_size(MAX_MEMORY).build(),
-            id: id.to_owned(),
-            storage,
-            link,
-            cache,
-            config_schema,
-        }
+            id: runtime.id.clone(),
+            storage: runtime.storage.clone(),
+            link: runtime.link.clone(),
+            cache: runtime.cache.clone(),
+            config_schema: runtime.config_schema.clone(),
+            reporter,
+            writer,
+            queued_fds: QueuedFds::default(),
+        })
     }
 
     pub(crate) fn limits(&mut self) -> &mut StoreLimits {
         &mut self.limits
+    }
+
+    pub(crate) fn fs(&mut self) -> FsView<'_> {
+        let fs = WasiFilesystemCtxView {
+            ctx: self.ctx.filesystem(),
+            table: &mut self.table,
+        };
+        FsView::new(fs, &self.writer, &mut self.queued_fds)
     }
 }
 

@@ -54,6 +54,30 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    app_state (key) {
+        key -> Text,
+        value -> Json,
+    }
+}
+
+diesel::table! {
+    downloads (id) {
+        id -> BigInt,
+        game_id -> BigInt,
+        position -> Integer,
+        version_path -> Json,
+        target_dir -> Text,
+        install_size -> Nullable<BigInt>,
+        download_size -> Nullable<BigInt>,
+        phase -> Text,
+        processed -> BigInt,
+        total -> Nullable<BigInt>,
+        error -> Nullable<Text>,
+    }
+}
+
 diesel::joinable!(artwork -> games (game_id));
+diesel::joinable!(downloads -> games (game_id));
 
 diesel::allow_tables_to_appear_in_same_query!(games, artwork);

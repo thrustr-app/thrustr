@@ -18,6 +18,7 @@ event = { path = "crates/event" }
 game = { path = "crates/game" }
 net = { path = "crates/net" }
 pdk = { path = "crates/pdk" }
+pdk-macros = { path = "crates/pdk-macros" }
 plugin = { path = "crates/plugin" }
 runtime = { path = "crates/runtime" }
 sqlite = { path = "crates/sqlite" }
@@ -30,44 +31,77 @@ async-trait = "0.1"
 base64 = "0.23"
 blake3 = "1"
 bytes = "1"
+cc = "1"
 chrono = "0.4"
 dashmap = "6"
+diesel = { version = "2", features = [
+    "sqlite",
+    "serde_json",
+    "r2d2",
+    "returning_clauses_for_sqlite_3_35",
+] }
+diesel_migrations = "2"
 directories = "6"
 fs4 = "1"
 futures = "0.3"
-getrandom = "0.3"
-gpui = { git = "https://github.com/zed-industries/zed" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+getrandom = "0.4"
+gpui = { git = "https://github.com/zed-industries/zed", rev = "4304dec732a75505066de5ce2dbbfb2bec369498" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "4304dec732a75505066de5ce2dbbfb2bec369498", features = [
+    "font-kit",
+    "x11",
+    "wayland",
+] }
 http = "1"
 http-body = "1"
 http-body-util = "0.1"
 hyper = "1"
-lru = "0.18"
-parking_lot = "0.12"
+image = "0.25"
+libsqlite3-sys = { version = "0.38", features = ["bundled"] }
+lru = "0.19"
+muda = "0.21"
+parking_lot = "0.13"
 paste = "1"
+postcard = { version = "1", default-features = false, features = ["alloc"] }
+proc-macro2 = "1"
+quote = "1"
 rand = "0.10"
 reqwest = { version = "0.13", features = ["json"] }
+rust-embed = { version = "8", features = ["include-exclude"] }
+rustix = { version = "1", features = ["fs"] }
 rustls = { version = "0.23", features = ["ring"] }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde-saphyr = { version = "1", default-features = false, features = ["deserialize"] }
-sha2 = "0.10"
+serde-saphyr = { version = "2", default-features = false, features = [
+    "deserialize",
+] }
+sha2 = "0.11"
 smallvec = "1"
 smol = "2"
 strum = { version = "0.28", features = ["derive"] }
+syn = { version = "3", features = ["full"] }
+tao = "0.37"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 toml = "1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-normalization = "0.1"
+unicode-segmentation = "1"
 url = "2"
 wasi-fetch = "0.2"
+wasmtime = "50"
+wasmtime-wasi = "50"
+wasmtime-wasi-http = "50"
+webp = "0.3"
+winapi-util = "0.1"
 wiremock = "0.6"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+wit-bindgen = "0.63"
+wry = "0.57"
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [profile.release]
 panic = "unwind"

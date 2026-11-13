@@ -12,12 +12,15 @@ mod host;
 mod manifest;
 mod runtime;
 mod state;
+mod windows;
 
 pub use capabilities::{PluginAuth, PluginConfig, PluginScheduler, PluginStorefront};
-pub use host::{PluginCache, http_client};
+pub(crate) use host::add_fs_to_linker;
+pub use host::{PluginCache, Reporter, http_client};
 pub use manifest::*;
 pub use runtime::PluginRuntime;
-pub(crate) use runtime::guest_call;
+pub(crate) use runtime::{guest_call, guest_fn};
+pub(crate) use state::DownloadCall;
 pub use state::PluginState;
 
 pub struct Plugin {
@@ -35,7 +38,7 @@ pub struct Plugin {
 impl Component for Plugin {
     fn metadata(&self) -> Metadata<'_> {
         Metadata {
-            id: &self.info.id,
+            id: self.info.id.as_str(),
             name: &self.info.name,
             description: self.info.description.as_deref(),
             version: &self.info.version,

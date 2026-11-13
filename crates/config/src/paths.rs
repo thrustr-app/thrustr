@@ -60,6 +60,10 @@ pub fn plugins_dir() -> PathBuf {
     }
 }
 
+pub fn plugin_data_dir() -> PathBuf {
+    plugins_dir().join("data")
+}
+
 pub fn cache_dir() -> PathBuf {
     if cfg!(debug_assertions) {
         workspace_dir().join("target").join("cache")
