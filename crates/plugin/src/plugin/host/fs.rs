@@ -360,18 +360,49 @@ impl HostDescriptor for FsView<'_> {
         if oflags.contains(OpenFlags::CREATE) {
             check_name(&path)?;
         }
-        let queued = self.queued.contains(&fd);
-        // Only truncating depends on previous writes.
-        if oflags.contains(OpenFlags::TRUNCATE) {
-            self.drain_path(&fd, path_flags, &path).await?;
-        } else if queued {
-            self.writer.check()?;
+
+        if !self.queued.contains(&fd) {
+            return HostDescriptor::open_at(&mut self.fs, fd, path_flags, path, oflags, flags)
+                .await;
         }
-        let opened =
-            HostDescriptor::open_at(&mut self.fs, fd, path_flags, path, oflags, flags).await?;
-        if queued {
-            self.queued.insert(&opened);
+
+        self.writer.check()?;
+
+        // Only truncating depends on previous writes, so it's done after opening,
+        // once the opened file's writes have landed.
+        let truncate = oflags.contains(OpenFlags::TRUNCATE)
+            && !oflags.contains(OpenFlags::DIRECTORY)
+            && self.writer.is_running();
+
+        let (mut oflags, mut flags) = (oflags, flags);
+        if truncate {
+            oflags &= !OpenFlags::TRUNCATE;
+            // Truncating opens for reading too unless asked to write.
+            if !flags.contains(DescriptorFlags::WRITE) {
+                flags |= DescriptorFlags::READ | DescriptorFlags::WRITE;
+            }
         }
+
+        let opened = HostDescriptor::open_at(&mut self.fs, fd, path_flags, path, oflags, flags);
+        let opened = match opened.await {
+            // Like truncating at open on Windows.
+            Err(error)
+                if cfg!(windows)
+                    && truncate
+                    && error.downcast_ref() == Some(&ErrorCode::IsDirectory) =>
+            {
+                return Err(ErrorCode::Invalid.into());
+            }
+            opened => opened?,
+        };
+
+        self.queued.insert(&opened);
+
+        if truncate && let Err(error) = HostDescriptor::set_size(self, borrow(&opened), 0).await {
+            HostDescriptor::drop(self, opened).map_err(FsError::trap)?;
+            return Err(error);
+        }
+
         Ok(opened)
     }
 
@@ -1553,14 +1584,26 @@ mod tests {
             self.writer.0.queue.borrow().granted
         }
 
-        async fn fail_a_write(&self, name: &str) {
+        fn queue_a_failing_write(&self, name: &str) {
             let read_only = Arc::new(File::open(self.dir.join(name)).unwrap());
             let id = self.writer.id_of(&read_only).unwrap();
             let push = self
                 .writer
                 .push(read_only, id, At::Offset(0), "x".into(), 0);
             push.unwrap();
+        }
+
+        async fn fail_a_write(&self, name: &str) {
+            self.queue_a_failing_write(name);
             assert!(self.writer.drain().await.is_err());
+        }
+
+        fn hold_a_write(&self, held: &Arc<File>) -> Paused {
+            let paused = self.disk.pause();
+            let id = self.writer.id_of(held).unwrap();
+            let push = self.writer.push(held.clone(), id, At::End, "!".into(), 0);
+            push.unwrap();
+            paused
         }
 
         /// Writes through `fd` and checks whether the write was queued, which
@@ -1589,10 +1632,7 @@ mod tests {
             name: &str,
             call: impl Future<Output = FsResult<T>>,
         ) -> FsResult<T> {
-            let paused = self.disk.pause();
-            let id = self.writer.id_of(held).unwrap();
-            let push = self.writer.push(held.clone(), id, At::End, "!".into(), 0);
-            push.unwrap();
+            let paused = self.hold_a_write(held);
             let mut call = pin!(call);
             let early = call.as_mut().now_or_never();
             drop(paused);
@@ -1869,6 +1909,7 @@ mod tests {
     async fn calls_on_a_file_wait_for_its_writes_only() {
         let mut h = Harness::new(&["game.bin", "other.bin"], Calls::Inline);
         let probe = h.probe();
+        fs::hard_link(probe.dir.join("game.bin"), probe.dir.join("linked.bin")).unwrap();
         let (mut view, root) = h.view();
         let game = open_at(&mut view, &root, "game.bin", OpenFlags::empty()).await;
         let game = game.unwrap();
@@ -1902,6 +1943,11 @@ mod tests {
             let hash = HostDescriptor::metadata_hash(&mut view, fd());
             let hash = probe.check_waits(&held, waits, "metadata_hash", hash);
             hash.await.unwrap();
+            for name in ["game.bin", "linked.bin"] {
+                let truncate = open_at(&mut view, &root, name, OpenFlags::TRUNCATE);
+                let truncate = probe.check_waits(&held, waits, name, truncate);
+                truncate.await.unwrap();
+            }
         }
     }
 
@@ -1981,6 +2027,87 @@ mod tests {
             missing.unwrap_err().downcast_ref(),
             Some(&ErrorCode::NoEntry)
         );
+    }
+
+    type Opened = Result<(DescriptorType, DescriptorFlags, Option<Vec<u8>>), Option<ErrorCode>>;
+
+    /// Opens `path` and returns what the plugin and the disk see afterwards.
+    async fn opened(
+        view: &mut FsView<'_>,
+        (root, dir): (&Resource<Descriptor>, &Path),
+        path: &str,
+        oflags: OpenFlags,
+        flags: DescriptorFlags,
+    ) -> Opened {
+        let no_flags = PathFlags::empty();
+        let open =
+            HostDescriptor::open_at(view, borrow(root), no_flags, path.into(), oflags, flags);
+        let fd = open.await.map_err(|error| error.downcast_ref().copied())?;
+        let type_ = HostDescriptor::get_type(view, borrow(&fd)).await.unwrap();
+        let flags = HostDescriptor::get_flags(view, borrow(&fd)).await.unwrap();
+        HostDescriptor::drop(view, fd).unwrap();
+        Ok((type_, flags, fs::read(dir.join(path)).ok()))
+    }
+
+    #[tokio::test]
+    async fn opening_while_writes_are_queued_works_like_stock_wasi() {
+        let mut h = Harness::new(&["held.bin"], Calls::Inline);
+        let probe = h.probe();
+        let (held, _) = open(&probe.dir, "held.bin");
+        let (mut view, download, data) = h.views();
+        let each = [
+            OpenFlags::CREATE,
+            OpenFlags::DIRECTORY,
+            OpenFlags::EXCLUSIVE,
+            OpenFlags::TRUNCATE,
+        ];
+        let oflags = (0..1 << each.len()).map(|set| {
+            let picked = (0..each.len()).filter(|i| set & 1 << i != 0);
+            picked.fold(OpenFlags::empty(), |oflags, i| oflags | each[i])
+        });
+        let flags = [
+            DescriptorFlags::empty(),
+            DescriptorFlags::READ,
+            DescriptorFlags::WRITE,
+            DescriptorFlags::READ | DescriptorFlags::WRITE,
+        ];
+        let cases: Vec<_> = oflags
+            .flat_map(|oflags| flags.map(|flags| (oflags, flags)))
+            .collect();
+        for dir in [&probe.dir, &probe.data] {
+            for i in 0..cases.len() {
+                fs::create_dir_all(dir.join(format!("{i}/dir"))).unwrap();
+                fs::write(dir.join(format!("{i}/file.bin")), "file").unwrap();
+            }
+        }
+
+        let _paused = probe.hold_a_write(&held);
+        for (i, &(oflags, flags)) in cases.iter().enumerate() {
+            for name in ["missing", "file.bin", "dir"] {
+                let path = format!("{i}/{name}");
+                let stock = opened(&mut view, (&data, &probe.data), &path, oflags, flags).await;
+                let queued = opened(&mut view, (&download, &probe.dir), &path, oflags, flags);
+                let queued = queued.now_or_never().expect("opening waited");
+                assert_eq!(queued, stock, "{name} with {oflags:?} {flags:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_truncating_open_that_fails_leaves_the_file_closed() {
+        let mut h = Harness::new(&["game.bin"], Calls::Inline);
+        let probe = h.probe();
+        let (mut view, root) = h.view();
+        let (held, _) = open(&probe.dir, "game.bin");
+        let paused = probe.hold_a_write(&held);
+        probe.queue_a_failing_write("game.bin");
+
+        let mut truncate = pin!(open_at(&mut view, &root, "game.bin", OpenFlags::TRUNCATE));
+        assert!(truncate.as_mut().now_or_never().is_none());
+        drop(paused);
+        assert!(truncate.await.is_err());
+        drop(held);
+        fs::remove_file(probe.dir.join("game.bin")).unwrap();
     }
 
     async fn check_creating(name: &str, refused: bool) {
@@ -2068,9 +2195,6 @@ mod tests {
         let at = || borrow(&root);
         let unchanged = NewTimestamp::NoChange;
 
-        let reopen = open_at(&mut view, &root, "game.bin", OpenFlags::TRUNCATE);
-        let reopen = probe.check_waits(&held, true, "reopen", reopen);
-        reopen.await.unwrap();
         let stat = HostDescriptor::stat_at(&mut view, at(), no_flags, "other.bin".into());
         let stat = probe.check_waits(&held, true, "stat_at", stat);
         stat.await.unwrap();
