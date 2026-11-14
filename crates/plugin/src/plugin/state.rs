@@ -18,6 +18,8 @@ use wasmtime_wasi::{
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 const MAX_MEMORY: usize = 256 * 1024 * 1024;
+/// Stock Wasmtime fs calls run inline, so none outlives a cancelled call.
+const ALLOW_BLOCKING_CURRENT_THREAD: bool = true;
 
 pub(crate) const DOWNLOAD_MOUNT: &str = "/download";
 pub(crate) const DATA_MOUNT: &str = "/data";
@@ -50,8 +52,8 @@ impl PluginState {
         writer: Writer,
     ) -> wasmtime::Result<Self> {
         let mut ctx = WasiCtx::builder();
-        // Stock Wasmtime fs calls run inline, so none outlives a cancelled call.
-        ctx.inherit_stdout().allow_blocking_current_thread(true);
+        ctx.inherit_stdout()
+            .allow_blocking_current_thread(ALLOW_BLOCKING_CURRENT_THREAD);
 
         let data_dir = &runtime.data_dir;
         if ctx
@@ -103,7 +105,12 @@ impl PluginState {
             ctx: self.ctx.filesystem(),
             table: &mut self.table,
         };
-        FsView::new(fs, &self.writer, &mut self.queued_fds)
+        FsView::new(
+            fs,
+            &self.writer,
+            &mut self.queued_fds,
+            ALLOW_BLOCKING_CURRENT_THREAD,
+        )
     }
 }
 

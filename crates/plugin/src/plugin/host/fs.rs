@@ -71,6 +71,8 @@ pub(crate) struct FsView<'a> {
     fs: WasiFilesystemCtxView<'a>,
     writer: &'a Writer,
     queued: &'a mut QueuedFds,
+    #[cfg_attr(not(windows), expect(dead_code))]
+    allow_blocking_current_thread: bool,
 }
 
 impl<'a> FsView<'a> {
@@ -78,8 +80,14 @@ impl<'a> FsView<'a> {
         fs: WasiFilesystemCtxView<'a>,
         writer: &'a Writer,
         queued: &'a mut QueuedFds,
+        allow_blocking_current_thread: bool,
     ) -> Self {
-        Self { fs, writer, queued }
+        Self {
+            fs,
+            writer,
+            queued,
+            allow_blocking_current_thread,
+        }
     }
 
     async fn drain_file(&mut self, fd: &Resource<Descriptor>) -> FsResult<()> {
@@ -131,6 +139,83 @@ impl<'a> FsView<'a> {
             Ok(stat) => stat.type_ != DescriptorType::Directory,
             Err(error) => error.downcast_ref() != Some(&ErrorCode::NoEntry),
         }
+    }
+
+    /// Opens a file with one system call. `None` leaves the open to Wasmtime, which
+    /// opens each directory on the way.
+    #[cfg(windows)]
+    fn open_file_directly(
+        &mut self,
+        fd: &Resource<Descriptor>,
+        path_flags: PathFlags,
+        path: &str,
+        oflags: OpenFlags,
+        flags: DescriptorFlags,
+    ) -> FsResult<Option<Resource<Descriptor>>> {
+        use windows::Disposition;
+
+        let Descriptor::Dir(dir) = self.fs.table.get(fd)? else {
+            return Ok(None);
+        };
+        let sync = DescriptorFlags::FILE_INTEGRITY_SYNC
+            | DescriptorFlags::DATA_INTEGRITY_SYNC
+            | DescriptorFlags::REQUESTED_WRITE_SYNC;
+        if oflags.contains(OpenFlags::DIRECTORY) || flags.intersects(sync) {
+            return Ok(None);
+        }
+
+        // As in Wasmtime's `Dir::open_at`.
+        let create = oflags.contains(OpenFlags::CREATE);
+        let exclusive = create && oflags.contains(OpenFlags::EXCLUSIVE);
+        let truncate = oflags.contains(OpenFlags::TRUNCATE);
+        let write = create || truncate || flags.contains(DescriptorFlags::WRITE);
+        let read = flags.contains(DescriptorFlags::READ) || !flags.contains(DescriptorFlags::WRITE);
+        if write && dir.perms.write_not_permitted() {
+            return Ok(None);
+        }
+
+        // Wasmtime truncates after opening unless following symlinks.
+        let truncate_after =
+            truncate && !exclusive && !path_flags.contains(PathFlags::SYMLINK_FOLLOW);
+        let disposition = match (exclusive, create, truncate && !truncate_after) {
+            (true, ..) => Disposition::CreateNew,
+            (false, false, false) => Disposition::Open,
+            (false, true, false) => Disposition::OpenOrCreate,
+            (false, false, true) => Disposition::Truncate,
+            (false, true, true) => Disposition::TruncateOrCreate,
+        };
+
+        let Ok(file) = windows::open_file_beneath(&dir.dir, path, read, write, disposition) else {
+            return Ok(None);
+        };
+        if truncate_after && file.set_len(0).is_err() {
+            return Ok(None);
+        }
+        let mut open_mode = OpenMode::empty();
+        open_mode.set(OpenMode::READ, read);
+        open_mode.set(OpenMode::WRITE, write);
+        let file = wasmtime_wasi::filesystem::File::new(
+            file,
+            dir.perms,
+            open_mode,
+            self.allow_blocking_current_thread,
+        );
+        Ok(Some(self.fs.table.push(Descriptor::File(file))?))
+    }
+
+    async fn open(
+        &mut self,
+        fd: Resource<Descriptor>,
+        path_flags: PathFlags,
+        path: String,
+        oflags: OpenFlags,
+        flags: DescriptorFlags,
+    ) -> FsResult<Resource<Descriptor>> {
+        #[cfg(windows)]
+        if let Some(opened) = self.open_file_directly(&fd, path_flags, &path, oflags, flags)? {
+            return Ok(opened);
+        }
+        HostDescriptor::open_at(&mut self.fs, fd, path_flags, path, oflags, flags).await
     }
 
     fn writable_file(&self, fd: &Resource<Descriptor>) -> FsResult<Arc<File>> {
@@ -362,8 +447,7 @@ impl HostDescriptor for FsView<'_> {
         }
 
         if !self.queued.contains(&fd) {
-            return HostDescriptor::open_at(&mut self.fs, fd, path_flags, path, oflags, flags)
-                .await;
+            return self.open(fd, path_flags, path, oflags, flags).await;
         }
 
         self.writer.check()?;
@@ -383,8 +467,7 @@ impl HostDescriptor for FsView<'_> {
             }
         }
 
-        let opened = HostDescriptor::open_at(&mut self.fs, fd, path_flags, path, oflags, flags);
-        let opened = match opened.await {
+        let opened = match self.open(fd, path_flags, path, oflags, flags).await {
             // Like truncating at open on Windows.
             Err(error)
                 if cfg!(windows)
@@ -502,19 +585,11 @@ impl HostDirectoryEntryStream for FsView<'_> {
 }
 
 fn check_name(path: &str) -> FsResult<()> {
-    if cfg!(windows) && path.split(['/', '\\']).any(is_invalid_on_windows) {
+    let invalid = |part| !matches!(part, "" | "." | "..") && !windows::is_plain_name(part);
+    if cfg!(windows) && path.split(['/', '\\']).any(invalid) {
         return Err(ErrorCode::Invalid.into());
     }
     Ok(())
-}
-
-fn is_invalid_on_windows(name: &str) -> bool {
-    if matches!(name, "" | "." | "..") {
-        return false;
-    }
-    let forbidden = |c: char| c < ' ' || r#"<>:"|?*"#.contains(c);
-
-    windows::is_device_name(name) || name.ends_with(['.', ' ']) || name.contains(forbidden)
 }
 
 fn borrow<T: 'static>(resource: &Resource<T>) -> Resource<T> {
@@ -1503,6 +1578,7 @@ mod tests {
         writer: Writer,
         queued: QueuedFds,
         disk: Arc<Disk>,
+        calls: Calls,
     }
 
     impl Harness {
@@ -1534,6 +1610,7 @@ mod tests {
                 writer,
                 queued: QueuedFds::default(),
                 disk,
+                calls,
             }
         }
 
@@ -1553,7 +1630,13 @@ mod tests {
 
         /// The view with the roots of `/download` and `/data`.
         fn views(&mut self) -> (FsView<'_>, Resource<Descriptor>, Resource<Descriptor>) {
-            let mut view = FsView::new(self.wasi.filesystem(), &self.writer, &mut self.queued);
+            let inline = self.calls == Calls::Inline;
+            let mut view = FsView::new(
+                self.wasi.filesystem(),
+                &self.writer,
+                &mut self.queued,
+                inline,
+            );
             let mut dirs = preopens::Host::get_directories(&mut view).unwrap();
             let mut root = |mount| {
                 let i = dirs.iter().position(|(_, name)| name == mount).unwrap();
@@ -2029,28 +2112,33 @@ mod tests {
         );
     }
 
-    type Opened = Result<(DescriptorType, DescriptorFlags, Option<Vec<u8>>), Option<ErrorCode>>;
+    type Opened =
+        Result<(DescriptorType, DescriptorFlags, bool, Option<Vec<u8>>), Option<ErrorCode>>;
 
-    /// Opens `path` and returns what the plugin and the disk see afterwards.
+    /// Opens `path` and returns what the plugin and the disk see afterwards,
+    /// including whether it can be renamed while open.
     async fn opened(
-        view: &mut FsView<'_>,
+        view: &mut impl HostDescriptor,
         (root, dir): (&Resource<Descriptor>, &Path),
         path: &str,
-        oflags: OpenFlags,
-        flags: DescriptorFlags,
+        (path_flags, oflags, flags): (PathFlags, OpenFlags, DescriptorFlags),
     ) -> Opened {
-        let no_flags = PathFlags::empty();
         let open =
-            HostDescriptor::open_at(view, borrow(root), no_flags, path.into(), oflags, flags);
+            HostDescriptor::open_at(view, borrow(root), path_flags, path.into(), oflags, flags);
         let fd = open.await.map_err(|error| error.downcast_ref().copied())?;
         let type_ = HostDescriptor::get_type(view, borrow(&fd)).await.unwrap();
         let flags = HostDescriptor::get_flags(view, borrow(&fd)).await.unwrap();
+        let (path, renamed) = (dir.join(path), dir.join("renamed"));
+        let renamable = fs::rename(&path, &renamed).is_ok();
+        if renamable {
+            fs::rename(&renamed, &path).unwrap();
+        }
         HostDescriptor::drop(view, fd).unwrap();
-        Ok((type_, flags, fs::read(dir.join(path)).ok()))
+        Ok((type_, flags, renamable, fs::read(path).ok()))
     }
 
     #[tokio::test]
-    async fn opening_while_writes_are_queued_works_like_stock_wasi() {
+    async fn opening_works_like_stock_wasi() {
         let mut h = Harness::new(&["held.bin"], Calls::Inline);
         let probe = h.probe();
         let (held, _) = open(&probe.dir, "held.bin");
@@ -2071,25 +2159,95 @@ mod tests {
             DescriptorFlags::WRITE,
             DescriptorFlags::READ | DescriptorFlags::WRITE,
         ];
-        let cases: Vec<_> = oflags
-            .flat_map(|oflags| flags.map(|flags| (oflags, flags)))
+        let cases: Vec<_> = [PathFlags::empty(), PathFlags::SYMLINK_FOLLOW]
+            .into_iter()
+            .flat_map(|path_flags| oflags.clone().map(move |oflags| (path_flags, oflags)))
+            .flat_map(|(path_flags, oflags)| flags.map(|flags| (path_flags, oflags, flags)))
             .collect();
-        for dir in [&probe.dir, &probe.data] {
-            for i in 0..cases.len() {
-                fs::create_dir_all(dir.join(format!("{i}/dir"))).unwrap();
-                fs::write(dir.join(format!("{i}/file.bin")), "file").unwrap();
+
+        // With a write queued, truncating waits for the file's writes instead.
+        for held_write in [false, true] {
+            for dir in [&probe.dir, &probe.data] {
+                for side in ["stock", "view"] {
+                    for i in 0..cases.len() {
+                        let case = dir.join(format!("{side}/{held_write}/{i}"));
+                        fs::create_dir_all(case.join("dir")).unwrap();
+                        fs::write(case.join("file.bin"), "file").unwrap();
+                    }
+                }
+            }
+            let _paused = held_write.then(|| probe.hold_a_write(&held));
+            for mount in [
+                (&download, probe.dir.as_path()),
+                (&data, probe.data.as_path()),
+            ] {
+                for (i, &case) in cases.iter().enumerate() {
+                    for name in ["missing", "file.bin", "dir"] {
+                        let path = format!("{held_write}/{i}/{name}");
+                        let (stock_path, view_path) =
+                            (format!("stock/{path}"), format!("view/{path}"));
+                        let stock = opened(&mut view.fs, mount, &stock_path, case).await;
+                        let viewed = opened(&mut view, mount, &view_path, case);
+                        let viewed = viewed.now_or_never().expect("opening waited");
+                        assert_eq!(viewed, stock, "{view_path} with {case:?}");
+                    }
+                }
             }
         }
+    }
 
-        let _paused = probe.hold_a_write(&held);
-        for (i, &(oflags, flags)) in cases.iter().enumerate() {
-            for name in ["missing", "file.bin", "dir"] {
-                let path = format!("{i}/{name}");
-                let stock = opened(&mut view, (&data, &probe.data), &path, oflags, flags).await;
-                let queued = opened(&mut view, (&download, &probe.dir), &path, oflags, flags);
-                let queued = queued.now_or_never().expect("opening waited");
-                assert_eq!(queued, stock, "{name} with {oflags:?} {flags:?}");
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn opening_through_a_junction_works_like_stock_wasi() {
+        let mut h = Harness::new(&[], Calls::Inline);
+        let probe = h.probe();
+        let outside = TempDir::new().unwrap();
+        let junction = |link: &Path, target: &Path| {
+            let mklink = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .args([link, target])
+                .output()
+                .unwrap();
+            assert!(mklink.status.success(), "{mklink:?}");
+        };
+        let mut targets = Vec::new();
+        for (root, mount) in [(&probe.dir, "download"), (&probe.data, "data")] {
+            for side in ["stock", "view"] {
+                let target = outside.path().join(format!("{mount}-{side}"));
+                fs::create_dir(&target).unwrap();
+                fs::write(target.join("outside.bin"), "outside").unwrap();
+                let root = root.join(side);
+                fs::create_dir_all(root.join("real")).unwrap();
+                fs::write(root.join("real/inside.bin"), "inside").unwrap();
+                junction(&root.join("out"), &target);
+                junction(&root.join("in"), &root.join("real"));
+                targets.push(target);
             }
+        }
+        let (mut view, download, data) = h.views();
+
+        for mount in [
+            (&download, probe.dir.as_path()),
+            (&data, probe.data.as_path()),
+        ] {
+            for path in [
+                "out/outside.bin",
+                "out/new.bin",
+                "in/inside.bin",
+                "in/new.bin",
+            ] {
+                for oflags in [OpenFlags::empty(), OpenFlags::CREATE, OpenFlags::TRUNCATE] {
+                    let case = (PathFlags::SYMLINK_FOLLOW, oflags, DescriptorFlags::WRITE);
+                    let stock = opened(&mut view.fs, mount, &format!("stock/{path}"), case).await;
+                    let viewed = opened(&mut view, mount, &format!("view/{path}"), case).await;
+                    assert_eq!(viewed, stock, "{path} in {:?} with {oflags:?}", mount.1);
+                }
+            }
+        }
+        for target in targets {
+            let entries: Vec<_> = fs::read_dir(&target).unwrap().map(Result::unwrap).collect();
+            assert_eq!(entries.len(), 1, "{entries:?}");
+            assert_eq!(fs::read(target.join("outside.bin")).unwrap(), b"outside");
         }
     }
 
@@ -2177,6 +2335,7 @@ mod tests {
     async fn other_names_are_created_everywhere() {
         let names = [
             "game.exe", "a b.txt", ".hidden", "console", "COM10", "nul_", "x.con", "名前",
+            "./here", "dir/./x", "dir//x", "../up", "slash/",
         ];
         for name in names {
             check_creating(name, false).await;
