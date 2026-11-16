@@ -1,7 +1,7 @@
 use gpui::App;
 
-pub(crate) mod grid;
+pub mod grid;
 
-pub(super) fn init(cx: &mut App) {
+pub fn init(cx: &mut App) {
     grid::init(cx);
 }

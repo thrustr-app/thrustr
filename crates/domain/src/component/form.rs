@@ -65,7 +65,7 @@ impl Form for [FormElement] {
     }
 }
 
-pub(crate) fn unique_ids(form: &(impl Form + ?Sized)) -> Result<(), InvalidFormError> {
+pub fn unique_ids(form: &(impl Form + ?Sized)) -> Result<(), InvalidFormError> {
     let mut ids = HashSet::new();
     match form.fields().find(|field| !ids.insert(field.id())) {
         Some(field) => Err(InvalidFormError::DuplicateField(field.id().to_owned())),
@@ -401,18 +401,18 @@ pub enum InvalidCombobox {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub mod tests {
     use super::*;
 
-    pub(crate) fn required(id: &str) -> FormElement {
+    pub fn required(id: &str) -> FormElement {
         text(id, true)
     }
 
-    pub(crate) fn optional(id: &str) -> FormElement {
+    pub fn optional(id: &str) -> FormElement {
         text(id, false)
     }
 
-    pub(crate) fn t(text: &str) -> FieldValue {
+    pub fn t(text: &str) -> FieldValue {
         FieldValue::Text(text.to_owned())
     }
 

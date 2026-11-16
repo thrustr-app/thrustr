@@ -1,7 +1,7 @@
 #[cfg(windows)]
-pub(super) use nt::{Disposition, open_file_beneath};
+pub use nt::{Disposition, open_file_beneath};
 
-pub(super) fn is_plain_name(name: &str) -> bool {
+pub fn is_plain_name(name: &str) -> bool {
     let forbidden = |c: char| c < ' ' || r#"<>:"/\|?*"#.contains(c);
 
     !matches!(name, "" | "." | "..")
@@ -10,7 +10,7 @@ pub(super) fn is_plain_name(name: &str) -> bool {
         && !name.contains(forbidden)
 }
 
-pub(super) fn is_device_name(name: &str) -> bool {
+pub fn is_device_name(name: &str) -> bool {
     let stem = name.split_once('.').map_or(name, |(stem, _)| stem);
     let stem = stem.trim_end_matches(' ');
     let (prefix, rest) = stem.split_at_checked(3).unwrap_or_default();

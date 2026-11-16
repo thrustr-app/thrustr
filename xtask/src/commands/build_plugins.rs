@@ -36,7 +36,7 @@ pub fn build_plugins() -> Result<()> {
 
     // Build all plugins with cargo (specify each plugin package explicitly)
     println!("\n==> Building plugins...");
-    let mut build_args = vec!["build", "--target", "wasm32-wasip2", "--release"];
+    let mut build_args = vec!["build", "--target", "wasm32-wasip3", "--release"];
 
     // Get plugin package names from directory names
     let plugin_names: Vec<String> = plugins
@@ -99,7 +99,7 @@ fn bundle_plugin(plugin_path: &Path, workspace_root: &Path, output_dir: &Path) -
     let wasm_name = format!("{}.wasm", plugin_name.replace('-', "_"));
     let wasm_path = workspace_root
         .join("target")
-        .join("wasm32-wasip2")
+        .join("wasm32-wasip3")
         .join("release")
         .join(&wasm_name);
 

@@ -5,7 +5,7 @@ use domain::component::{
 };
 use serde::{Deserialize, Deserializer, de::Error as _};
 
-pub(super) fn login_form<'de, D: Deserializer<'de>>(
+pub fn login_form<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<LoginForm>, D::Error> {
     Option::<LoginFormDef>::deserialize(deserializer)?
@@ -14,7 +14,7 @@ pub(super) fn login_form<'de, D: Deserializer<'de>>(
         .map_err(D::Error::custom)
 }
 
-pub(super) fn config_schema<'de, D: Deserializer<'de>>(
+pub fn config_schema<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<ConfigSchema>, D::Error> {
     Option::<ConfigSchemaDef>::deserialize(deserializer)?
@@ -70,7 +70,7 @@ impl TryFrom<ConfigSchemaDef> for ConfigSchema {
 enum FormElementDef {
     Text(TextFieldDef),
     Combobox(ComboboxFieldDef),
-    Hbox { elements: Vec<FormElementDef> },
+    Hbox { elements: Vec<Self> },
 }
 
 fn elements(defs: Vec<FormElementDef>) -> Result<Vec<FormElement>, Error> {
@@ -171,18 +171,17 @@ impl TryFrom<ComboboxFieldDef> for ComboboxField {
 
     fn try_from(def: ComboboxFieldDef) -> Result<Self, Self::Error> {
         let options = def.options.into();
-        let mut field = match def.multiple {
-            true => Self::multiple(def.id, def.label, options, def.default)?,
-            false => {
-                let mut defaults = def.default.into_iter();
-                let default = defaults.next();
-                ensure!(
-                    defaults.next().is_none(),
-                    "`{}` allows a single value but has many defaults",
-                    def.id
-                );
-                Self::single(def.id, def.label, options, default)?
-            }
+        let mut field = if def.multiple {
+            Self::multiple(def.id, def.label, options, def.default)?
+        } else {
+            let mut defaults = def.default.into_iter();
+            let default = defaults.next();
+            ensure!(
+                defaults.next().is_none(),
+                "`{}` allows a single value but has many defaults",
+                def.id
+            );
+            Self::single(def.id, def.label, options, default)?
         };
         field.description = def.description;
         field.placeholder = def.placeholder;

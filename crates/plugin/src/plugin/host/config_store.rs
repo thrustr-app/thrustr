@@ -7,7 +7,8 @@ use domain::component::Form;
 
 impl ConfigStoreHost for PluginState {
     fn get(&mut self, field_id: String) -> Result<FieldValue, ConfigStoreError> {
-        let Some(field) = self
+        let runtime = &self.runtime;
+        let Some(field) = runtime
             .config_schema
             .as_deref()
             .and_then(|schema| schema.field(&field_id))
@@ -17,10 +18,10 @@ impl ConfigStoreHost for PluginState {
             )));
         };
 
-        let stored = self
+        let stored = runtime
             .storage
-            .get_config_value(self.id.as_str(), &field_id)
-            .map_err(|e| ConfigStoreError::Other(e.to_string()))?;
+            .get_config_value(runtime.id.as_str(), &field_id)
+            .map_err(|e| ConfigStoreError::Other(format!("{e:#}")))?;
 
         Ok(field
             .resolve(stored)

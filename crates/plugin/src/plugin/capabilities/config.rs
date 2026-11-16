@@ -20,7 +20,7 @@ impl PluginConfig {
         let Some(schema) = schema else {
             ensure!(
                 indices.is_none(),
-                "plugin exports Config but its manifest has no [config]"
+                "plugin exports Config but its manifest has no `config`"
             );
             return Ok(None);
         };
@@ -57,6 +57,7 @@ impl Config for PluginConfig {
         guest_call!(self.runtime, indices, |config, accessor| {
             config.call_validate(accessor, fields)
         })
+        .await
     }
 
     async fn options(&self, field_id: &str) -> Result<Vec<ComboboxOption>, Error> {
@@ -66,7 +67,8 @@ impl Config for PluginConfig {
         let field_id = field_id.to_owned();
         let options = guest_call!(self.runtime, indices, |config, accessor| {
             config.call_options(accessor, field_id)
-        })?;
+        })
+        .await?;
         Ok(options
             .into_iter()
             .map(|option| ComboboxOption {

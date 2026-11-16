@@ -25,6 +25,20 @@ impl PluginStorefront {
             indices,
         }))
     }
+
+    fn to_new_game(&self, game: types::Game) -> NewGame {
+        NewGame {
+            name: game.name,
+            source: GameSource {
+                id: self.runtime.id.to_string(),
+                lookup_id: game.lookup_id,
+                external_ids: game.external_ids,
+            },
+            cover_url: game.cover_url,
+            summary: game.summary,
+            description: game.description,
+        }
+    }
 }
 
 #[async_trait]
@@ -32,7 +46,8 @@ impl Storefront for PluginStorefront {
     async fn games(&self) -> Result<Vec<NewGame>, Error> {
         let games = guest_call!(self.runtime, self.indices, |storefront, accessor| {
             storefront.call_get_games(accessor)
-        })?;
+        })
+        .await?;
 
         Ok(games.into_iter().map(|g| self.to_new_game(g)).collect())
     }
@@ -44,7 +59,8 @@ impl Storefront for PluginStorefront {
     ) -> Result<Vec<GameVersion>, Error> {
         let versions = guest_call!(self.runtime, self.indices, |storefront, accessor| {
             storefront.call_get_game_versions(accessor, game.into(), version_path)
-        })?;
+        })
+        .await?;
 
         Ok(versions.into_iter().map(Into::into).collect())
     }
@@ -56,7 +72,8 @@ impl Storefront for PluginStorefront {
     ) -> Result<GameVersionDetails, Error> {
         let details = guest_call!(self.runtime, self.indices, |storefront, accessor| {
             storefront.call_get_game_version_details(accessor, game.into(), version_path)
-        })?;
+        })
+        .await?;
 
         Ok(details.into())
     }
@@ -95,25 +112,9 @@ impl Storefront for PluginStorefront {
     }
 }
 
-impl PluginStorefront {
-    fn to_new_game(&self, game: types::Game) -> NewGame {
-        NewGame {
-            name: game.name,
-            source: GameSource {
-                id: self.runtime.id.to_string(),
-                lookup_id: game.lookup_id,
-                external_ids: game.external_ids,
-            },
-            cover_url: game.cover_url,
-            summary: game.summary,
-            description: game.description,
-        }
-    }
-}
-
 impl From<types::GameVersion> for GameVersion {
     fn from(value: types::GameVersion) -> Self {
-        GameVersion {
+        Self {
             id: value.id,
             pretty_name: value.pretty_name,
             platform: value.platform.into(),
@@ -124,7 +125,7 @@ impl From<types::GameVersion> for GameVersion {
 
 impl From<types::GameVersionDetails> for GameVersionDetails {
     fn from(value: types::GameVersionDetails) -> Self {
-        GameVersionDetails {
+        Self {
             install_size: value.install_size,
             download_size: value.download_size,
         }
@@ -134,18 +135,18 @@ impl From<types::GameVersionDetails> for GameVersionDetails {
 impl From<types::Platform> for Platform {
     fn from(value: types::Platform) -> Self {
         match value {
-            types::Platform::Windows => Platform::Windows,
-            types::Platform::Linux => Platform::Linux,
-            types::Platform::Macos => Platform::Macos,
-            types::Platform::Android => Platform::Android,
-            types::Platform::Other => Platform::Other,
+            types::Platform::Windows => Self::Windows,
+            types::Platform::Linux => Self::Linux,
+            types::Platform::Macos => Self::Macos,
+            types::Platform::Android => Self::Android,
+            types::Platform::Other => Self::Other,
         }
     }
 }
 
 impl From<Game> for types::Game {
     fn from(value: Game) -> Self {
-        types::Game {
+        Self {
             name: value.name,
             lookup_id: value.source.lookup_id,
             external_ids: value.source.external_ids.into_iter().collect(),

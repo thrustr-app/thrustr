@@ -2,7 +2,7 @@ use super::windows::is_device_name;
 use domain::component::{ConfigSchema, LoginForm};
 use semver::Version;
 use serde::Deserialize;
-use std::{fmt, sync::Arc};
+use std::fmt;
 use thiserror::Error;
 
 mod form;
@@ -25,7 +25,7 @@ pub struct PluginInfo {
     pub version: Version,
     pub description: Option<String>,
     #[serde(default, rename = "allowed-hosts")]
-    pub allowed_hosts: Arc<[String]>,
+    pub allowed_hosts: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]

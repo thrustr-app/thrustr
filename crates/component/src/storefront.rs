@@ -182,7 +182,7 @@ impl StorefrontHandle {
 }
 
 #[derive(Default)]
-pub(crate) struct VersionDetailsCache(DashMap<(GameId, Vec<String>), (Moment, GameVersionDetails)>);
+pub struct VersionDetailsCache(DashMap<(GameId, Vec<String>), (Moment, GameVersionDetails)>);
 
 impl VersionDetailsCache {
     fn get(&self, game_id: GameId, version_path: &[String]) -> Option<GameVersionDetails> {

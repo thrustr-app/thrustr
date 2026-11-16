@@ -15,23 +15,23 @@ mod state;
 mod windows;
 
 pub use capabilities::{PluginAuth, PluginConfig, PluginScheduler, PluginStorefront};
-pub(crate) use host::add_fs_to_linker;
-pub use host::{PluginCache, Reporter, http_client};
-pub use manifest::*;
+pub use host::Reporter;
+pub use host::add_fs_to_linker;
+pub use host::{AllowedHosts, PluginCache, http_client};
+pub use manifest::{PluginId, PluginInfo, PluginManifest};
 pub use runtime::PluginRuntime;
 pub(crate) use runtime::{guest_call, guest_fn};
-pub(crate) use state::DownloadCall;
-pub use state::PluginState;
+pub use state::{DownloadCall, PluginState};
 
 pub struct Plugin {
-    pub(crate) info: PluginInfo,
-    pub(crate) icon: Option<Image>,
-    pub(crate) runtime: Arc<PluginRuntime>,
-    pub(crate) base: base::GuestIndices,
-    pub(crate) auth: Option<Arc<dyn Auth>>,
-    pub(crate) config: Option<Arc<dyn Config>>,
-    pub(crate) storefront: Option<Arc<dyn Storefront>>,
-    pub(crate) scheduler: Option<Arc<dyn Scheduler>>,
+    pub info: PluginInfo,
+    pub icon: Option<Image>,
+    pub runtime: Arc<PluginRuntime>,
+    pub base: base::GuestIndices,
+    pub auth: Option<Arc<dyn Auth>>,
+    pub config: Option<Arc<dyn Config>>,
+    pub storefront: Option<Arc<dyn Storefront>>,
+    pub scheduler: Option<Arc<dyn Scheduler>>,
 }
 
 #[async_trait]
@@ -68,15 +68,16 @@ impl Component for Plugin {
         guest_call!(self.runtime, self.base, |base, accessor| {
             base.call_init(accessor)
         })
+        .await
     }
 }
 
 impl From<PluginError> for ComponentError {
     fn from(value: PluginError) -> Self {
         match value {
-            PluginError::Auth(msg) => ComponentError::Auth(msg),
-            PluginError::Config(msg) => ComponentError::Config(msg),
-            PluginError::Other(msg) => ComponentError::Other(msg),
+            PluginError::Auth(msg) => Self::Auth(msg),
+            PluginError::Config(msg) => Self::Config(msg),
+            PluginError::Other(msg) => Self::Other(msg),
         }
     }
 }
@@ -84,8 +85,8 @@ impl From<PluginError> for ComponentError {
 impl From<FieldValue> for PluginFieldValue {
     fn from(value: FieldValue) -> Self {
         match value {
-            FieldValue::Text(text) => PluginFieldValue::Text(text),
-            FieldValue::List(values) => PluginFieldValue::List(values),
+            FieldValue::Text(text) => Self::Text(text),
+            FieldValue::List(values) => Self::List(values),
         }
     }
 }

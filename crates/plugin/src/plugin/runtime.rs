@@ -1,4 +1,4 @@
-use crate::plugin::{DownloadCall, PluginCache, PluginId, PluginState, host::Writer};
+use crate::plugin::{AllowedHosts, DownloadCall, PluginCache, PluginId, PluginState, host::Writer};
 use crate::wit::{export_name, thrustr::plugin::types::Error as PluginError};
 use component::ComponentLink;
 use domain::component::{ComponentStorage, ConfigSchema, Error as ComponentError};
@@ -16,7 +16,7 @@ const FUEL_YIELD_INTERVAL: u64 = 10_000_000;
 
 pub struct PluginRuntime {
     pub id: PluginId,
-    pub allowed_hosts: Arc<[String]>,
+    pub allowed_hosts: Arc<AllowedHosts>,
     pub engine: Engine,
     pub pre: InstancePre<PluginState>,
     pub storage: Arc<dyn ComponentStorage>,
@@ -24,7 +24,7 @@ pub struct PluginRuntime {
     pub http_client: Client,
     pub link: ComponentLink,
     pub data_dir: PathBuf,
-    pub cache: Arc<PluginCache>,
+    pub cache: PluginCache,
     pub config_schema: Option<Arc<ConfigSchema>>,
 }
 
@@ -63,7 +63,7 @@ impl PluginRuntime {
     }
 
     /// Runs `task` on the plugin runtime, aborting it if dropped.
-    pub(crate) async fn spawn<T: Send + 'static>(
+    pub async fn spawn<T: Send + 'static>(
         &self,
         task: impl Future<Output = Result<T, ComponentError>> + Send + 'static,
     ) -> Result<T, ComponentError> {
@@ -74,8 +74,8 @@ impl PluginRuntime {
 
     /// Instantiates the plugin in a new store and runs `f` on it, or returns
     /// `None` if cancelled. Either way, returns once its writes have stopped.
-    pub(crate) async fn run<R, F, Fut>(
-        &self,
+    pub async fn run<R, F, Fut>(
+        self: &Arc<Self>,
         download: Option<DownloadCall>,
         cancel: &CancellationToken,
         f: F,
@@ -93,7 +93,7 @@ impl PluginRuntime {
 
             f(instance, store)
                 .await
-                .map_err(|e| ComponentError::Other(format!("wasm call failed: {e}")))?
+                .map_err(|e| ComponentError::Other(format!("wasm call failed: {e:#}")))?
                 .map_err(ComponentError::from)
         };
 
@@ -108,7 +108,7 @@ impl PluginRuntime {
     }
 
     async fn instantiate(
-        &self,
+        self: &Arc<Self>,
         download: Option<DownloadCall>,
         writer: Writer,
     ) -> wasmtime::Result<(Instance, Store<PluginState>)> {
@@ -118,8 +118,11 @@ impl PluginRuntime {
             MAX_FUEL
         };
 
-        let mut store = Store::new(&self.engine, PluginState::new(self, download, writer)?);
-        store.limiter(|state| state.limits() as &mut dyn ResourceLimiter);
+        let mut store = Store::new(
+            &self.engine,
+            PluginState::new(self.clone(), download, writer)?,
+        );
+        store.limiter(|state| &mut state.limits as &mut dyn ResourceLimiter);
         store.set_fuel(fuel)?;
         store.fuel_async_yield_interval(Some(FUEL_YIELD_INTERVAL))?;
 
@@ -131,11 +134,9 @@ impl PluginRuntime {
 /// Runs one regular guest call on the export behind `indices`.
 macro_rules! guest_call {
     ($runtime:expr, $indices:expr, |$guest:ident, $accessor:ident| $call:expr) => {
-        $runtime
-            .call($crate::plugin::guest_fn!($indices, |$guest, $accessor| {
-                $call
-            }))
-            .await
+        $runtime.call($crate::plugin::guest_fn!($indices, |$guest, $accessor| {
+            $call
+        }))
     };
 }
 pub(crate) use guest_call;

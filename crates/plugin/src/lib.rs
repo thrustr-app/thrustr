@@ -2,7 +2,7 @@ mod manager;
 mod plugin;
 mod service;
 
-pub use service::*;
+pub use service::PluginService;
 
 mod wit {
     use wasmtime::component::bindgen;
@@ -19,7 +19,7 @@ mod wit {
     const PACKAGE: &str = "thrustr:plugin";
     const VERSION: &str = "0.1.0";
 
-    pub(crate) fn export_name(interface: &str) -> String {
+    pub fn export_name(interface: &str) -> String {
         format!("{PACKAGE}/{interface}@{VERSION}")
     }
 

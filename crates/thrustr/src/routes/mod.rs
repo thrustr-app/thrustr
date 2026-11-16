@@ -24,7 +24,7 @@ pub use settings::*;
 
 pub const ROUTE_PADDING: Rems = rems(3.);
 
-pub(crate) fn cover_path(hash: &str) -> Option<Arc<Path>> {
+pub fn cover_path(hash: &str) -> Option<Arc<Path>> {
     paths::artwork_path(hash, "webp").ok().map(Into::into)
 }
 

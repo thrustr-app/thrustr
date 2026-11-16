@@ -10,9 +10,9 @@ use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 const SCRATCH_DIR: &str = ".thrustr";
 
 #[derive(Default)]
-pub(crate) struct DirLocks(Mutex<HashMap<PathBuf, Weak<AsyncMutex<()>>>>);
+pub struct DirLocks(Mutex<HashMap<PathBuf, Weak<AsyncMutex<()>>>>);
 
-pub(crate) type DirLock = OwnedMutexGuard<()>;
+pub type DirLock = OwnedMutexGuard<()>;
 
 impl DirLocks {
     pub(crate) fn lock(&self, dir: &Path) -> impl Future<Output = DirLock> + use<> {
@@ -44,11 +44,11 @@ impl DirLocks {
     }
 }
 
-pub(crate) fn remove_scratch(dir: &Path) -> io::Result<()> {
+pub fn remove_scratch(dir: &Path) -> io::Result<()> {
     remove_dir(&dir.join(SCRATCH_DIR))
 }
 
-pub(crate) fn remove_dir(dir: &Path) -> io::Result<()> {
+pub fn remove_dir(dir: &Path) -> io::Result<()> {
     match fs::remove_dir_all(dir) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         result => result,

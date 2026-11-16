@@ -2,7 +2,7 @@ use std::{collections::VecDeque, time::Duration};
 use tokio::time::Instant;
 
 #[derive(Debug)]
-pub(crate) struct Meter {
+pub struct Meter {
     window: Duration,
     samples: VecDeque<(Instant, u64)>,
 }

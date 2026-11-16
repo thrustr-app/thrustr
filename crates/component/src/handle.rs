@@ -260,7 +260,7 @@ impl ComponentHandle {
 
 /// A [`ComponentHandle`] that does not keep the component alive.
 #[derive(Debug, Clone)]
-pub(crate) struct WeakComponentHandle(Weak<Inner>);
+pub struct WeakComponentHandle(Weak<Inner>);
 
 impl WeakComponentHandle {
     pub(crate) fn upgrade(&self) -> Option<ComponentHandle> {
@@ -296,7 +296,7 @@ impl ComponentLink {
 /// Component errors are reported through [`Permit::finish`], as they can
 /// change the status. Any other failure drops the permit, which cancels the
 /// operation.
-pub(crate) struct Permit {
+pub struct Permit {
     handle: ComponentHandle,
     running: Option<Running>,
 }
@@ -378,7 +378,7 @@ impl Drop for Initializing<'_> {
     }
 }
 
-pub(crate) type Result<T> = std::result::Result<T, OperationError>;
+pub type Result<T> = std::result::Result<T, OperationError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OperationError {

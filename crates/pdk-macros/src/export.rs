@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Error, ItemImpl};
 
-pub(crate) fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
+pub fn expand(item: ItemImpl) -> syn::Result<TokenStream> {
     let (Some((path, _)), None) = (&item.trait_, &item.modifiers.polarity) else {
         return Err(Error::new_spanned(
             item.impl_token,

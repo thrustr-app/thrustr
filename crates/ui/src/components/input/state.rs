@@ -371,7 +371,7 @@ impl InputState {
         }
 
         if self.selected_range.end < self.selected_range.start {
-            self.selection_reversed = !self.selection_reversed;
+            self.selection_reversed.toggle();
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
 

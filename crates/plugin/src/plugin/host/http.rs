@@ -39,19 +39,19 @@ type SendRequestFuture =
 
 pub struct OutboundHttp {
     client: Client,
-    allowed_hosts: AllowedHosts,
+    allowed_hosts: Arc<AllowedHosts>,
     reporter: Option<Arc<dyn DownloadReporter>>,
 }
 
 impl OutboundHttp {
     pub fn new(
         client: Client,
-        allowed_hosts: Arc<[String]>,
+        allowed_hosts: Arc<AllowedHosts>,
         reporter: Option<Arc<dyn DownloadReporter>>,
     ) -> Self {
         Self {
             client,
-            allowed_hosts: AllowedHosts::new(allowed_hosts),
+            allowed_hosts,
             reporter,
         }
     }
@@ -399,11 +399,10 @@ fn hyper_error(err: &hyper::Error) -> Option<Error> {
     }
 }
 
-#[derive(Default)]
-struct AllowedHosts(Box<[String]>);
+pub struct AllowedHosts(Box<[String]>);
 
 impl AllowedHosts {
-    fn new(hosts: Arc<[String]>) -> Self {
+    pub fn new(hosts: &[String]) -> Self {
         Self(hosts.iter().map(|host| host.to_ascii_lowercase()).collect())
     }
 
@@ -418,26 +417,23 @@ impl AllowedHosts {
 }
 
 fn matches_pattern(pattern: &str, host: &str) -> bool {
-    let mut chunks = pattern.split('*');
+    let Some((head, suffix)) = pattern.rsplit_once('*') else {
+        return pattern == host;
+    };
+    let mut chunks = head.split('*');
     let prefix = chunks.next().unwrap_or_default();
 
     let Some(mut rest) = host.strip_prefix(prefix) else {
         return false;
     };
-
-    let chunks: Vec<&str> = chunks.collect();
-    let Some((suffix, inner)) = chunks.split_last() else {
-        return rest.is_empty();
-    };
-
-    for chunk in inner {
+    for chunk in chunks {
         let Some(at) = rest.find(chunk) else {
             return false;
         };
         rest = &rest[at + chunk.len()..];
     }
 
-    rest.len() >= suffix.len() && rest.ends_with(suffix)
+    rest.ends_with(suffix)
 }
 
 #[cfg(test)]
@@ -461,8 +457,8 @@ mod tests {
 
     #[track_caller]
     fn check_allowed(patterns: &[&str], host: &str, expected: bool) {
-        let hosts = patterns.iter().map(|p| p.to_string()).collect::<Vec<_>>();
-        let allowed = AllowedHosts::new(hosts.as_slice().into()).is_allowed(Some(host));
+        let hosts = patterns.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let allowed = AllowedHosts::new(&hosts).is_allowed(Some(host));
 
         assert_eq!(allowed, expected, "patterns {patterns:?} against {host}");
     }
@@ -514,7 +510,8 @@ mod tests {
     }
 
     async fn send(allowed: &str, request: Request<WasiBody>) -> Result<(StatusCode, Bytes), Error> {
-        let mut hooks = OutboundHttp::new(http_client(), [allowed.to_string()][..].into(), None);
+        let allowed = Arc::new(AllowedHosts::new(&[allowed.to_string()]));
+        let mut hooks = OutboundHttp::new(http_client(), allowed, None);
 
         let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));
         let (response, _io) = Box::into_pin(sending).await?;
@@ -655,7 +652,7 @@ mod tests {
     }
 
     async fn download(request: Request<WasiBody>, recorder: &Arc<Recorder>) -> Response<WasiBody> {
-        let allowed = ["127.0.0.1".to_string()][..].into();
+        let allowed = Arc::new(AllowedHosts::new(&["127.0.0.1".to_string()]));
         let mut hooks = OutboundHttp::new(http_client(), allowed, Some(recorder.clone()));
 
         let sending = hooks.send_request(request, None, Box::new(async { Ok(()) }));

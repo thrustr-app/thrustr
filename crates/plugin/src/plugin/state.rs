@@ -1,15 +1,11 @@
 use crate::{
     plugin::{
-        PluginId, PluginRuntime,
-        host::{FsView, OutboundHttp, PluginCache, QueuedFds, Writer},
+        PluginRuntime,
+        host::{FsState, FsView, OutboundHttp, QueuedFds, Writer},
     },
     wit::thrustr::plugin::types::Host,
 };
-use component::ComponentLink;
-use domain::{
-    component::{ComponentStorage, ConfigSchema},
-    download::DownloadReporter,
-};
+use domain::download::DownloadReporter;
 use std::{fs, path::PathBuf, sync::Arc};
 use wasmtime::{StoreLimits, StoreLimitsBuilder, component::HasData, error::Context};
 use wasmtime_wasi::{
@@ -21,33 +17,29 @@ const MAX_MEMORY: usize = 256 * 1024 * 1024;
 /// Stock Wasmtime fs calls run inline, so none outlives a cancelled call.
 const ALLOW_BLOCKING_CURRENT_THREAD: bool = true;
 
-pub(crate) const DOWNLOAD_MOUNT: &str = "/download";
-pub(crate) const DATA_MOUNT: &str = "/data";
+pub const DOWNLOAD_MOUNT: &str = "/download";
+pub const DATA_MOUNT: &str = "/data";
 
 pub struct PluginState {
+    pub runtime: Arc<PluginRuntime>,
+    pub reporter: Option<Arc<dyn DownloadReporter>>,
+    pub limits: StoreLimits,
     ctx: WasiCtx,
     http_ctx: WasiHttpCtx,
     hooks: OutboundHttp,
     table: ResourceTable,
-    limits: StoreLimits,
-    pub(crate) id: PluginId,
-    pub(crate) storage: Arc<dyn ComponentStorage>,
-    pub(crate) link: ComponentLink,
-    pub(crate) cache: Arc<PluginCache>,
-    pub(crate) config_schema: Option<Arc<ConfigSchema>>,
-    pub(crate) reporter: Option<Arc<dyn DownloadReporter>>,
     writer: Writer,
     queued_fds: QueuedFds,
 }
 
-pub(crate) struct DownloadCall {
-    pub(crate) dir: PathBuf,
-    pub(crate) reporter: Arc<dyn DownloadReporter>,
+pub struct DownloadCall {
+    pub dir: PathBuf,
+    pub reporter: Arc<dyn DownloadReporter>,
 }
 
 impl PluginState {
-    pub(crate) fn new(
-        runtime: &PluginRuntime,
+    pub fn new(
+        runtime: Arc<PluginRuntime>,
         download: Option<DownloadCall>,
         writer: Writer,
     ) -> wasmtime::Result<Self> {
@@ -85,22 +77,16 @@ impl PluginState {
             ),
             table: ResourceTable::new(),
             limits: StoreLimitsBuilder::new().memory_size(MAX_MEMORY).build(),
-            id: runtime.id.clone(),
-            storage: runtime.storage.clone(),
-            link: runtime.link.clone(),
-            cache: runtime.cache.clone(),
-            config_schema: runtime.config_schema.clone(),
+            runtime,
             reporter,
             writer,
             queued_fds: QueuedFds::default(),
         })
     }
+}
 
-    pub(crate) fn limits(&mut self) -> &mut StoreLimits {
-        &mut self.limits
-    }
-
-    pub(crate) fn fs(&mut self) -> FsView<'_> {
+impl FsState for PluginState {
+    fn fs(&mut self) -> FsView<'_> {
         let fs = WasiFilesystemCtxView {
             ctx: self.ctx.filesystem(),
             table: &mut self.table,
@@ -117,7 +103,7 @@ impl PluginState {
 impl Host for PluginState {}
 
 impl HasData for PluginState {
-    type Data<'a> = &'a mut PluginState;
+    type Data<'a> = &'a mut Self;
 }
 
 impl WasiView for PluginState {

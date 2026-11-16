@@ -16,13 +16,14 @@ impl TimersHost for PluginState {
             interval: interval_ms.map(Duration::from_millis),
         };
 
-        self.link
+        self.runtime
+            .link
             .timers()
             .schedule(task, args, schedule)
-            .map_err(|e| TimersError::Other(e.to_string()))
+            .map_err(|e| TimersError::Other(format!("{e:#}")))
     }
 
     fn cancel(&mut self, task: String) {
-        self.link.timers().cancel(&task);
+        self.runtime.link.timers().cancel(&task);
     }
 }

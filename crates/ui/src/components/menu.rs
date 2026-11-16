@@ -8,10 +8,10 @@ use gpui::{
 use std::time::Duration;
 use theme::{Theme, ThemeExt};
 
-pub(crate) const BORDER: Pixels = px(1.);
-pub(crate) const MENU_PADDING: Rems = rems(0.25);
-pub(crate) const MENU_MAX_HEIGHT: Rems = rems(16.);
-pub(crate) const MENU_SCROLLBAR: ScrollbarVariant = ScrollbarVariant::Thin;
+pub const BORDER: Pixels = px(1.);
+pub const MENU_PADDING: Rems = rems(0.25);
+pub const MENU_MAX_HEIGHT: Rems = rems(16.);
+pub const MENU_SCROLLBAR: ScrollbarVariant = ScrollbarVariant::Thin;
 const MENU_GAP: Rems = rems(0.25);
 const MENU_SLIDE: Pixels = px(6.);
 const MENU_OPEN_DURATION: Duration = Duration::from_millis(150);
@@ -43,7 +43,7 @@ fn item_py(size: Size) -> Rems {
     }
 }
 
-pub(crate) fn item(
+pub fn item(
     content: impl IntoElement,
     size: Size,
     highlighted: bool,
@@ -70,9 +70,7 @@ pub(crate) fn item(
         )
 }
 
-pub(crate) fn track_bounds(
-    on_bounds: impl Fn(Bounds<Pixels>, &mut App) + 'static,
-) -> impl IntoElement {
+pub fn track_bounds(on_bounds: impl Fn(Bounds<Pixels>, &mut App) + 'static) -> impl IntoElement {
     canvas(
         // The canvas covers the padding box, so grow it over the border.
         move |bounds, _, cx| on_bounds(bounds.dilate(BORDER), cx),
@@ -82,7 +80,7 @@ pub(crate) fn track_bounds(
     .inset_0()
 }
 
-pub(crate) fn popover(
+pub fn popover(
     trigger: gpui::Size<Pixels>,
     content: impl IntoElement,
     on_dismiss: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
@@ -121,7 +119,7 @@ pub(crate) fn popover(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Step {
+pub enum Step {
     Prev,
     Next,
     First,

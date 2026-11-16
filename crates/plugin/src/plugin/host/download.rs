@@ -12,7 +12,7 @@ use wasmtime_wasi::WasiView;
 pub struct Reporter;
 
 impl PluginState {
-    pub(crate) fn reporter(&mut self) -> wasmtime::Result<Resource<Reporter>> {
+    pub fn reporter(&mut self) -> wasmtime::Result<Resource<Reporter>> {
         let reporter = self.ctx().table.push(Reporter)?;
         Ok(Resource::new_borrow(reporter.rep()))
     }
@@ -36,11 +36,11 @@ impl HostReporter for PluginState {
 impl From<PluginPhase> for DownloadPhase {
     fn from(value: PluginPhase) -> Self {
         match value {
-            PluginPhase::Preparing => DownloadPhase::Preparing,
-            PluginPhase::Downloading(progress) => DownloadPhase::Downloading(progress.into()),
-            PluginPhase::Installing(progress) => DownloadPhase::Installing(progress.into()),
-            PluginPhase::Verifying(progress) => DownloadPhase::Verifying(progress.into()),
-            PluginPhase::Finalizing => DownloadPhase::Finalizing,
+            PluginPhase::Preparing => Self::Preparing,
+            PluginPhase::Downloading(progress) => Self::Downloading(progress.into()),
+            PluginPhase::Installing(progress) => Self::Installing(progress.into()),
+            PluginPhase::Verifying(progress) => Self::Verifying(progress.into()),
+            PluginPhase::Finalizing => Self::Finalizing,
         }
     }
 }
