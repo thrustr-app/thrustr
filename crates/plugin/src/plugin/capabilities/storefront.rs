@@ -1,14 +1,16 @@
 use crate::{
-    plugin::{PluginRuntime, guest_call},
+    plugin::{DownloadCall, PluginRuntime, guest_call, guest_fn},
     wit::{exports::thrustr::plugin::storefront, thrustr::plugin::types},
 };
 use async_trait::async_trait;
 use domain::{
     component::{Error, Storefront},
+    download::{DownloadOutcome, DownloadReporter},
     game::{Game, GameSource, GameVersion, GameVersionDetails, NewGame},
     platform::Platform,
 };
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
+use tokio_util::sync::CancellationToken;
 
 pub struct PluginStorefront {
     runtime: Arc<PluginRuntime>,
@@ -23,49 +25,12 @@ impl PluginStorefront {
             indices,
         }))
     }
-}
 
-#[async_trait]
-impl Storefront for PluginStorefront {
-    async fn games(&self) -> Result<Vec<NewGame>, Error> {
-        let games = guest_call!(self.runtime, self.indices, |storefront, accessor| {
-            storefront.call_get_games(accessor)
-        })?;
-
-        Ok(games.into_iter().map(|g| self.to_new_game(g)).collect())
-    }
-
-    async fn game_versions(
-        &self,
-        game: Game,
-        path: Vec<String>,
-    ) -> Result<Vec<GameVersion>, Error> {
-        let versions = guest_call!(self.runtime, self.indices, |storefront, accessor| {
-            storefront.call_get_game_versions(accessor, game.into(), path)
-        })?;
-
-        Ok(versions.into_iter().map(Into::into).collect())
-    }
-
-    async fn game_version_details(
-        &self,
-        game: Game,
-        path: Vec<String>,
-    ) -> Result<GameVersionDetails, Error> {
-        let details = guest_call!(self.runtime, self.indices, |storefront, accessor| {
-            storefront.call_get_game_version_details(accessor, game.into(), path)
-        })?;
-
-        Ok(details.into())
-    }
-}
-
-impl PluginStorefront {
     fn to_new_game(&self, game: types::Game) -> NewGame {
         NewGame {
             name: game.name,
             source: GameSource {
-                id: self.runtime.id.clone(),
+                id: self.runtime.id.to_string(),
                 lookup_id: game.lookup_id,
                 external_ids: game.external_ids,
             },
@@ -76,9 +41,80 @@ impl PluginStorefront {
     }
 }
 
+#[async_trait]
+impl Storefront for PluginStorefront {
+    async fn games(&self) -> Result<Vec<NewGame>, Error> {
+        let games = guest_call!(self.runtime, self.indices, |storefront, accessor| {
+            storefront.call_get_games(accessor)
+        })
+        .await?;
+
+        Ok(games.into_iter().map(|g| self.to_new_game(g)).collect())
+    }
+
+    async fn game_versions(
+        &self,
+        game: Game,
+        version_path: Vec<String>,
+    ) -> Result<Vec<GameVersion>, Error> {
+        let versions = guest_call!(self.runtime, self.indices, |storefront, accessor| {
+            storefront.call_get_game_versions(accessor, game.into(), version_path)
+        })
+        .await?;
+
+        Ok(versions.into_iter().map(Into::into).collect())
+    }
+
+    async fn game_version_details(
+        &self,
+        game: Game,
+        version_path: Vec<String>,
+    ) -> Result<GameVersionDetails, Error> {
+        let details = guest_call!(self.runtime, self.indices, |storefront, accessor| {
+            storefront.call_get_game_version_details(accessor, game.into(), version_path)
+        })
+        .await?;
+
+        Ok(details.into())
+    }
+
+    async fn download(
+        &self,
+        game: Game,
+        version_path: Vec<String>,
+        target_dir: PathBuf,
+        reporter: Arc<dyn DownloadReporter>,
+        cancel: CancellationToken,
+    ) -> Result<DownloadOutcome, Error> {
+        let call = guest_fn!(self.indices, |storefront, accessor| async {
+            let reporter = accessor.with(|mut access| access.get().reporter())?;
+            storefront
+                .call_download(accessor, game.into(), version_path, reporter)
+                .await
+        });
+
+        let runtime = self.runtime.clone();
+        self.runtime
+            .spawn(async move {
+                tokio::fs::create_dir_all(&target_dir).await.map_err(|e| {
+                    Error::Other(format!("creating {} failed: {e}", target_dir.display()))
+                })?;
+                let download = DownloadCall {
+                    dir: target_dir,
+                    reporter,
+                };
+                Ok(match runtime.run(Some(download), &cancel, call).await? {
+                    Some(()) => DownloadOutcome::Completed,
+                    None => DownloadOutcome::Cancelled,
+                })
+            })
+            .await
+    }
+}
+
 impl From<types::GameVersion> for GameVersion {
     fn from(value: types::GameVersion) -> Self {
-        GameVersion {
+        Self {
             id: value.id,
             pretty_name: value.pretty_name,
             platform: value.platform.into(),
@@ -89,7 +125,7 @@ impl From<types::GameVersion> for GameVersion {
 
 impl From<types::GameVersionDetails> for GameVersionDetails {
     fn from(value: types::GameVersionDetails) -> Self {
-        GameVersionDetails {
+        Self {
             install_size: value.install_size,
             download_size: value.download_size,
         }
@@ -99,18 +135,18 @@ impl From<types::GameVersionDetails> for GameVersionDetails {
 impl From<types::Platform> for Platform {
     fn from(value: types::Platform) -> Self {
         match value {
-            types::Platform::Windows => Platform::Windows,
-            types::Platform::Linux => Platform::Linux,
-            types::Platform::Macos => Platform::Macos,
-            types::Platform::Android => Platform::Android,
-            types::Platform::Other => Platform::Other,
+            types::Platform::Windows => Self::Windows,
+            types::Platform::Linux => Self::Linux,
+            types::Platform::Macos => Self::Macos,
+            types::Platform::Android => Self::Android,
+            types::Platform::Other => Self::Other,
         }
     }
 }
 
 impl From<Game> for types::Game {
     fn from(value: Game) -> Self {
-        types::Game {
+        Self {
             name: value.name,
             lookup_id: value.source.lookup_id,
             external_ids: value.source.external_ids.into_iter().collect(),

@@ -1,15 +1,17 @@
-use crate::{Icon, Size, WithSize};
+use crate::{Icon, ScrollbarVariant, Size, WithSize};
 use gpui::{
-    Animation, AnimationExt, App, Bounds, Div, InteractiveElement, IntoElement, MouseDownEvent,
-    ParentElement, Pixels, Rems, Styled, Window, actions, anchored, canvas, deferred, div,
-    ease_out_quint, point, prelude::FluentBuilder, px, relative, rems,
+    Anchor, AnchoredPositionMode, Animation, AnimationExt, App, Bounds, Div, InteractiveElement,
+    IntoElement, MouseDownEvent, ParentElement, Pixels, Point, Rems, Styled, Window, actions,
+    anchored, canvas, deferred, div, ease_out_quint, point, prelude::FluentBuilder, px, relative,
+    rems,
 };
 use std::time::Duration;
 use theme::{Theme, ThemeExt};
 
-pub(crate) const BORDER: Pixels = px(1.);
-pub(crate) const MENU_PADDING: Rems = rems(0.25);
-pub(crate) const MENU_MAX_HEIGHT: Rems = rems(16.);
+pub const BORDER: Pixels = px(1.);
+pub const MENU_PADDING: Rems = rems(0.25);
+pub const MENU_MAX_HEIGHT: Rems = rems(16.);
+pub const MENU_SCROLLBAR: ScrollbarVariant = ScrollbarVariant::Thin;
 const MENU_GAP: Rems = rems(0.25);
 const MENU_SLIDE: Pixels = px(6.);
 const MENU_OPEN_DURATION: Duration = Duration::from_millis(150);
@@ -41,7 +43,7 @@ fn item_py(size: Size) -> Rems {
     }
 }
 
-pub(crate) fn item(
+pub fn item(
     content: impl IntoElement,
     size: Size,
     highlighted: bool,
@@ -68,9 +70,7 @@ pub(crate) fn item(
         )
 }
 
-pub(crate) fn track_bounds(
-    on_bounds: impl Fn(Bounds<Pixels>, &mut App) + 'static,
-) -> impl IntoElement {
+pub fn track_bounds(on_bounds: impl Fn(Bounds<Pixels>, &mut App) + 'static) -> impl IntoElement {
     canvas(
         // The canvas covers the padding box, so grow it over the border.
         move |bounds, _, cx| on_bounds(bounds.dilate(BORDER), cx),
@@ -80,8 +80,8 @@ pub(crate) fn track_bounds(
     .inset_0()
 }
 
-pub(crate) fn popover(
-    width: Pixels,
+pub fn popover(
+    trigger: gpui::Size<Pixels>,
     content: impl IntoElement,
     on_dismiss: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
     window: &Window,
@@ -92,7 +92,7 @@ pub(crate) fn popover(
 
     let menu = div()
         .relative()
-        .w(width)
+        .w(trigger.width)
         .occlude()
         .rounded(theme.radius.md)
         .border_1()
@@ -108,16 +108,18 @@ pub(crate) fn popover(
             |menu, delta| menu.opacity(delta).top(MENU_SLIDE * (delta - 1.)),
         );
 
-    div().absolute().top_full().left(-BORDER).child(deferred(
+    div().absolute().top(-BORDER).left(-BORDER).child(deferred(
         anchored()
-            .offset(point(px(0.), BORDER + gap))
+            .position_mode(AnchoredPositionMode::Local)
+            .attach(Bounds::new(Point::default(), trigger), Anchor::BottomLeft)
+            .offset(point(px(0.), gap))
             .snap_to_window_with_margin(gap)
             .child(menu),
     ))
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Step {
+pub enum Step {
     Prev,
     Next,
     First,

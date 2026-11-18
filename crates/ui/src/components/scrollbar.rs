@@ -3,7 +3,7 @@ use gpui::{
     CursorStyle, DispatchPhase, Div, Edges, Element, ElementId, Entity, GlobalElementId, Hitbox,
     HitboxBehavior, Hsla, InspectorElementId, InteractiveElement, Interactivity, IntoElement,
     IsZero, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Point, Position, Render, RenderOnce, ScrollEvent, ScrollHandle, Stateful,
+    Pixels, Point, Position, RenderOnce, ScrollEvent, ScrollHandle, Stateful,
     StatefulInteractiveElement, Style, StyleRefinement, Styled, Task, UniformListDecoration,
     UniformListScrollHandle, Window, px, quad,
 };
@@ -16,7 +16,34 @@ use theme::ThemeExt;
 
 pub use gpui::Axis as ScrollbarAxis;
 
-pub const SCROLLBAR_WIDTH: Pixels = px(12.);
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollbarVariant {
+    #[default]
+    Regular,
+    Thin,
+}
+
+impl ScrollbarVariant {
+    pub const fn width(self) -> Pixels {
+        match self {
+            Self::Regular => px(12.),
+            Self::Thin => px(8.),
+        }
+    }
+
+    const fn thumb_inset(self) -> Pixels {
+        match self {
+            Self::Regular => px(3.),
+            Self::Thin => px(2.),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct ScrollbarStyle {
+    variant: ScrollbarVariant,
+    always_visible: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollAxes {
@@ -42,6 +69,7 @@ pub struct Scrollable {
     axes: ScrollAxes,
     id: ElementId,
     handle: Option<ScrollHandle>,
+    style: ScrollbarStyle,
 }
 
 impl Scrollable {
@@ -51,6 +79,7 @@ impl Scrollable {
             axes,
             id,
             handle: None,
+            style: ScrollbarStyle::default(),
         }
     }
 
@@ -58,6 +87,20 @@ impl Scrollable {
     /// created one.
     pub fn handle(mut self, handle: &ScrollHandle) -> Self {
         self.handle = Some(handle.clone());
+        self
+    }
+
+    pub fn variant(mut self, variant: ScrollbarVariant) -> Self {
+        self.style.variant = variant;
+        self
+    }
+
+    pub fn thin(self) -> Self {
+        self.variant(ScrollbarVariant::Thin)
+    }
+
+    pub fn always_visible(mut self) -> Self {
+        self.style.always_visible = true;
         self
     }
 }
@@ -89,6 +132,7 @@ impl RenderOnce for Scrollable {
             axes,
             id,
             handle,
+            style,
         } = self;
 
         let state = window.use_keyed_state(id, cx, |_, _| match &handle {
@@ -113,7 +157,8 @@ impl RenderOnce for Scrollable {
             ScrollAxes::Both => div.overflow_scroll(),
         };
 
-        div.track_scroll(&handle).child(state)
+        div.track_scroll(&handle)
+            .child(ScrollbarElement { state, style })
     }
 }
 
@@ -153,11 +198,31 @@ impl WithScrollbar for Stateful<Div> {
     }
 }
 
-pub struct ListScrollbar(Entity<ScrollbarState>);
+pub struct ListScrollbar {
+    state: Entity<ScrollbarState>,
+    style: ScrollbarStyle,
+}
 
 impl ListScrollbar {
     pub fn new(state: Entity<ScrollbarState>) -> Self {
-        Self(state)
+        Self {
+            state,
+            style: ScrollbarStyle::default(),
+        }
+    }
+
+    pub fn variant(mut self, variant: ScrollbarVariant) -> Self {
+        self.style.variant = variant;
+        self
+    }
+
+    pub fn thin(self) -> Self {
+        self.variant(ScrollbarVariant::Thin)
+    }
+
+    pub fn always_visible(mut self) -> Self {
+        self.style.always_visible = true;
+        self
     }
 }
 
@@ -173,13 +238,13 @@ impl UniformListDecoration for ListScrollbar {
         _cx: &mut App,
     ) -> AnyElement {
         ScrollbarElement {
-            state: self.0.clone(),
+            state: self.state.clone(),
+            style: self.style,
         }
         .into_any()
     }
 }
 
-const THUMB_INSET: Pixels = px(3.);
 const MIN_THUMB_SIZE: Pixels = px(25.);
 const HIDE_DELAY: Duration = Duration::from_millis(1200);
 const FADE_DURATION: Duration = Duration::from_millis(400);
@@ -330,15 +395,17 @@ impl ScrollbarState {
         self.fade_wake = Some((deadline, task));
     }
 
-    fn needs_fade_wakeup(&self, container_hovered: bool) -> bool {
+    fn needs_fade_wakeup(&self, always_visible: bool, container_hovered: bool) -> bool {
         let scroll_overlay_will_fade = self.scroll_opacity() >= 1.;
-        let bar_will_fade =
-            !container_hovered && !self.thumb.is_active() && self.opacity(container_hovered) >= 1.;
+        let bar_will_fade = !always_visible
+            && !container_hovered
+            && !self.thumb.is_active()
+            && self.activity.opacity() >= 1.;
         scroll_overlay_will_fade || bar_will_fade
     }
 
-    fn opacity(&self, container_hovered: bool) -> f32 {
-        if container_hovered || self.thumb.is_active() {
+    fn opacity(&self, always_visible: bool, container_hovered: bool) -> f32 {
+        if always_visible || container_hovered || self.thumb.is_active() {
             return 1.;
         }
         self.activity.opacity()
@@ -467,12 +534,6 @@ impl ScrollbarState {
     }
 }
 
-impl Render for ScrollbarState {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        ScrollbarElement { state: cx.entity() }
-    }
-}
-
 fn fade_from(since: Option<Instant>) -> f32 {
     let Some(since) = since else {
         return 0.;
@@ -565,6 +626,7 @@ struct LayoutState {
 
 struct ScrollbarElement {
     state: Entity<ScrollbarState>,
+    style: ScrollbarStyle,
 }
 
 impl ScrollbarElement {
@@ -677,11 +739,9 @@ impl Element for ScrollbarElement {
         let viewport_bounds = handle.bounds();
         let viewport = viewport_bounds.size;
 
-        let corner_gap = if axes.len() == 2 {
-            SCROLLBAR_WIDTH
-        } else {
-            Pixels::ZERO
-        };
+        let width = self.style.variant.width();
+        let inset = self.style.variant.thumb_inset();
+        let corner_gap = if axes.len() == 2 { width } else { Pixels::ZERO };
 
         let bars: SmallVec<[ScrollbarLayout; 2]> = axes
             .into_iter()
@@ -696,7 +756,7 @@ impl Element for ScrollbarElement {
                     viewport_bounds.corner(anchor),
                     viewport_bounds
                         .size
-                        .apply_along(axis.invert(), |_| SCROLLBAR_WIDTH)
+                        .apply_along(axis.invert(), |_| width)
                         .apply_along(axis, |length| length - corner_gap),
                 );
 
@@ -718,10 +778,10 @@ impl Element for ScrollbarElement {
                 let fill_bounds = Bounds::new(
                     thumb_bounds
                         .origin
-                        .apply_along(axis.invert(), |origin| origin + THUMB_INSET),
+                        .apply_along(axis.invert(), |origin| origin + inset),
                     thumb_bounds
                         .size
-                        .apply_along(axis.invert(), |size| (size - THUMB_INSET * 2.).max(px(1.))),
+                        .apply_along(axis.invert(), |size| (size - inset * 2.).max(px(1.))),
                 );
 
                 Some(ScrollbarLayout {
@@ -761,7 +821,10 @@ impl Element for ScrollbarElement {
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             let (dragging, opacity) = {
                 let state = self.state.read(cx);
-                (state.thumb.is_dragging(), state.opacity(hovered))
+                (
+                    state.thumb.is_dragging(),
+                    state.opacity(self.style.always_visible, hovered),
+                )
             };
 
             if opacity > 0. {
@@ -805,7 +868,7 @@ impl Element for ScrollbarElement {
 
                 if fading {
                     window.request_animation_frame();
-                } else if state.needs_fade_wakeup(hovered) {
+                } else if state.needs_fade_wakeup(self.style.always_visible, hovered) {
                     self.state.update(cx, |state, cx| state.schedule_fade(cx));
                 }
             }
@@ -874,7 +937,11 @@ mod tests {
     #[test]
     fn thumb_placement_round_trips_when_track_differs_from_viewport() {
         // Both bars are visible, so the vertical track is shortened by the corner.
-        check_round_trips(VIEWPORT - SCROLLBAR_WIDTH, VIEWPORT, MAX_OFFSET);
+        check_round_trips(
+            VIEWPORT - ScrollbarVariant::Regular.width(),
+            VIEWPORT,
+            MAX_OFFSET,
+        );
     }
 
     #[track_caller]

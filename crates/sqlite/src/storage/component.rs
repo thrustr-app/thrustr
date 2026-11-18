@@ -135,7 +135,7 @@ impl ComponentStorage for SqliteStorage {
 }
 
 /// Deletes entries that have expired.
-pub(crate) fn delete_expired_data(conn: &mut SqliteConnection) -> QueryResult<usize> {
+pub fn delete_expired_data(conn: &mut SqliteConnection) -> QueryResult<usize> {
     use crate::schema::component_data::dsl;
 
     let now = unix_millis(SystemTime::now());

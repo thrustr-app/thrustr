@@ -39,7 +39,7 @@ impl Storefronts {
         };
 
         let task = cx.listen_any(
-            &[Topic::ComponentRegistered, Topic::ComponentState],
+            &[Topic::ComponentRegistered, Topic::ComponentStateChanged],
             Self::refresh_storefronts,
         );
         page._tasks.push(task);

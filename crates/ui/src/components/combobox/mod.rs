@@ -1,11 +1,10 @@
 use crate::{
-    FieldProps, FocusProps, Icon, ListScrollbar, SCROLLBAR_WIDTH, Size, WithField, WithFocus,
-    WithSize,
+    FieldProps, FocusProps, Icon, ListScrollbar, Size, WithField, WithFocus, WithSize,
     components::{
         input::editable,
         menu::{
-            self, BORDER, Cancel, Confirm, MENU_MAX_HEIGHT, MENU_PADDING, SelectNext,
-            SelectNextPage, SelectPrev, SelectPrevPage,
+            self, BORDER, Cancel, Confirm, MENU_MAX_HEIGHT, MENU_PADDING, MENU_SCROLLBAR,
+            SelectNext, SelectNextPage, SelectPrev, SelectPrevPage,
         },
     },
 };
@@ -370,14 +369,18 @@ fn render_menu<T: Clone + PartialEq + 'static>(
         .with_sizing_behavior(ListSizingBehavior::Infer)
         .max_h(LIST_MAX_HEIGHT)
         // Keep the rows clear of the scrollbar, which sits in the padding.
-        .when(scrollable, |list| list.pr(SCROLLBAR_WIDTH))
+        .when(scrollable, |list| list.pr(MENU_SCROLLBAR.width()))
         .track_scroll(&current.list)
-        .with_decoration(ListScrollbar::new(current.scrollbar.clone()))
+        .with_decoration(
+            ListScrollbar::new(current.scrollbar.clone())
+                .variant(MENU_SCROLLBAR)
+                .always_visible(),
+        )
         .into_any_element()
     };
 
     Some(menu::popover(
-        current.bounds.size.width,
+        current.bounds.size,
         div()
             .p(MENU_PADDING)
             .when(scrollable, |content| content.pr_0())

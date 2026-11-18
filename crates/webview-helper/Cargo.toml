@@ -1,16 +1,19 @@
 [package]
 name = "webview-helper"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 license.workspace = true
 
 [dependencies]
 serde_json.workspace = true
-tao = "0.37"
-wry = "0.56"
+tao.workspace = true
+wry.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-muda = "0.17"
+muda.workspace = true
 
 [package.metadata.bundle]
 identifier = "com.thrustr.thrustr"
+
+[lints]
+workspace = true

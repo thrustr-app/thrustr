@@ -40,7 +40,7 @@ pub fn defer<F: FnOnce()>(f: F) -> Deferred<F> {
 /// Initializes the Tokio wrapper using a new Tokio runtime.
 pub fn init(cx: &mut App) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
+        .worker_threads(3)
         .enable_all()
         .build()
         .expect("failed to initialize Tokio");

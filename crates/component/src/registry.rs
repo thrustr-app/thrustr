@@ -34,7 +34,7 @@ impl ComponentRegistry {
         C: Component + 'static,
         E: From<RegisterError>,
     {
-        let link = ComponentLink::new();
+        let link = ComponentLink::default();
         let component: Arc<dyn Component> = Arc::new(build(link.clone()).await?);
 
         let id = component.metadata().id.to_owned();

@@ -30,7 +30,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tracing::error;
 use ui::{
     Activate, Button, GRID_CONTEXT, GridDir, Icon, Input, InputEvent, InputState, ListScrollbar,
-    SCROLLBAR_WIDTH, ScrollbarState, Scrubber, SelectDown, SelectLeft, SelectRight, SelectUp,
+    ScrollbarState, ScrollbarVariant, Scrubber, SelectDown, SelectLeft, SelectRight, SelectUp,
     WithRadius, WithSize, WithVariant, grid_step, scrubber_position,
 };
 
@@ -178,7 +178,7 @@ impl Route for Library {
         });
         page._tasks.push(task);
 
-        let task = cx.listen(Topic::ComponentState, |this, cx| {
+        let task = cx.listen(Topic::ComponentStateChanged, |this, cx| {
             if this.refresh_sync_state(cx) {
                 cx.notify();
             }
@@ -684,7 +684,7 @@ impl Render for Library {
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .right(SCROLLBAR_WIDTH + SCRUBBER_GAP)
+                        .right(ScrollbarVariant::Regular.width() + SCRUBBER_GAP)
                 });
 
                 div()

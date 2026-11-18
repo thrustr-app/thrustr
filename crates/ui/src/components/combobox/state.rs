@@ -446,7 +446,7 @@ impl<T: Clone + PartialEq + 'static> ComboboxState<T> {
     }
 
     pub(super) fn set_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
-        let resized = bounds.size.width != self.bounds.size.width;
+        let resized = bounds.size != self.bounds.size;
         self.bounds = bounds;
         if resized && self.is_open {
             cx.notify();

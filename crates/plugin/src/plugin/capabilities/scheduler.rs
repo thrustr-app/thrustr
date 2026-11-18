@@ -20,6 +20,7 @@ impl PluginScheduler {
         let periodic = guest_call!(runtime, indices, |scheduler, accessor| async {
             scheduler.call_periodic(accessor).await.map(Ok)
         })
+        .await
         .context("reading the plugin's periodic tasks failed")?;
 
         Ok(Some(Self {
@@ -47,5 +48,6 @@ impl Scheduler for PluginScheduler {
         guest_call!(self.runtime, self.indices, |scheduler, accessor| {
             scheduler.call_run(accessor, task, args)
         })
+        .await
     }
 }

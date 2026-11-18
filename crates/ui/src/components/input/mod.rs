@@ -27,7 +27,7 @@ mod history;
 mod state;
 mod text_ops;
 
-pub(crate) use actions::Backspace;
+pub use actions::Backspace;
 pub(super) use actions::init;
 pub use state::{InputEvent, InputState};
 use theme::ThemeExt;
@@ -195,7 +195,7 @@ impl RenderOnce for Input {
     }
 }
 
-pub(crate) fn editable<E: InteractiveElement>(
+pub fn editable<E: InteractiveElement>(
     element: E,
     state: &Entity<InputState>,
     focus_handle: &FocusHandle,

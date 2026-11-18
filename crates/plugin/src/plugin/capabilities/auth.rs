@@ -22,7 +22,7 @@ impl PluginAuth {
         let Some(indices) = runtime.export("auth", auth::GuestIndices::new)? else {
             ensure!(
                 form.is_none(),
-                "plugin manifest has [auth] but the plugin does not export Auth"
+                "plugin manifest has `auth` but the plugin does not export Auth"
             );
             return Ok(None);
         };
@@ -43,7 +43,8 @@ impl Auth for PluginAuth {
     async fn login_flow(&self) -> Result<Option<LoginFlow>, Error> {
         let flow = guest_call!(self.runtime, self.indices, |auth, accessor| {
             auth.call_get_login_flow(accessor)
-        })?;
+        })
+        .await?;
 
         Ok(flow.map(Into::into))
     }
@@ -52,18 +53,20 @@ impl Auth for PluginAuth {
         guest_call!(self.runtime, self.indices, |auth, accessor| {
             auth.call_login(accessor, request.into())
         })
+        .await
     }
 
     async fn logout(&self) -> Result<(), Error> {
         guest_call!(self.runtime, self.indices, |auth, accessor| {
             auth.call_logout(accessor)
         })
+        .await
     }
 }
 
 impl From<PluginLoginFlow> for LoginFlow {
     fn from(value: PluginLoginFlow) -> Self {
-        LoginFlow {
+        Self {
             url: value.url,
             target: value.target,
         }
@@ -73,10 +76,8 @@ impl From<PluginLoginFlow> for LoginFlow {
 impl From<LoginRequest> for PluginLoginRequest {
     fn from(value: LoginRequest) -> Self {
         match value {
-            LoginRequest::Flow { url, body } => {
-                PluginLoginRequest::Flow(LoginCallback { url, body })
-            }
-            LoginRequest::Form { fields } => PluginLoginRequest::Form(PluginLoginForm {
+            LoginRequest::Flow { url, body } => Self::Flow(LoginCallback { url, body }),
+            LoginRequest::Form { fields } => Self::Form(PluginLoginForm {
                 fields: fields
                     .into_iter()
                     .map(|(id, value)| (id, value.into()))

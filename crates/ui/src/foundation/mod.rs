@@ -4,7 +4,7 @@ mod focus;
 
 pub use focus::*;
 
-pub(crate) fn composite(background: Hsla, layer: Hsla) -> Hsla {
+pub fn composite(background: Hsla, layer: Hsla) -> Hsla {
     if background.is_transparent() {
         layer
     } else {

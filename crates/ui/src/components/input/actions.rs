@@ -82,7 +82,7 @@ fn macos_bindings(cx: &mut App) {
     ]);
 }
 
-fn key_binding(keystrokes: &str, action: impl Action) -> KeyBinding {
+fn key_binding(keystrokes: &'static str, action: impl Action) -> KeyBinding {
     KeyBinding::new(keystrokes, action, Some(CONTEXT))
 }
 

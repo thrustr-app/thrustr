@@ -188,7 +188,7 @@ impl ComponentHandle {
         })?;
 
         debug!(component = self.id(), %operation, "operation started");
-        event::emit(Topic::ComponentState);
+        event::emit(Topic::ComponentStateChanged);
         Ok(running)
     }
 
@@ -197,7 +197,7 @@ impl ComponentHandle {
         self.state_write().cancel(running);
 
         debug!(component = self.id(), %operation, "operation cancelled");
-        event::emit(Topic::ComponentState);
+        event::emit(Topic::ComponentStateChanged);
     }
 
     fn finish_initialization(
@@ -240,7 +240,7 @@ impl ComponentHandle {
             warn!(component = self.id(), %error, "operation failed");
         }
 
-        event::emit(Topic::ComponentState);
+        event::emit(Topic::ComponentStateChanged);
     }
 
     fn state_read(&self) -> RwLockReadGuard<'_, State> {
@@ -260,7 +260,7 @@ impl ComponentHandle {
 
 /// A [`ComponentHandle`] that does not keep the component alive.
 #[derive(Debug, Clone)]
-pub(crate) struct WeakComponentHandle(Weak<Inner>);
+pub struct WeakComponentHandle(Weak<Inner>);
 
 impl WeakComponentHandle {
     pub(crate) fn upgrade(&self) -> Option<ComponentHandle> {
@@ -272,14 +272,10 @@ impl WeakComponentHandle {
 ///
 /// Lets a component act on itself through the host (e.g. schedule timers
 /// tied to its current activation and status).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ComponentLink(Arc<OnceLock<WeakComponentHandle>>);
 
 impl ComponentLink {
-    pub(crate) fn new() -> Self {
-        Self(Arc::default())
-    }
-
     pub fn timers(&self) -> Timers<'_> {
         Timers::new(self)
     }
@@ -300,7 +296,7 @@ impl ComponentLink {
 /// Component errors are reported through [`Permit::finish`], as they can
 /// change the status. Any other failure drops the permit, which cancels the
 /// operation.
-pub(crate) struct Permit {
+pub struct Permit {
     handle: ComponentHandle,
     running: Option<Running>,
 }
@@ -382,7 +378,7 @@ impl Drop for Initializing<'_> {
     }
 }
 
-pub(crate) type Result<T> = std::result::Result<T, OperationError>;
+pub type Result<T> = std::result::Result<T, OperationError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OperationError {

@@ -1,5 +1,6 @@
 use crate::tokio::Tokio;
 use ::artwork::ArtworkService;
+use ::download::DownloadService;
 use gpui::App;
 use net::{ConnectivityConfig, ConnectivityManager};
 use sqlite::SqliteStorage;
@@ -7,11 +8,13 @@ use std::sync::Arc;
 
 mod artwork;
 mod component;
+mod download;
 mod game;
 mod plugin;
 
 pub use artwork::ArtworkServiceExt;
 pub use component::ComponentRegistryExt;
+pub use download::DownloadServiceExt;
 pub use game::GameServiceExt;
 pub use plugin::PluginServiceExt;
 
@@ -22,19 +25,34 @@ pub fn init(cx: &mut App, storage: Arc<SqliteStorage>) {
 
     let connectivity =
         ConnectivityManager::spawn_probing(tokio_handle.clone(), ConnectivityConfig::default());
-    let artwork_service =
-        ArtworkService::new(tokio_handle.clone(), connectivity, artwork_repo, game_repo);
+    let artwork_service = ArtworkService::new(
+        tokio_handle.clone(),
+        connectivity.clone(),
+        artwork_repo,
+        game_repo,
+    );
 
     artwork::init(cx, artwork_service.clone());
     artwork_service.trigger_backfill();
 
     let registry = component::init(
         cx,
-        tokio_handle,
+        tokio_handle.clone(),
         storage.clone(),
         storage.clone(),
         artwork_service,
     );
+    let download_service = DownloadService::new(
+        tokio_handle,
+        registry.clone(),
+        connectivity,
+        storage.clone(),
+        storage.clone(),
+        storage.clone(),
+    )
+    .expect("failed to load the download queue");
+    download::init(cx, download_service);
+
     plugin::init(cx, storage.clone(), registry);
     game::init(cx, storage);
 }

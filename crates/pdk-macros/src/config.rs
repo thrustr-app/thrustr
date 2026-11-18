@@ -16,7 +16,7 @@ struct Provider {
 
 /// Invalid option functions are reported and omitted so the rest of the
 /// expansion still type-checks instead of cascading errors.
-pub(crate) fn expand(mut item: ItemImpl) -> TokenStream {
+pub fn expand(mut item: ItemImpl) -> TokenStream {
     let ty = item.self_ty.clone();
 
     let mut errors = Vec::new();

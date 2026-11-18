@@ -6,7 +6,6 @@ use event::Topic;
 use futures::StreamExt;
 use runtime::TokioHandle;
 use std::{
-    ffi::OsStr,
     io,
     path::{Path, PathBuf},
     sync::Arc,
@@ -46,11 +45,11 @@ impl PluginService {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e.into()),
         };
-        let mut paths: Vec<PathBuf> = Vec::new();
+        let mut paths = Vec::new();
 
         while let Some(entry) = read_dir.next_entry().await? {
             let path = entry.path();
-            if path.extension() == Some(OsStr::new("tp")) {
+            if path.extension().is_some_and(|ext| ext == "tp") {
                 paths.push(path);
             }
         }
@@ -69,12 +68,9 @@ impl PluginService {
     async fn load_and_init_plugin(&self, path: &Path) -> Result<()> {
         let component = self
             .component_registry
-            .register(async |link| {
-                let plugin = self.manager.load_plugin(path.to_path_buf(), link).await?;
-                event::emit(Topic::Plugin);
-                anyhow::Ok(plugin)
-            })
+            .register(async |link| self.manager.load_plugin(path.to_path_buf(), link).await)
             .await?;
+        event::emit(Topic::PluginRegistered);
 
         component
             .enable()

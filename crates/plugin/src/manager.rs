@@ -1,13 +1,13 @@
 use crate::{
     plugin::{
-        Plugin, PluginAuth, PluginCache, PluginConfig, PluginManifest, PluginRuntime,
-        PluginScheduler, PluginState, PluginStorefront, http_client,
+        AllowedHosts, Plugin, PluginAuth, PluginCache, PluginConfig, PluginManifest, PluginRuntime,
+        PluginScheduler, PluginState, PluginStorefront, add_fs_to_linker, http_client,
     },
     wit::{PluginHost, exports::thrustr::plugin::base},
 };
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use component::ComponentLink;
-use config::paths::plugins_cache_dir;
+use config::paths::{plugin_data_dir, plugins_cache_dir};
 use domain::component::{ComponentStorage, Image, ImageFormat};
 use reqwest::Client;
 use runtime::TokioHandle;
@@ -21,6 +21,7 @@ use wasmtime::{
     Config as WasmtimeConfig, Engine,
     component::{Component as WasmComponent, Linker},
 };
+use wasmtime_wasi_http::p3::add_to_linker as add_http_to_linker;
 use zip::ZipArchive;
 
 #[derive(Clone)]
@@ -42,13 +43,9 @@ impl PluginManager {
         let engine = Engine::new(&config).expect("failed to create Wasmtime engine");
         let mut linker = Linker::new(&engine);
 
-        wasmtime_wasi::p2::add_to_linker_async(&mut linker)
-            .expect("failed to add WASIp2 to linker");
-
-        wasmtime_wasi::p3::add_to_linker(&mut linker).expect("failed to add WASIp3 to linker");
-
-        wasmtime_wasi_http::p3::add_to_linker(&mut linker)
-            .expect("failed to add WASIp3 HTTP to linker");
+        add_fs_to_linker(&mut linker).expect("failed to add the plugin filesystem to linker");
+        add_wasip3_to_linker(&mut linker).expect("failed to add WASIp3 to linker");
+        add_http_to_linker(&mut linker).expect("failed to add WASIp3 HTTP to linker");
 
         PluginHost::add_to_linker::<_, PluginState>(&mut linker, |state| state)
             .expect("failed to add plugin imports to linker");
@@ -62,47 +59,47 @@ impl PluginManager {
         }
     }
 
-    pub(crate) fn tokio_handle(&self) -> &TokioHandle {
+    pub fn tokio_handle(&self) -> &TokioHandle {
         &self.tokio_handle
     }
 
     pub async fn load_plugin(&self, path: PathBuf, link: ComponentLink) -> Result<Plugin> {
-        let (manifest, wasm_bytes, icon) = self
+        let engine = self.engine.clone();
+        let (manifest, icon, component, data_dir) = self
             .tokio_handle
-            .spawn_blocking(move || read_plugin_archive(path))
+            .spawn_blocking(move || -> Result<_> {
+                let (manifest, wasm_bytes, icon) = read_plugin_archive(&path)?;
+                let id = manifest.plugin.id.as_str();
+                let data_dir = plugin_data_dir().join(id);
+                let component = load_component(&engine, id, &wasm_bytes)?;
+                Ok((manifest, icon, component, data_dir))
+            })
             .await??;
+
         let PluginManifest {
             plugin: info,
             auth: login_form,
             config: config_schema,
         } = manifest;
 
-        let component = self
-            .tokio_handle
-            .spawn_blocking({
-                let engine = self.engine.clone();
-                let plugin_id = info.id.clone();
-                move || load_component(&engine, &plugin_id, &wasm_bytes)
-            })
-            .await??;
-
         let config_schema = config_schema.map(Arc::new);
 
         let runtime = Arc::new(PluginRuntime {
             id: info.id.clone(),
-            allowed_hosts: info.allowed_hosts.clone(),
+            allowed_hosts: Arc::new(AllowedHosts::new(&info.allowed_hosts)),
             engine: self.engine.clone(),
             pre: self.linker.instantiate_pre(&component)?,
             storage: self.storage.clone(),
             tokio_handle: self.tokio_handle.clone(),
             http_client: self.http_client.clone(),
             link,
-            cache: Arc::new(PluginCache::new()),
+            data_dir,
+            cache: PluginCache::new(),
             config_schema: config_schema.clone(),
         });
 
-        let base = base::GuestIndices::new(&runtime.pre).map_err(|e| {
-            e.context("plugin does not export thrustr:plugin/base; add #[pdk::export] to its `impl pdk::Plugin`")
+        let base = runtime.export("base", base::GuestIndices::new)?.ok_or_else(|| {
+            anyhow!("plugin does not export thrustr:plugin/base; add #[pdk::export] to its `impl pdk::Plugin`")
         })?;
         let auth = PluginAuth::resolve(&runtime, login_form)?;
         let config = PluginConfig::resolve(&runtime, config_schema)?;
@@ -124,18 +121,24 @@ impl PluginManager {
     }
 }
 
+fn add_wasip3_to_linker(linker: &mut Linker<PluginState>) -> wasmtime::Result<()> {
+    use wasmtime_wasi::p3;
+
+    p3::cli::add_to_linker(linker)?;
+    p3::clocks::add_to_linker(linker)?;
+    p3::random::add_to_linker(linker)?;
+    p3::sockets::add_to_linker(linker)
+}
+
 fn load_component(engine: &Engine, plugin_id: &str, wasm_bytes: &[u8]) -> Result<WasmComponent> {
     let hash = blake3::hash(wasm_bytes).to_hex();
     let cache_dir = plugins_cache_dir().join(plugin_id);
     let cache_path = cache_dir.join(format!("{hash}.cwasm"));
 
-    if cache_path.exists() {
-        match unsafe { WasmComponent::deserialize_file(engine, &cache_path) } {
-            Ok(component) => return Ok(component),
-            Err(_) => {
-                let _ = fs::remove_file(&cache_path);
-            }
-        }
+    // SAFETY: only this function writes the cache and Wasmtime rejects
+    // artifacts built by another version or configuration.
+    if let Ok(component) = unsafe { WasmComponent::deserialize_file(engine, &cache_path) } {
+        return Ok(component);
     }
 
     let component = WasmComponent::from_binary(engine, wasm_bytes)?;
@@ -157,12 +160,11 @@ fn write_cache_atomic(cache_path: &Path, bytes: &[u8]) {
     }
 }
 
-fn read_plugin_archive(path: PathBuf) -> Result<(PluginManifest, Vec<u8>, Option<Image>)> {
-    let file = File::open(&path)?;
-    let mut archive = ZipArchive::new(file)?;
+fn read_plugin_archive(path: &Path) -> Result<(PluginManifest, Vec<u8>, Option<Image>)> {
+    let mut archive = ZipArchive::new(File::open(path)?)?;
 
     let manifest = read_manifest(&mut archive)?;
-    let wasm_bytes = read_wasm(&mut archive)?;
+    let wasm_bytes = read_entry(&mut archive, "plugin.wasm")?;
     let icon = read_icon(&mut archive)?;
 
     Ok((manifest, wasm_bytes, icon))
@@ -180,48 +182,26 @@ fn read_manifest<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<PluginMa
         (Some(_), Some(_)) => bail!("plugin archive has both manifest.yaml and manifest.yml"),
     };
 
-    let mut file = archive.by_name(name)?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
-    Ok(serde_saphyr::from_str(&content)?)
+    Ok(serde_saphyr::from_slice(&read_entry(archive, name)?)?)
 }
 
-fn read_wasm<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<u8>> {
-    let mut file = archive.by_name("plugin.wasm")?;
+fn read_entry<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
+    archive.by_name(name)?.read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 
 fn read_icon<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Option<Image>> {
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
+    let icon = archive.file_names().flatten().find_map(|name| {
+        let (stem, ext) = name.rsplit_once('.')?;
+        let format = ImageFormat::from_extension(ext)?;
+        stem.eq_ignore_ascii_case("icon")
+            .then(|| (name.into_owned(), format))
+    });
+    let Some((name, format)) = icon else {
+        return Ok(None);
+    };
 
-        let path = match file.enclosed_name() {
-            Some(p) => p,
-            None => continue,
-        };
-
-        let stem = path.file_stem().and_then(|s| s.to_str());
-        if !stem.is_some_and(|s| s.eq_ignore_ascii_case("icon")) {
-            continue;
-        }
-
-        let ext = match path.extension().and_then(|e| e.to_str()) {
-            Some(ext) => ext,
-            None => continue,
-        };
-
-        let format = match ImageFormat::from_extension(ext) {
-            Some(f) => f,
-            None => continue,
-        };
-
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)?;
-
-        return Ok(Some(Image { bytes, format }));
-    }
-
-    Ok(None)
+    let bytes = read_entry(archive, &name)?;
+    Ok(Some(Image { bytes, format }))
 }

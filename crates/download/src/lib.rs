@@ -1,3 +1,11 @@
+mod dirs;
+mod service;
+mod state;
+mod throughput;
+
+pub use service::DownloadService;
+pub use state::{Activity, DownloadState, Speed};
+
 use std::{
     fs, io,
     path::{Path, PathBuf},

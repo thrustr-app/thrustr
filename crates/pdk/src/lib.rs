@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 pub mod cache;
 pub mod config;
+pub mod dirs;
+pub mod http;
 pub mod kv_store;
 mod scheduler;
 
@@ -68,6 +70,7 @@ pub use wit::config::exports::thrustr::plugin::config::ComboboxOption;
 pub use wit::plugin::thrustr::plugin::types::{
     Error, FieldValue, Game, GameVersion, GameVersionDetails, Platform,
 };
+pub use wit::storefront::thrustr::plugin::download::{DownloadPhase, PhaseProgress, Reporter};
 
 impl Error {
     /// Credentials are missing, expired or rejected. Deactivates the plugin
@@ -153,18 +156,27 @@ pub trait Config: Plugin + __private::Exported<__private::Config> {
     fn options(field_id: String) -> impl Future<Output = Result<Vec<ComboboxOption>, Error>>;
 }
 
+#[allow(unused_variables)]
 pub trait Storefront: Plugin + __private::Exported<__private::Storefront> {
     fn games() -> impl Future<Output = Result<Vec<Game>, Error>>;
 
     fn game_versions(
         game: Game,
-        path: Vec<String>,
+        version_path: Vec<String>,
     ) -> impl Future<Output = Result<Vec<GameVersion>, Error>>;
 
     fn game_version_details(
         game: Game,
-        path: Vec<String>,
+        version_path: Vec<String>,
     ) -> impl Future<Output = Result<GameVersionDetails, Error>>;
+
+    fn download(
+        game: Game,
+        version_path: Vec<String>,
+        reporter: &Reporter,
+    ) -> impl Future<Output = Result<(), Error>> {
+        async { Err(Error::other("downloads are not supported yet")) }
+    }
 }
 
 pub trait Scheduler: Plugin + __private::Exported<__private::Scheduler> {
@@ -277,15 +289,22 @@ macro_rules! __export {
                 }
                 async fn get_game_versions(
                     game: $crate::Game,
-                    path: Vec<String>,
+                    version_path: Vec<String>,
                 ) -> std::result::Result<Vec<$crate::GameVersion>, $crate::Error> {
-                    <$ty as $crate::Storefront>::game_versions(game, path).await
+                    <$ty as $crate::Storefront>::game_versions(game, version_path).await
                 }
                 async fn get_game_version_details(
                     game: $crate::Game,
-                    path: Vec<String>,
+                    version_path: Vec<String>,
                 ) -> std::result::Result<$crate::GameVersionDetails, $crate::Error> {
-                    <$ty as $crate::Storefront>::game_version_details(game, path).await
+                    <$ty as $crate::Storefront>::game_version_details(game, version_path).await
+                }
+                async fn download(
+                    game: $crate::Game,
+                    version_path: Vec<String>,
+                    reporter: &$crate::Reporter,
+                ) -> std::result::Result<(), $crate::Error> {
+                    <$ty as $crate::Storefront>::download(game, version_path, reporter).await
                 }
             }
 

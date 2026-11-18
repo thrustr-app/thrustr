@@ -1,10 +1,13 @@
 [package]
 name = "assets"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
 gpui.workspace = true
-rust-embed = { version = "8.12", features = ["include-exclude"] }
+rust-embed.workspace = true
+
+[lints]
+workspace = true

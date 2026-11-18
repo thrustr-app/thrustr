@@ -3,6 +3,9 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 pub mod clock;
+mod task;
+
+pub use task::AbortOnDrop;
 
 #[derive(Clone)]
 pub struct TokioHandle(Handle);

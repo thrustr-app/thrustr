@@ -59,7 +59,7 @@ pub enum TimersError {
     Schedule(#[from] ScheduleError),
 }
 
-pub(crate) struct ComponentTimers {
+pub struct ComponentTimers {
     scheduler: Arc<dyn Scheduler>,
     tokio_handle: TokioHandle,
     pending: Mutex<Pending>,

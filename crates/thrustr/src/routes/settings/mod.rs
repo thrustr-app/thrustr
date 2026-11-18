@@ -82,7 +82,7 @@ impl Route for Settings {
             active_view,
             _components_task: cx.listen_any_in(
                 window,
-                &[Topic::ComponentRegistered, Topic::ComponentState],
+                &[Topic::ComponentRegistered, Topic::ComponentStateChanged],
                 Self::build_missing_view,
             ),
         }

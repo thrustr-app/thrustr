@@ -93,11 +93,11 @@ impl Storefront for Itchio {
             .collect())
     }
 
-    async fn game_versions(game: Game, path: Vec<String>) -> Result<Vec<GameVersion>> {
+    async fn game_versions(game: Game, version_path: Vec<String>) -> Result<Vec<GameVersion>> {
         let api_key = api_key()?;
         let download_key_id = download_key_id(&game);
 
-        match path.as_slice() {
+        match version_path.as_slice() {
             [] => {
                 let uploads = api::uploads(&api_key, &game.lookup_id, download_key_id).await?;
                 Ok(uploads
@@ -114,17 +114,20 @@ impl Storefront for Itchio {
                     .map(build_version)
                     .collect())
             }
-            _ => Err(invalid_path(&path)),
+            _ => Err(invalid_version_path(&version_path)),
         }
     }
 
-    async fn game_version_details(game: Game, path: Vec<String>) -> Result<GameVersionDetails> {
+    async fn game_version_details(
+        game: Game,
+        version_path: Vec<String>,
+    ) -> Result<GameVersionDetails> {
         let api_key = api_key()?;
         let download_key_id = download_key_id(&game);
-        let (upload_id, build_id) = match path.as_slice() {
+        let (upload_id, build_id) = match version_path.as_slice() {
             [upload_id] => (upload_id.as_str(), None),
             [upload_id, build_id] => (upload_id.as_str(), Some(build_id.as_str())),
-            _ => return Err(invalid_path(&path)),
+            _ => return Err(invalid_version_path(&version_path)),
         };
 
         let build = async {
@@ -246,8 +249,8 @@ async fn zip_extracted_size(
     zip::extracted_size(async |range: &str| api::fetch_range(&url, range).await).await
 }
 
-fn invalid_path(path: &[String]) -> Error {
-    Error::other(format!("unexpected version path {path:?}"))
+fn invalid_version_path(version_path: &[String]) -> Error {
+    Error::other(format!("unexpected version path {version_path:?}"))
 }
 
 fn api_key() -> Result<String> {

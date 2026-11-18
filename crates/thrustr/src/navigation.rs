@@ -39,6 +39,7 @@ pub enum Page {
     Home,
     Library,
     Collections,
+    Downloads,
     Game(GameId),
     Settings(Option<SettingsPage>),
 }
@@ -49,6 +50,7 @@ impl NavNode for Page {
             Self::Home => "Home",
             Self::Library => "Library",
             Self::Collections => "Collections",
+            Self::Downloads => "Downloads",
             Self::Game(_) => "",
             Self::Settings(None) => "Settings",
             Self::Settings(Some(sub)) => sub.label(),
@@ -60,6 +62,7 @@ impl NavNode for Page {
             Self::Home => Icon::home(),
             Self::Library => Icon::library(),
             Self::Collections => Icon::collections(),
+            Self::Downloads => Icon::download(),
             Self::Game(_) => Icon::library(),
             Self::Settings(_) => Icon::settings(),
         }
