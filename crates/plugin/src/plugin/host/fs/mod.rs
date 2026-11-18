@@ -361,6 +361,7 @@ impl<U: FsState> HostDescriptorWithStore<U> for Fs {
         dest_path: String,
     ) -> FsResult<()> {
         check_name(&dest_path)?;
+        check_symlink_target(&src_path)?;
         Stock::symlink_at(&stock(store), fd, src_path, dest_path).await
     }
 
@@ -541,6 +542,14 @@ fn check_name(path: &str) -> FsResult<()> {
     let invalid = |part| !matches!(part, "" | "." | "..") && !windows::is_plain_name(part);
     if cfg!(windows) && path.split(['/', '\\']).any(invalid) {
         return Err(ErrorCode::Invalid.into());
+    }
+    Ok(())
+}
+
+fn check_symlink_target(target: &str) -> FsResult<()> {
+    let escapes = target.split(['/', '\\']).any(|part| part == "..");
+    if escapes || (cfg!(windows) && target.contains(':')) {
+        return Err(ErrorCode::NotPermitted.into());
     }
     Ok(())
 }

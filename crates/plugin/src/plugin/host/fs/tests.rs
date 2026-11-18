@@ -705,6 +705,43 @@ async fn other_names_are_created_everywhere() {
 }
 
 #[tokio::test]
+async fn symlinks_never_point_outside() {
+    let mut h = Harness::new(&[]);
+    let probe = h.probe();
+    fs::create_dir_all(probe.data.join("sub")).unwrap();
+    fs::create_dir(probe.data.join("..x")).unwrap();
+    fs::write(probe.data.join("sub").join("game.bin"), "game").unwrap();
+    h.run(async |fs, roots| {
+        let root = &roots.data;
+        let refused = ["..", "../outside", "sub/../../outside", "a\\..\\b", "/etc"];
+        for (i, target) in refused.into_iter().enumerate() {
+            let link = format!("refused{i}");
+            let result = fs.call(&Call::Symlink(root, target, &link)).await;
+            assert!(
+                matches!(result, Err(ErrorCode::NotPermitted)),
+                "{target}: {result:?}"
+            );
+            assert!(!probe.data.join(&link).is_symlink(), "{target}");
+        }
+        for (i, target) in ["sub", "sub/game.bin", "./sub", "..x"]
+            .into_iter()
+            .enumerate()
+        {
+            match fs
+                .call(&Call::Symlink(root, target, &format!("allowed{i}")))
+                .await
+            {
+                Ok(()) => {}
+                // Windows only allows symlinks in Developer Mode or as admin.
+                Err(ErrorCode::NotPermitted) if cfg!(windows) => {}
+                result => panic!("{target}: {result:?}"),
+            }
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn only_files_under_the_download_are_queued() {
     let mut h = Harness::new(&["sub/"]);
     let probe = h.probe();
